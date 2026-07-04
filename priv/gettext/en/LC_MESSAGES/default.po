@@ -1,0 +1,1186 @@
+msgid ""
+msgstr ""
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+msgid "%{class}: %{code}"
+msgstr "%{class}: %{code}"
+
+msgid "%{count} COV aktiv"
+msgstr "%{count} active COV"
+
+msgid "%{count} Datensätze"
+msgstr "%{count} records"
+
+msgid "%{count} Eigenschaften"
+msgstr "%{count} properties"
+
+msgid "%{count} Einträge"
+msgstr "%{count} entries"
+
+msgid "%{count} Fehler"
+msgstr "%{count} errors"
+
+msgid "%{count} Felder"
+msgstr "%{count} fields"
+
+msgid "%{count} Meldungsklassen"
+msgstr "%{count} notification classes"
+
+msgid "%{count} Objekte"
+msgstr "%{count} objects"
+
+msgid "%{count} Prioritäten gesetzt"
+msgstr "%{count} priorities set"
+
+msgid "%{count} Strukturansichten"
+msgstr "%{count} structured views"
+
+msgid "%{count} Treffer"
+msgstr "%{count} matches"
+
+msgid "%{count} aktive Alarme"
+msgstr "%{count} active alarms"
+
+msgid "%{count} ausgewählt"
+msgstr "%{count} selected"
+
+msgid "%{count} übersprungen"
+msgstr "%{count} skipped"
+
+msgid "%{done} / %{total}"
+msgstr "%{done} / %{total}"
+
+msgid "%{shown} von %{total} Geräten"
+msgstr "%{shown} of %{total} devices"
+
+msgid "%{size} Bytes"
+msgstr "%{size} bytes"
+
+msgid "0 Geräte"
+msgstr "0 devices"
+
+msgid "Abbrechen"
+msgstr "Cancel"
+
+msgid "Abmelden"
+msgstr "Unregister"
+
+msgid "Abnormal"
+msgstr "Abnormal"
+
+msgid "Abonnement auswählen"
+msgstr "Select subscription"
+
+msgid "Abonnement kündigen erfolgreich."
+msgstr "Subscription cancelled successfully."
+
+msgid "Abonnements"
+msgstr "Subscriptions"
+
+msgid "Actions"
+msgstr "Actions"
+
+msgid "Adresse"
+msgstr "Address"
+
+msgid "Aktionen"
+msgstr "Actions"
+
+msgid "Aktiv"
+msgstr "Active"
+
+msgid "Aktive Alarme"
+msgstr "Active alarms"
+
+msgid "Aktive Priorität"
+msgstr "Active priority"
+
+msgid "Aktualisieren"
+msgstr "Refresh"
+
+msgid "Aktualisiert"
+msgstr "Updated"
+
+msgid "Aktuellen Ordner durchsuchen… (-Begriff zum Ausschließen)"
+msgstr "Search current folder… (-term to exclude)"
+
+msgid "Aktueller Wert"
+msgstr "Current value"
+
+msgid "Alarm"
+msgstr "Alarm"
+
+msgid "Alarme"
+msgstr "Alarms"
+
+msgid "Alle"
+msgstr "All"
+
+msgid "Alle Abonnements auswählen"
+msgstr "Select all subscriptions"
+
+msgid "Alle Objekte anzeigen"
+msgstr "Show all objects"
+
+msgid "Alle Objekte auswählen"
+msgstr "Select all objects"
+
+msgid "Alle PV abonnieren"
+msgstr "Subscribe all present values"
+
+msgid "Alle auswählen"
+msgstr "Select all"
+
+msgid "Alle kündigen"
+msgstr "Cancel all"
+
+msgid "Alle sichtbaren Einträge auswählen"
+msgstr "Select all visible entries"
+
+msgid "Ansicht"
+msgstr "View"
+
+msgid "Attempting to reconnect"
+msgstr "Attempting to reconnect"
+
+msgid "Aufklappen"
+msgstr "Expand"
+
+msgid "Aus allen Meldungsklassen entfernt."
+msgstr "Removed from all notification classes."
+
+msgid "Ausführen"
+msgstr "Execute"
+
+msgid "Ausgewählte kündigen"
+msgstr "Cancel selected"
+
+msgid "Ausserhalb Bereich"
+msgstr "Out of range"
+
+msgid "Auswahl aufheben"
+msgstr "Clear selection"
+
+msgid "BACnet Netzwerk-Explorer"
+msgstr "BACnet Network Explorer"
+
+msgid "BACnet-Stack ist nicht gestartet."
+msgstr "BACnet stack is not running."
+
+msgid "BACnet-Stack neu gestartet."
+msgstr "BACnet stack restarted."
+
+msgid "BBMD / Foreign Device"
+msgstr "BBMD / Foreign Device"
+
+msgid "BBMD-Adresse"
+msgstr "BBMD address"
+
+msgid "BBMD-Adresse ist erforderlich."
+msgstr "BBMD address is required."
+
+msgid "BBMD-Registrierung fehlgeschlagen: %{detail}"
+msgstr "BBMD registration failed: %{detail}"
+
+msgid "BacView"
+msgstr "BacView"
+
+msgid "Backup beenden"
+msgstr "End backup"
+
+msgid "Backup starten"
+msgstr "Start backup"
+
+msgid "Baudrate"
+msgstr "Baud rate"
+
+msgid "Bearbeiten"
+msgstr "Edit"
+
+msgid "Befehlsfehler"
+msgstr "Command error"
+
+msgid "Beschreibung"
+msgstr "Description"
+
+msgid "Bestätigt"
+msgstr "Confirmed"
+
+msgid "Binär"
+msgstr "Binary"
+
+msgid "Binärdatei — Inhalt kann nicht als Text angezeigt werden."
+msgstr "Binary file — content cannot be displayed as text."
+
+msgid "Bis"
+msgstr "To"
+
+msgid "Bitstring-Änderung"
+msgstr "Bitstring change"
+
+msgid "Bitte eine Schnittstelle auswählen."
+msgstr "Please select an interface."
+
+msgid "Bitte einen Wert eingeben."
+msgstr "Please enter a value."
+
+msgid "Bitte wählen…"
+msgstr "Please select…"
+
+msgid "Bulk-Abonnement abgeschlossen."
+msgstr "Bulk subscription completed."
+
+msgid "COV"
+msgstr "COV"
+
+msgid "COV abonnieren"
+msgstr "Subscribe COV"
+
+msgid "COV abonnieren erfolgreich."
+msgstr "COV subscription successful."
+
+msgid "COV bestätigt"
+msgstr "COV confirmed"
+
+msgid "COV kündigen"
+msgstr "Cancel COV"
+
+msgid "COV-Abonnement fehlgeschlagen: %{detail}"
+msgstr "COV subscription failed: %{detail}"
+
+msgid "COV-Abonnement kündigen fehlgeschlagen: %{detail}"
+msgstr "COV unsubscribe failed: %{detail}"
+
+msgid "COV-Lifetime (Sek.)"
+msgstr "COV lifetime (sec.)"
+
+msgid "CSV"
+msgstr "CSV"
+
+msgid "Coldstart"
+msgstr "Cold start"
+
+msgid "Das COV-Abonnement konnte nicht eingerichtet werden."
+msgstr "The COV subscription could not be set up."
+
+msgid "Das Gerät hat die Anfrage abgelehnt."
+msgstr "The device rejected the request."
+
+msgid "Das Gerät hat nicht genügend Ressourcen."
+msgstr "The device does not have enough resources."
+
+msgid "Das Gerät hat nicht rechtzeitig geantwortet."
+msgstr "The device did not respond in time."
+
+msgid "Das Gerät ist beschäftigt. Bitte später erneut versuchen."
+msgstr "The device is busy. Please try again later."
+
+msgid "Das Gerät unterstützt diese Funktion nicht."
+msgstr "The device does not support this function."
+
+msgid "Das Gerät unterstützt diesen Dienst nicht."
+msgstr "The device does not support this service."
+
+msgid "Das Gerät unterstützt keine Segmentierung."
+msgstr "The device does not support segmentation."
+
+msgid "Das Objekt ist dem Gerät nicht bekannt."
+msgstr "The object is unknown to the device."
+
+msgid "Datei auf das Gerät schreiben (Atomic Write File)."
+msgstr "Write file to device (Atomic Write File)."
+
+msgid "Datei erfolgreich gelesen."
+msgstr "File read successfully."
+
+msgid "Datei erfolgreich geschrieben."
+msgstr "File written successfully."
+
+msgid "Datei kann nicht geschrieben werden."
+msgstr "File cannot be written."
+
+msgid "Datei lesen"
+msgstr "Read file"
+
+msgid "Datei schreiben"
+msgstr "Write file"
+
+msgid "Dateiübertragung"
+msgstr "File transfer"
+
+msgid "Dauer (Minuten, leer = unbegrenzt)"
+msgstr "Duration (minutes, empty = indefinite)"
+
+msgid "Der Anfrage fehlen erforderliche Parameter."
+msgstr "The request is missing required parameters."
+
+msgid "Der Wert liegt ausserhalb des erlaubten Bereichs."
+msgstr "The value is outside the allowed range."
+
+msgid "Diagramm"
+msgstr "Chart"
+
+msgid "Die Anfrage enthält ungültige BACnet-Daten."
+msgstr "The request contains invalid BACnet data."
+
+msgid "Die Anfrage enthält ungültige Parameter."
+msgstr "The request contains invalid parameters."
+
+msgid "Die Anfrage war für das Gerät zu gross."
+msgstr "The request was too large for the device."
+
+msgid "Die Eigenschaft ist dem Gerät nicht bekannt."
+msgstr "The property is unknown to the device."
+
+msgid "Dienst ausgeführt."
+msgstr "Service executed."
+
+msgid "Dienstfehler"
+msgstr "Service error"
+
+msgid "Diese Eigenschaft unterstützt keine COV-Benachrichtigungen."
+msgstr "This property does not support COV notifications."
+
+msgid "Diese Hilfe ein-/ausblenden"
+msgstr "Toggle this help"
+
+msgid "Diese Änderungen erfordern einen Neustart des BACnet-Stacks. Aktive COV-Abonnements werden neu aufgebaut."
+msgstr "These changes require restarting the BACnet stack. Active COV subscriptions will be re-established."
+
+msgid "Dieser Ordner ist leer."
+msgstr "This folder is empty."
+
+msgid "Dieser Strukturtyp kann noch nicht geschrieben werden"
+msgstr "This structure type cannot be written yet"
+
+msgid "Diskrete Wertänderung"
+msgstr "Discrete value change"
+
+msgid "Dunkel"
+msgstr "Dark"
+
+msgid "Eigenschaft"
+msgstr "Property"
+
+msgid "Eigenschaft erfolgreich geschrieben."
+msgstr "Property written successfully."
+
+msgid "Eigenschaft nicht gefunden."
+msgstr "Property not found."
+
+msgid "Eigenschaft schreiben"
+msgstr "Write property"
+
+msgid "Eigenschaften"
+msgstr "Properties"
+
+msgid "Eigenschaften aktualisieren fehlgeschlagen: %{detail}"
+msgstr "Failed to refresh properties: %{detail}"
+
+msgid "Eigenschaften laden fehlgeschlagen: %{detail}"
+msgstr "Failed to load properties: %{detail}"
+
+msgid "Eigenschaften werden geladen…"
+msgstr "Loading properties…"
+
+msgid "Eigenschaften werden gelesen…"
+msgstr "Reading properties…"
+
+msgid "Eigenschaftsfehler"
+msgstr "Property error"
+
+msgid "Ein Parameter liegt ausserhalb des erlaubten Bereichs."
+msgstr "A parameter is outside the allowed range."
+
+msgid "Ein unerwarteter Fehler ist aufgetreten."
+msgstr "An unexpected error occurred."
+
+msgid "Einheit"
+msgstr "Unit"
+
+msgid "Eintrag in die Empfängerliste fehlgeschlagen."
+msgstr "Failed to enroll in recipient list."
+
+msgid "Empfangen"
+msgstr "Received"
+
+msgid "Empfängerliste eintragen"
+msgstr "Enroll recipient list"
+
+msgid "Empfängerliste entfernen"
+msgstr "Remove recipient list"
+
+msgid "Enable/Disable"
+msgstr "Enable/Disable"
+
+msgid "Entdeckt"
+msgstr "Discovered"
+
+msgid "Ereignis"
+msgstr "Event"
+
+msgid "Ereignisinformation"
+msgstr "Event information"
+
+msgid "Ereignisse abrufen"
+msgstr "Fetch events"
+
+msgid "Ereignisse abrufen fehlgeschlagen: %{detail}"
+msgstr "Failed to fetch events: %{detail}"
+
+msgid "Ereignisse aktualisiert."
+msgstr "Events updated."
+
+msgid "Erweitert"
+msgstr "Advanced"
+
+msgid "Felder"
+msgstr "Fields"
+
+msgid "Foreign Device Registrierung gestartet."
+msgstr "Foreign Device registration started."
+
+msgid "Foreign Device abgemeldet."
+msgstr "Foreign Device unregistered."
+
+msgid "Geladen"
+msgstr "Loaded"
+
+msgid "Gelesen: %{size} Bytes"
+msgstr "Read: %{size} bytes"
+
+msgid "Gerät %{id}"
+msgstr "Device %{id}"
+
+msgid "Gerät aktualisieren"
+msgstr "Refresh device"
+
+msgid "Gerät laden fehlgeschlagen: %{detail}"
+msgstr "Failed to load device: %{detail}"
+
+msgid "Gerät neu initialisieren"
+msgstr "Reinitialize device"
+
+msgid "Gerät nicht gefunden."
+msgstr "Device not found."
+
+msgid "Gerät wird geladen…"
+msgstr "Loading device…"
+
+msgid "Gerät wird neu initialisiert."
+msgstr "Device is being reinitialized."
+
+msgid "Geräte filtern… (-Begriff zum Ausschließen)"
+msgstr "Filter devices… (-term to exclude)"
+
+msgid "Geräte-ID"
+msgstr "Device ID"
+
+msgid "Geräte-ID bis"
+msgstr "Device ID to"
+
+msgid "Geräte-ID von"
+msgstr "Device ID from"
+
+msgid "Geräte-Instanz"
+msgstr "Device instance"
+
+msgid "Gerätebereich ungültig: „von“ muss kleiner oder gleich „bis“ sein."
+msgstr "Invalid device range: 'from' must be less than or equal to 'to'."
+
+msgid "Gerätedaten sind noch nicht geladen."
+msgstr "Device data is not loaded yet."
+
+msgid "Gerätedienste"
+msgstr "Device services"
+
+msgid "Gerätefehler"
+msgstr "Device error"
+
+msgid "Gerätefehler (Code %{code})"
+msgstr "Device error (code %{code})"
+
+msgid "Gerätefehler: %{code}"
+msgstr "Device error: %{code}"
+
+msgid "Gerätekommunikation steuern"
+msgstr "Device communication control"
+
+msgid "Gerätekommunikation wurde gesteuert."
+msgstr "Device communication control sent."
+
+msgid "Geräteliste geleert."
+msgstr "Device list cleared."
+
+msgid "Geräteliste leeren"
+msgstr "Clear device list"
+
+msgid "Geräteobjekt"
+msgstr "Device object"
+
+msgid "Geräteobjekt öffnen"
+msgstr "Open device object"
+
+msgid "Grenzwert"
+msgstr "Limit"
+
+msgid "Hell"
+msgstr "Light"
+
+msgid "Here is the string to translate"
+msgstr "Here is the string to translate"
+
+msgid "Hersteller"
+msgstr "Vendor"
+
+msgid "Hersteller-ID (optional)"
+msgstr "Vendor ID (optional)"
+
+msgid "Herunterladen"
+msgstr "Download"
+
+msgid "Hierarchie"
+msgstr "Hierarchy"
+
+msgid "Hierarchie durchsuchen… (-Begriff zum Ausschließen)"
+msgstr "Search hierarchy… (-term to exclude)"
+
+msgid "Hilfe"
+msgstr "Help"
+
+msgid "Hilfe schliessen"
+msgstr "Close help"
+
+msgid "In flacher Liste anzeigen"
+msgstr "Show in flat list"
+
+msgid "Initiierung deaktivieren"
+msgstr "Disable initiation"
+
+msgid "JSON"
+msgstr "JSON"
+
+msgid "Ja"
+msgstr "Yes"
+
+msgid "Kacheln"
+msgstr "Tiles"
+
+msgid "Kein Objekt zum Schreiben ausgewählt."
+msgstr "No object selected for writing."
+
+msgid "Kein aktives COV-Abonnement gefunden."
+msgstr "No active COV subscription found."
+
+msgid "Kein serieller Port für BACnet MS/TP verfügbar."
+msgstr "No serial port available for BACnet MS/TP."
+
+msgid "Keine Berechtigung für den seriellen Port."
+msgstr "No permission for the serial port."
+
+msgid "Keine Datei zum Herunterladen."
+msgstr "No file available to download."
+
+msgid "Keine Eigenschaften verfügbar."
+msgstr "No properties available."
+
+msgid "Keine Ereignisse. Klicken Sie auf „Ereignisse abrufen“, um GetAlarmSummary abzufragen."
+msgstr "No events. Click \"Fetch events\" to query GetAlarmSummary."
+
+msgid "Keine Meldungsklassen auf diesem Gerät gefunden."
+msgstr "No notification classes found on this device."
+
+msgid "Keine Netzwerkschnittstelle für BACnet/IP verfügbar."
+msgstr "No network interface available for BACnet/IP."
+
+msgid "Keine Strukturansichten gefunden. Das Gerät verwendet eine flache Objektliste."
+msgstr "No structured views found. The device uses a flat object list."
+
+msgid "Keine Treffer"
+msgstr "No matches"
+
+msgid "Keine Treffer in diesem Ordner."
+msgstr "No matches in this folder."
+
+msgid "Keine Verbindung zum BACnet-Stack."
+msgstr "No connection to the BACnet stack."
+
+msgid "Keine Zeitfenster für diesen Tag"
+msgstr "No time windows for this day"
+
+msgid "Keine aktiven Alarme."
+msgstr "No active alarms."
+
+msgid "Keine aktiven Alarme. Objekte mit In-Alarm- oder Störungs-Status erscheinen hier."
+msgstr "No active alarms. Objects with in-alarm or fault status appear here."
+
+msgid "Keine aktiven COV-Abonnements."
+msgstr "No active COV subscriptions."
+
+msgid "Klicken zum Schreiben"
+msgstr "Click to write"
+
+msgid "Kommunikation aktivieren"
+msgstr "Enable communication"
+
+msgid "Kommunikation deaktivieren"
+msgstr "Disable communication"
+
+msgid "Kommunikationsfehler"
+msgstr "Communication error"
+
+msgid "Kommunikationsfehler (%{reason})"
+msgstr "Communication error (%{reason})"
+
+msgid "Komplex"
+msgstr "Complex"
+
+msgid "Kündigen"
+msgstr "Cancel"
+
+msgid "Laden"
+msgstr "Load"
+
+msgid "Lebensschutz-Alarm"
+msgstr "Life safety alarm"
+
+msgid "Lebensschutz-Änderung"
+msgstr "Life safety change"
+
+msgid "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
+msgstr "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is."
+
+msgid "Lesezugriff verweigert."
+msgstr "Read access denied."
+
+msgid "Letzte COV"
+msgstr "Last COV"
+
+msgid "Letzter Scan"
+msgstr "Last scan"
+
+msgid "Liste"
+msgstr "List"
+
+msgid "Live"
+msgstr "Live"
+
+msgid "Log-Puffer via ReadRange"
+msgstr "Log buffer via ReadRange"
+
+msgid "Lokale Zeit"
+msgstr "Local time"
+
+msgid "MS/TP-Adresse"
+msgstr "MS/TP address"
+
+msgid "Meldung"
+msgstr "Message"
+
+msgid "Meldungen"
+msgstr "Notifications"
+
+msgid "Minimum %{min} ms"
+msgstr "Minimum %{min} ms"
+
+msgid "Nach Status filtern"
+msgstr "Filter by status"
+
+msgid "Nach Typ filtern"
+msgstr "Filter by type"
+
+msgid "Name"
+msgstr "Name"
+
+msgid "Nein"
+msgstr "No"
+
+msgid "Netzwerk"
+msgstr "Network"
+
+msgid "Netzwerk scannen"
+msgstr "Scan network"
+
+msgid "Netzwerknummer"
+msgstr "Network number"
+
+msgid "Netzwerkscan abgeschlossen."
+msgstr "Network scan completed."
+
+msgid "Netzwerkverbindung zum Gerät nicht verfügbar."
+msgstr "Network connection to the device is unavailable."
+
+msgid "Neu starten & speichern"
+msgstr "Restart & save"
+
+msgid "Neuer Wert"
+msgstr "New value"
+
+msgid "Neuer Wert (JSON)"
+msgstr "New value (JSON)"
+
+msgid "Neustart-Typ"
+msgstr "Restart type"
+
+msgid "Noch keine COV-Meldungen empfangen."
+msgstr "No COV notifications received yet."
+
+msgid "Noch keine Ereignismeldungen empfangen."
+msgstr "No event notifications received yet."
+
+msgid "Noch keine Geräte gefunden"
+msgstr "No devices found yet"
+
+msgid "Normal"
+msgstr "Normal"
+
+msgid "Null"
+msgstr "Null"
+
+msgid "Null (Priorität zurücksetzen)"
+msgstr "Null (reset priority)"
+
+msgid "Null schreiben (Priorität zurücksetzen)"
+msgstr "Write null (reset priority)"
+
+msgid "Nur"
+msgstr "Only"
+
+msgid "Nur %{type} anzeigen"
+msgstr "Show only %{type}"
+
+msgid "Nur I-Am-Antworten mit dieser BACnet-Hersteller-ID übernehmen."
+msgstr "Only accept I-Am responses with this BACnet vendor ID."
+
+msgid "Nur diesen Status anzeigen"
+msgstr "Show only this status"
+
+msgid "Nur diesen Typ anzeigen"
+msgstr "Show only this type"
+
+msgid "Obergrenze"
+msgstr "High limit"
+
+msgid "Objekt"
+msgstr "Object"
+
+msgid "Objekt auswählen"
+msgstr "Select object"
+
+msgid "Objekt nicht gefunden."
+msgstr "Object not found."
+
+msgid "Objekt nicht geladen."
+msgstr "Object not loaded."
+
+msgid "Objekt vom Gerät neu lesen"
+msgstr "Re-read object from device"
+
+msgid "Objekt wird geladen…"
+msgstr "Loading object…"
+
+msgid "Objekt-ID"
+msgstr "Object ID"
+
+msgid "Objektdetails"
+msgstr "Object details"
+
+msgid "Objekte"
+msgstr "Objects"
+
+msgid "Objekte suchen… (-Begriff zum Ausschließen)"
+msgstr "Search objects… (-term to exclude)"
+
+msgid "Objekteigenschaften öffnen"
+msgstr "Open object properties"
+
+msgid "Objektfehler"
+msgstr "Object error"
+
+msgid "Objekttypen"
+msgstr "Object types"
+
+msgid "Optionaler Instanzbereich für Who-Is (0–4194303)."
+msgstr "Optional instance range for Who-Is (0–4194303)."
+
+msgid "Ordner und Unterobjekte auswählen"
+msgstr "Select folder and sub-objects"
+
+msgid "Passen Sie den Suchbegriff an, um Geräte einzugrenzen."
+msgstr "Adjust the search term to narrow down devices."
+
+msgid "Passwort (optional)"
+msgstr "Password (optional)"
+
+msgid "Pfad"
+msgstr "Path"
+
+msgid "Port"
+msgstr "Port"
+
+msgid "Present Value"
+msgstr "Present value"
+
+msgid "Present Value erfolgreich geschrieben."
+msgstr "Present value written successfully."
+
+msgid "Present Value ist schreibgeschützt."
+msgstr "Present value is read-only."
+
+msgid "Present Value schreiben"
+msgstr "Write present value"
+
+msgid "Present_Value"
+msgstr "Present_Value"
+
+msgid "Priorität"
+msgstr "Priority"
+
+msgid "Priorität zurücksetzen fehlgeschlagen."
+msgstr "Failed to reset priority."
+
+msgid "Puffer bereit"
+msgstr "Buffer ready"
+
+msgid "Quittiert"
+msgstr "Acknowledged"
+
+msgid "Quittierung"
+msgstr "Acknowledgement"
+
+msgid "Quittierung erforderlich"
+msgstr "Acknowledgement required"
+
+msgid "Registrieren"
+msgstr "Register"
+
+msgid "Registrieren Sie BacView als Foreign Device bei einem BBMD. Who-Is wird dann per Distribute-Broadcast-To-Network gesendet."
+msgstr "Register BacView as a Foreign Device with a BBMD. Who-Is is then sent via Distribute-Broadcast-To-Network."
+
+msgid "Remote-Netzwerk-Zugang"
+msgstr "Remote network access"
+
+msgid "Ressourcenfehler"
+msgstr "Resource error"
+
+msgid "Scan & Konfiguration"
+msgstr "Scan & configuration"
+
+msgid "Scan fehlgeschlagen: %{detail}"
+msgstr "Scan failed: %{detail}"
+
+msgid "Scan läuft bereits."
+msgstr "Scan is already running."
+
+msgid "Scannen Sie das Netzwerk, wählen Sie ein Gerät und erkunden Sie Objekte und Eigenschaften in Echtzeit."
+msgstr "Scan the network, select a device, and explore objects and properties in real time."
+
+msgid "Schliessen"
+msgstr "Close"
+
+msgid "Schnittstelle ist erforderlich."
+msgstr "Interface is required."
+
+msgid "Schnittstellen aktualisieren"
+msgstr "Refresh interfaces"
+
+msgid "Schreib-Priorität"
+msgstr "Write priority"
+
+msgid "Schreiben"
+msgstr "Write"
+
+msgid "Schreiben OK, aber Rücklesen fehlgeschlagen: %{detail}"
+msgstr "Write OK, but read-back failed: %{detail}"
+
+msgid "Schreiben fehlgeschlagen: %{detail}"
+msgstr "Write failed: %{detail}"
+
+msgid "Schreibgeschützt"
+msgstr "Read-only"
+
+msgid "Schreibzugriff verweigert."
+msgstr "Write access denied."
+
+msgid "Serieller Port ist belegt."
+msgstr "Serial port is busy."
+
+msgid "Serieller Port nicht gefunden."
+msgstr "Serial port not found."
+
+msgid "Sicherheitsfehler"
+msgstr "Security error"
+
+msgid "Something went wrong!"
+msgstr "Something went wrong!"
+
+msgid "Speichern"
+msgstr "Save"
+
+msgid "Sprache wechseln"
+msgstr "Switch language"
+
+msgid "Stack-Einstellungen"
+msgstr "Stack settings"
+
+msgid "Stack-Einstellungen gespeichert."
+msgstr "Stack settings saved."
+
+msgid "Stack-Einstellungen konnten nicht gespeichert werden."
+msgstr "Stack settings could not be saved."
+
+msgid "Starten Sie einen Netzwerkscan in der Seitenleiste, um BACnet-Geräte zu entdecken."
+msgstr "Start a network scan in the sidebar to discover BACnet devices."
+
+msgid "Status"
+msgstr "Status"
+
+msgid "Status-Flags"
+msgstr "Status flags"
+
+msgid "Störung"
+msgstr "Fault"
+
+msgid "Suche fokussieren"
+msgstr "Focus search"
+
+msgid "System"
+msgstr "System"
+
+msgid "TTL (Sek.)"
+msgstr "TTL (sec.)"
+
+msgid "Tabelle"
+msgstr "Table"
+
+msgid "Tabs wechseln (Hierarchie, Objekte, …)"
+msgstr "Switch tabs (hierarchy, objects, …)"
+
+msgid "Tag-Nummer erforderlich für tagged/constructed Encodings."
+msgstr "Tag number required for tagged/constructed encodings."
+
+msgid "Tastaturkürzel"
+msgstr "Keyboard shortcuts"
+
+msgid "Text"
+msgstr "Text"
+
+msgid "Timeout (ms)"
+msgstr "Timeout (ms)"
+
+msgid "Timer-Änderung"
+msgstr "Timer change"
+
+msgid "Transport"
+msgstr "Transport"
+
+msgid "Transport & lokales Gerät"
+msgstr "Transport & local device"
+
+msgid "Trendprotokoll"
+msgstr "Trend log"
+
+msgid "Trägt BacView per AddListElement in die recipient_list aller Meldungsklassen ein (Fallback: WriteProperty)."
+msgstr "Enrolls BacView via AddListElement into the recipient_list of all notification classes (fallback: WriteProperty)."
+
+msgid "Typ"
+msgstr "Type"
+
+msgid "UTC"
+msgstr "UTC"
+
+msgid "Unbekannt"
+msgstr "Unknown"
+
+msgid "Unbekannter Transport."
+msgstr "Unknown transport."
+
+msgid "Unbenanntes Objekt"
+msgstr "Unnamed object"
+
+msgid "Ungültige Anfrageparameter."
+msgstr "Invalid request parameters."
+
+msgid "Ungültige Geräte-Instanz (0–4194303)."
+msgstr "Invalid device instance (0–4194303)."
+
+msgid "Ungültige Hersteller-ID (0–65535)."
+msgstr "Invalid vendor ID (0–65535)."
+
+msgid "Ungültige IP-Adresse."
+msgstr "Invalid IP address."
+
+msgid "Ungültige Objekt-ID."
+msgstr "Invalid object ID."
+
+msgid "Ungültige Stack-Einstellungen."
+msgstr "Invalid stack settings."
+
+msgid "Ungültige Struktur im JSON."
+msgstr "Invalid structure in JSON."
+
+msgid "Ungültige Zeit. Erwartet HH:MM, HH:MM:SS oder HH:MM:SS.hh (00:00–23:59:59.99)."
+msgstr "Invalid time. Expected HH:MM, HH:MM:SS or HH:MM:SS.hh (00:00–23:59:59.99)."
+
+msgid "Ungültiger Enum-Wert im JSON."
+msgstr "Invalid enum value in JSON."
+
+msgid "Ungültiger Enum-Wert."
+msgstr "Invalid enum value."
+
+msgid "Ungültiger Feldpfad."
+msgstr "Invalid field path."
+
+msgid "Ungültiger JSON-Wert."
+msgstr "Invalid JSON value."
+
+msgid "Ungültiger Wert für den geplanten Datentyp."
+msgstr "Invalid value for the scheduled data type."
+
+msgid "Ungültiger Zeitraum. Bitte Start- und Endzeit prüfen."
+msgstr "Invalid time range. Please check start and end time."
+
+msgid "Ungültiges Encoding."
+msgstr "Invalid encoding."
+
+msgid "Ungültiges JSON."
+msgstr "Invalid JSON."
+
+msgid "Ungültiges Timeout."
+msgstr "Invalid timeout."
+
+msgid "Unquittiert"
+msgstr "Unacknowledged"
+
+msgid "Untergrenze"
+msgstr "Low limit"
+
+msgid "Untertabs im Alarm-Tab wechseln"
+msgstr "Switch alarm sub-tabs"
+
+msgid "Verbindung abgebrochen (%{reason})"
+msgstr "Connection aborted (%{reason})"
+
+msgid "Verbleibend"
+msgstr "Remaining"
+
+msgid "Verwenden Sie „Herunterladen“, um die Datei zu speichern."
+msgstr "Use “Download” to save the file."
+
+msgid "Von"
+msgstr "From"
+
+msgid "Vorschau gekürzt"
+msgstr "Preview truncated"
+
+msgid "Warmstart"
+msgstr "Warm start"
+
+msgid "Warte auf BACnet-Antwort…"
+msgstr "Waiting for BACnet response…"
+
+msgid "We can't find the internet"
+msgstr "We can't find the internet"
+
+msgid "Wert"
+msgstr "Value"
+
+msgid "Wertänderung"
+msgstr "Value change"
+
+msgid "Wiederherstellung abbrechen"
+msgstr "Abort restore"
+
+msgid "Wiederherstellung beenden"
+msgstr "End restore"
+
+msgid "Wiederherstellung starten"
+msgstr "Start restore"
+
+msgid "Wochenplan bearbeiten"
+msgstr "Edit weekly schedule"
+
+msgid "Wochentage"
+msgstr "Weekdays"
+
+msgid "Wurzel"
+msgstr "Root"
+
+msgid "Wählen Sie ein Objekt aus der Liste."
+msgstr "Select an object from the list."
+
+msgid "Zeit"
+msgstr "Time"
+
+msgid "Zeitfenster entfernen"
+msgstr "Remove time window"
+
+msgid "Zeitfenster hinzufügen"
+msgstr "Add time window"
+
+msgid "Zeitmodus"
+msgstr "Time mode"
+
+msgid "Zeitsynchronisation"
+msgstr "Time synchronization"
+
+msgid "Zeitsynchronisation gesendet."
+msgstr "Time synchronization sent."
+
+msgid "Zeitüberschreitung bei der Gerätekommunikation."
+msgstr "Device communication timed out."
+
+msgid "Ziel-IP (optional)"
+msgstr "Target IP (optional)"
+
+msgid "Zugriff auf den seriellen Port verweigert (Berechtigung fehlt)."
+msgstr "Access to the serial port denied (permission missing)."
+
+msgid "Zur Geräteansicht"
+msgstr "To device view"
+
+msgid "Zur Hierarchie"
+msgstr "To hierarchy"
+
+msgid "Zur Objektliste"
+msgstr "To object list"
+
+msgid "Zur Startseite"
+msgstr "To home"
+
+msgid "Zurück"
+msgstr "Back"
+
+msgid "Zurück zur Geräteansicht"
+msgstr "Back to device view"
+
+msgid "Zurück zur Hierarchie"
+msgstr "Back to hierarchy"
+
+msgid "Zurück zur Objektliste"
+msgstr "Back to object list"
+
+msgid "Zustand"
+msgstr "State"
+
+msgid "Zustandsänderung"
+msgstr "State change"
+
+msgid "Zyklus"
+msgstr "Cycle"
+
+msgid "close"
+msgstr "close"
+
+msgid "erwartet Zahl"
+msgstr "expected number"
+
+msgid "erwartet true/false"
+msgstr "expected true/false"
+
+msgid "unbegrenzt"
+msgstr "indefinite"
+
+msgid "Änderungen aktivieren"
+msgstr "Activate changes"

@@ -1,0 +1,16 @@
+#!/bin/sh
+set -eu
+
+cd "$(dirname "$0")/.."
+
+export PHX_SERVER="${PHX_SERVER:-true}"
+
+# Support --bacstack-debug as a top-level flag for convenience, e.g.
+#   bin/bacview start --bacstack-debug
+# We translate it to the form the VM receives as a plain argument.
+if [ "${1:-}" = "--bacstack-debug" ]; then
+  shift
+  exec ./bin/bacview start -- --bacstack-debug "$@"
+fi
+
+exec ./bin/bacview start "$@"

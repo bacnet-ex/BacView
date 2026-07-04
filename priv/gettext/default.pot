@@ -1,0 +1,417 @@
+## This file is a PO Template file.
+##
+## "msgid"s here are often extracted from source code.
+## Add new messages manually only if they're dynamic
+## messages that can't be statically extracted.
+##
+## Run "mix gettext.extract" to bring this file up to
+## date. Leave "msgstr"s empty as changing them here has no
+## effect: edit them in PO (.po) files instead.
+#
+msgid ""
+msgstr ""
+
+#: lib/bac_view_web/components/core_components.ex:351
+#, elixir-autogen, elixir-format
+msgid "Actions"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:89
+#, elixir-autogen, elixir-format
+msgid "Gerät nicht gefunden."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/property_display.ex:355
+#, elixir-autogen, elixir-format
+msgid "Ja"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/property_display.ex:356
+#, elixir-autogen, elixir-format
+msgid "Nein"
+msgstr ""
+
+#: lib/bac_view_web/components/core_components.ex:80
+#, elixir-autogen, elixir-format
+msgid "close"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/property_display.ex:53
+#: lib/bac_view/bacnet/protocol/property_display.ex:73
+#, elixir-autogen, elixir-format
+msgid "%{count} Einträge"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/property_display.ex:49
+#: lib/bac_view/bacnet/protocol/property_display.ex:82
+#, elixir-autogen, elixir-format
+msgid "%{count} Prioritäten gesetzt"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:17
+#, elixir-autogen, elixir-format
+msgid "Abnormal"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:30
+#, elixir-autogen, elixir-format
+msgid "Alarm"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:47
+#, elixir-autogen, elixir-format
+msgid "Ausserhalb Bereich"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:45
+#, elixir-autogen, elixir-format
+msgid "Befehlsfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:42
+#, elixir-autogen, elixir-format
+msgid "Bitstring-Änderung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:52
+#, elixir-autogen, elixir-format
+msgid "Diskrete Wertänderung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:31
+#, elixir-autogen, elixir-format
+msgid "Ereignis"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:51
+#, elixir-autogen, elixir-format
+msgid "Erweitert"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:46
+#, elixir-autogen, elixir-format
+msgid "Grenzwert"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:48
+#, elixir-autogen, elixir-format
+msgid "Komplex"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:20
+#, elixir-autogen, elixir-format
+msgid "Lebensschutz-Alarm"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:50
+#, elixir-autogen, elixir-format
+msgid "Lebensschutz-Änderung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:15
+#, elixir-autogen, elixir-format
+msgid "Normal"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:18
+#, elixir-autogen, elixir-format
+msgid "Obergrenze"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:49
+#, elixir-autogen, elixir-format
+msgid "Puffer bereit"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:69
+#, elixir-autogen, elixir-format
+msgid "Quittiert"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:32
+#, elixir-autogen, elixir-format
+msgid "Quittierung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:63
+#, elixir-autogen, elixir-format
+msgid "Quittierung erforderlich"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:16
+#, elixir-autogen, elixir-format
+msgid "Störung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:53
+#, elixir-autogen, elixir-format
+msgid "Timer-Änderung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:67
+#, elixir-autogen, elixir-format
+msgid "Unquittiert"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:19
+#, elixir-autogen, elixir-format
+msgid "Untergrenze"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:44
+#, elixir-autogen, elixir-format
+msgid "Wertänderung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/event_formatter.ex:43
+#, elixir-autogen, elixir-format
+msgid "Zustandsänderung"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:124
+#, elixir-autogen, elixir-format
+msgid "%{class}: %{code}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/property_display.ex:69
+#, elixir-autogen, elixir-format
+msgid "%{count} Felder"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:59
+#, elixir-autogen, elixir-format
+msgid "BBMD-Registrierung fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:35
+#, elixir-autogen, elixir-format
+msgid "COV-Abonnement fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:38
+#, elixir-autogen, elixir-format
+msgid "COV-Abonnement kündigen fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:150
+#, elixir-autogen, elixir-format
+msgid "Das COV-Abonnement konnte nicht eingerichtet werden."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:159
+#, elixir-autogen, elixir-format
+msgid "Das Gerät hat die Anfrage abgelehnt."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:234
+#, elixir-autogen, elixir-format
+msgid "Das Gerät hat nicht genügend Ressourcen."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:225
+#, elixir-autogen, elixir-format
+msgid "Das Gerät hat nicht rechtzeitig geantwortet."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:174
+#, elixir-autogen, elixir-format
+msgid "Das Gerät ist beschäftigt. Bitte später erneut versuchen."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:147
+#, elixir-autogen, elixir-format
+msgid "Das Gerät unterstützt diese Funktion nicht."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:205
+#, elixir-autogen, elixir-format
+msgid "Das Gerät unterstützt diesen Dienst nicht."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:228
+#, elixir-autogen, elixir-format
+msgid "Das Gerät unterstützt keine Segmentierung."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:162
+#, elixir-autogen, elixir-format
+msgid "Das Objekt ist dem Gerät nicht bekannt."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:211
+#, elixir-autogen, elixir-format
+msgid "Der Anfrage fehlen erforderliche Parameter."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:186
+#, elixir-autogen, elixir-format
+msgid "Der Wert liegt ausserhalb des erlaubten Bereichs."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:217
+#, elixir-autogen, elixir-format
+msgid "Die Anfrage enthält ungültige BACnet-Daten."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:214
+#, elixir-autogen, elixir-format
+msgid "Die Anfrage enthält ungültige Parameter."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:208
+#: lib/bac_view/bacnet/protocol/error_message.ex:231
+#, elixir-autogen, elixir-format
+msgid "Die Anfrage war für das Gerät zu gross."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:165
+#, elixir-autogen, elixir-format
+msgid "Die Eigenschaft ist dem Gerät nicht bekannt."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:142
+#, elixir-autogen, elixir-format
+msgid "Dienstfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:153
+#, elixir-autogen, elixir-format
+msgid "Diese Eigenschaft unterstützt keine COV-Benachrichtigungen."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:44
+#, elixir-autogen, elixir-format
+msgid "Eigenschaften aktualisieren fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:41
+#, elixir-autogen, elixir-format
+msgid "Eigenschaften laden fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:139
+#, elixir-autogen, elixir-format
+msgid "Eigenschaftsfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:189
+#, elixir-autogen, elixir-format
+msgid "Ein Parameter liegt ausserhalb des erlaubten Bereichs."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:97
+#, elixir-autogen, elixir-format
+msgid "Ein unerwarteter Fehler ist aufgetreten."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:56
+#, elixir-autogen, elixir-format
+msgid "Ereignisse abrufen fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:53
+#, elixir-autogen, elixir-format
+msgid "Gerät laden fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:90
+#, elixir-autogen, elixir-format
+msgid "Gerätedaten sind noch nicht geladen."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:137
+#, elixir-autogen, elixir-format
+msgid "Gerätefehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:200
+#, elixir-autogen, elixir-format
+msgid "Gerätefehler (Code %{code})"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:193
+#, elixir-autogen, elixir-format
+msgid "Gerätefehler: %{code}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:156
+#, elixir-autogen, elixir-format
+msgid "Kein aktives COV-Abonnement gefunden."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:92
+#, elixir-autogen, elixir-format
+msgid "Keine Verbindung zum BACnet-Stack."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:143
+#, elixir-autogen, elixir-format
+msgid "Kommunikationsfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:115
+#, elixir-autogen, elixir-format
+msgid "Kommunikationsfehler (%{reason})"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:168
+#, elixir-autogen, elixir-format
+msgid "Lesezugriff verweigert."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:180
+#, elixir-autogen, elixir-format
+msgid "Netzwerkverbindung zum Gerät nicht verfügbar."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:138
+#, elixir-autogen, elixir-format
+msgid "Objektfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:140
+#, elixir-autogen, elixir-format
+msgid "Ressourcenfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:62
+#, elixir-autogen, elixir-format
+msgid "Scan fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:50
+#, elixir-autogen, elixir-format
+msgid "Schreiben OK, aber Rücklesen fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:47
+#, elixir-autogen, elixir-format
+msgid "Schreiben fehlgeschlagen: %{detail}"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:171
+#, elixir-autogen, elixir-format
+msgid "Schreibzugriff verweigert."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:141
+#, elixir-autogen, elixir-format
+msgid "Sicherheitsfehler"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:183
+#, elixir-autogen, elixir-format
+msgid "Ungültige Anfrageparameter."
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:120
+#, elixir-autogen, elixir-format
+msgid "Verbindung abgebrochen (%{reason})"
+msgstr ""
+
+#: lib/bac_view/bacnet/protocol/error_message.ex:91
+#: lib/bac_view/bacnet/protocol/error_message.ex:177
+#: lib/bac_view/bacnet/protocol/error_message.ex:222
+#, elixir-autogen, elixir-format
+msgid "Zeitüberschreitung bei der Gerätekommunikation."
+msgstr ""

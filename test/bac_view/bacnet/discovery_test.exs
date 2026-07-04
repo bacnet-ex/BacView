@@ -1,0 +1,174 @@
+defmodule BacView.BACnet.DiscoveryTest do
+  use ExUnit.Case, async: true
+
+  alias BacView.BACnet.Discovery
+
+  test "normalize_device_name sanitizes BACnet object names" do
+    assert Discovery.normalize_device_name("AHU-1") == "AHU-1"
+    assert Discovery.normalize_device_name("") == nil
+    assert Discovery.normalize_device_name(nil) == nil
+  end
+
+  describe "cancel_scan/0" do
+    setup do
+      if :ets.whereis(:bacview_devices) == :undefined do
+        :ets.new(:bacview_devices, [:named_table, :set, :public])
+      end
+
+      on_exit(fn ->
+        if :ets.whereis(:bacview_devices) != :undefined do
+          :ets.delete(:bacview_devices)
+        end
+      end)
+
+      :ok
+    end
+
+    test "removes all discovered devices" do
+      :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42}})
+
+      assert Discovery.cancel_scan() == :ok
+      assert Discovery.list_devices() == []
+    end
+  end
+
+  describe "clear_devices/0" do
+    setup do
+      if :ets.whereis(:bacview_devices) == :undefined do
+        :ets.new(:bacview_devices, [:named_table, :set, :public])
+      end
+
+      on_exit(fn ->
+        if :ets.whereis(:bacview_devices) != :undefined do
+          :ets.delete(:bacview_devices)
+        end
+      end)
+
+      :ok
+    end
+
+    test "removes all discovered devices" do
+      :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42}})
+
+      assert Discovery.clear_devices() == :ok
+      assert Discovery.list_devices() == []
+    end
+  end
+
+  describe "parse_scan_params/1" do
+    test "defaults timeout when omitted" do
+      assert Discovery.parse_scan_params(%{}) == {:ok, [timeout: Discovery.default_timeout()]}
+    end
+
+    test "accepts custom timeout" do
+      assert Discovery.parse_scan_params(%{"timeout_ms" => "2500"}) == {:ok, [timeout: 2500]}
+    end
+
+    test "rejects timeout below minimum on server" do
+      assert Discovery.parse_scan_params(%{"timeout_ms" => "499"}) ==
+               {:error, {:timeout_too_low, Discovery.min_timeout()}}
+    end
+
+    test "rejects invalid timeout" do
+      assert Discovery.parse_scan_params(%{"timeout_ms" => "abc"}) == {:error, :invalid_timeout}
+    end
+
+    test "parses optional target IP for unicast Who-Is" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{"timeout_ms" => "1000", "target_ip" => "10.0.0.42"})
+
+      assert Keyword.fetch!(opts, :timeout) == 1000
+      assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, 47_808}]
+    end
+
+    test "parses target IP octet range for multiple unicast Who-Is" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{
+                 "timeout_ms" => "1000",
+                 "target_ip" => "192.168.100.[31-35]"
+               })
+
+      assert Keyword.fetch!(opts, :timeout) == 1000
+
+      assert Keyword.fetch!(opts, :destination) == [
+               {{192, 168, 100, 31}, 47_808},
+               {{192, 168, 100, 32}, 47_808},
+               {{192, 168, 100, 33}, 47_808},
+               {{192, 168, 100, 34}, 47_808},
+               {{192, 168, 100, 35}, 47_808}
+             ]
+    end
+
+    test "rejects oversized target IP ranges" do
+      assert Discovery.parse_scan_params(%{"target_ip" => "10.0.0.[0-300]"}) ==
+               {:error, :invalid_host}
+
+      assert Discovery.parse_scan_params(%{"target_ip" => "10.0.[0-255].[0-255]"}) ==
+               {:error, {:too_many_targets, 256}}
+    end
+
+    test "ignores blank target IP" do
+      assert Discovery.parse_scan_params(%{"timeout_ms" => "1000", "target_ip" => "  "}) ==
+               {:ok, [timeout: 1000]}
+    end
+
+    test "rejects invalid target IP" do
+      assert Discovery.parse_scan_params(%{"target_ip" => "not-an-ip"}) == {:error, :invalid_host}
+    end
+
+    test "parses optional device ID range for Who-Is" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{
+                 "timeout_ms" => "1000",
+                 "device_id_low" => "100",
+                 "device_id_high" => "200"
+               })
+
+      assert Keyword.fetch!(opts, :timeout) == 1000
+      assert Keyword.fetch!(opts, :low_limit) == 100
+      assert Keyword.fetch!(opts, :high_limit) == 200
+      refute Keyword.has_key?(opts, :vendor_id)
+    end
+
+    test "ignores blank device ID range fields" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{
+                 "device_id_low" => " ",
+                 "device_id_high" => ""
+               })
+
+      refute Keyword.has_key?(opts, :low_limit)
+      refute Keyword.has_key?(opts, :high_limit)
+    end
+
+    test "rejects invalid device ID values" do
+      assert Discovery.parse_scan_params(%{"device_id_low" => "abc"}) ==
+               {:error, :invalid_device_id}
+
+      assert Discovery.parse_scan_params(%{"device_id_high" => "5000000"}) ==
+               {:error, :invalid_device_id}
+    end
+
+    test "rejects device ID range when low exceeds high" do
+      assert Discovery.parse_scan_params(%{"device_id_low" => "500", "device_id_high" => "100"}) ==
+               {:error, :invalid_device_range}
+    end
+
+    test "parses optional vendor ID filter" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{"vendor_id" => "5"})
+
+      assert Keyword.fetch!(opts, :vendor_id) == 5
+    end
+
+    test "ignores blank vendor ID" do
+      assert {:ok, opts} = Discovery.parse_scan_params(%{"vendor_id" => "  "})
+      refute Keyword.has_key?(opts, :vendor_id)
+    end
+
+    test "rejects invalid vendor ID" do
+      assert Discovery.parse_scan_params(%{"vendor_id" => "70000"}) ==
+               {:error, :invalid_vendor_id}
+    end
+  end
+end
