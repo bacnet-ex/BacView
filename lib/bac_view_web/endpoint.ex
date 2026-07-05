@@ -4,12 +4,14 @@ defmodule BacViewWeb.Endpoint.CompileHelper do
   @desktop_mode Application.compile_env(:bacview, :desktop_mode)
 
   # Workaround to compile errors that expands `use` before the `if`
-  defmacro use_endpoint() do
-    if @desktop_mode do
+  if @desktop_mode do
+    defmacro use_endpoint() do
       quote do
         use Desktop.Endpoint, otp_app: :bacview
       end
-    else
+    end
+  else
+    defmacro use_endpoint() do
       quote do
         use Phoenix.Endpoint, otp_app: :bacview
       end

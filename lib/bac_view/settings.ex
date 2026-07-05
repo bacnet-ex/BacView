@@ -254,10 +254,8 @@ defmodule BacView.Settings do
     |> maybe_coerce_mstp_transport()
   end
 
-  defp maybe_coerce_mstp_transport(%{transport: "mstp"} = settings) do
-    if @mstp_enabled do
-      settings
-    else
+  if not @mstp_enabled do
+    defp maybe_coerce_mstp_transport(%{transport: "mstp"} = settings) do
       %{settings | transport: "ipv4", interface: nil}
     end
   end
