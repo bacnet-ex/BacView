@@ -1,2 +1,6 @@
 # convert CRLF to LF
 * text=auto eol=lf
+
+# mark dirs as linguist vendored
+assets/vendor/* linguist-vendored
+priv/static/* linguist-vendored
