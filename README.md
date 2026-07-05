@@ -72,7 +72,7 @@ Desktop notes:
 
 - Settings persist under `~/.config/bacview/runtime_settings.json`
 - OS locale is detected on first launch (`Desktop.identify_default_locale/1`); DE/EN can still be switched in the app
-- MS/TP will be included if the dependency `circuits_uart` is present - typically it will be omitted on Windows (due to NIF)
+- MS/TP will be included if the dependency `circuits_uart` is present or non-Windows OS - typically it will be omitted on Windows (due to NIF)
 
 Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 
@@ -83,9 +83,10 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 | `PORT` | `4000` | HTTP port |
 | `PHX_SERVER` | — | Set `true` to start HTTP in releases |
 | `SECRET_KEY_BASE` | — | Required in production (see `mix phx.gen.secret`) |
-| `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 | `BACVIEW_BACSTACK_DEBUG` | — | Enable verbose bacstack debug logs (`1` / `true`) |
+| `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
 | `BACVIEW_DESKTOP` | — | Set to `1` at compile time to build the desktop app (see above) |
+| `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 
 ## Production release
 
@@ -115,7 +116,7 @@ BacView.Application
 ├── BacViewWeb.Endpoint
 ├── BacView.PubSub
 ├── BacView.BACnet.Cache          # ETS tables
-├── BacView.BACnet.Stack          # bacstack client (IPv4 transport)
+├── BacView.BACnet.Stack          # bacstack client (IPv4/MSTP transport)
 ├── BacView.Settings
 ├── BacView.BACnet.Discovery
 ├── BacView.BACnet.SubscriptionManager
@@ -123,7 +124,8 @@ BacView.Application
 └── BacView.BACnet.DeviceSessionSupervisor
 ```
 
-**Transports:** `BacView.BACnet.Transport.IPv4` is production-ready. `BacView.BACnet.Transport.BACnetSC` is a documented stub for future BACnet/SC support.
+**Transports:** `BacView.BACnet.Transport.IPv4` is production-ready. `BacView.BACnet.Transport.MSTP` is available,
+but considered experimental. `BacView.BACnet.Transport.BACnetSC` is a documented stub for future BACnet/SC support.
 
 ## Tests
 
