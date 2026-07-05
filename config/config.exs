@@ -11,7 +11,11 @@ desktop_mode? = System.get_env("BACVIEW_DESKTOP") in ~w(1 true yes)
 windows? = match?({:win32, _}, :os.type())
 
 config :bacview, :desktop_mode, desktop_mode?
-config :bacview, :mstp_enabled, Code.ensure_loaded?(Circuits.UART) or System.get_env("BACVIEW_ENABLE_MSTP") in ~w(1 true yes)
+
+config :bacview,
+       :mstp_enabled,
+       Code.ensure_loaded?(Circuits.UART) or
+         System.get_env("BACVIEW_ENABLE_MSTP") in ~w(1 true yes)
 
 config :bacview,
   generators: [timestamp_type: :utc_datetime]
