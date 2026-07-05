@@ -5,6 +5,7 @@ defmodule BacView.Application do
 
   @impl true
   def start(_type, _args) do
+    load_all_bacstack_modules()
     configure_bacstack_logging()
 
     bacnet_children =
@@ -64,6 +65,16 @@ defmodule BacView.Application do
   def config_change(changed, _new, removed) do
     BacViewWeb.Endpoint.config_change(changed, removed)
     :ok
+  end
+
+  # We need to make sure all bacstack modules are loaded in :prod
+  # So we just do it always, it doesn't hurt us
+  defp load_all_bacstack_modules() do
+    {:ok, modules} = :application.get_key(:bacstack, :modules)
+
+    for module <- modules do
+      Code.ensure_loaded(module)
+    end
   end
 
   # By default, suppress verbose debug logs from the bacstack library.
