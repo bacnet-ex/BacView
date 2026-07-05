@@ -1,5 +1,7 @@
 import Config
 
+config :bacview, :desktop_mode, false
+config :bacview, :mstp_enabled, true
 config :bacview, start_bacnet: false
 
 config :bacview,

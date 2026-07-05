@@ -7,6 +7,12 @@
 # General application configuration
 import Config
 
+desktop_mode? = System.get_env("BACVIEW_DESKTOP") in ~w(1 true yes)
+windows? = match?({:win32, _}, :os.type())
+
+config :bacview, :desktop_mode, desktop_mode?
+config :bacview, :mstp_enabled, Code.ensure_loaded?(Circuits.UART)
+
 config :bacview,
   generators: [timestamp_type: :utc_datetime]
 
@@ -54,10 +60,65 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Configure codepagex
+config :codepagex, :encodings, [
+  :ascii,
+  :iso_8859_1,
+  "VENDORS/MICSFT/PC/CP850",
+  "VENDORS/MICSFT/WINDOWS/CP932"
+]
+
 # Enable debug logging paths in the bacstack library (actual output is still
 # controlled at runtime via Logger application level, see BacView.Application).
 config :bacstack, :debug, true
 
+# Configure bacstack
+config :bacstack, :default_timezone, "Etc/UTC"
+
+# WAGO proprietary properties
+config :bacstack, :additional_property_identifiers,
+  device_uuid: 507,
+  timezone_string: 516,
+  timezone: 517,
+  time_before_operation: 518,
+  loop_enable: 523,
+  loop_mode: 524
+
+# WAGO proprietary properties
+config :bacstack, :objects_additional_properties,
+  device:
+    (quote do
+       # Intrinsic Reporting was added in 135-2016
+       # services(intrinsic: true)
+
+       field(:device_uuid, binary(),
+         annotation: [decoder: fn %{value: value} -> Base.encode16(value) end]
+       )
+
+       field(:timezone_string, String.t())
+       field(:timezone, String.t())
+     end),
+  loop:
+    (quote do
+       field(:loop_enable, boolean(), encode_as: :enumerated)
+
+       field(:loop_mode, :bacnet_loop | :plc_loop,
+         bac_type: {:in_list, [:bacnet_loop, :plc_loop]},
+         annotation: [
+           encoder: &{:enumerated, if(&1 == :plc_loop, do: 1, else: 0)},
+           decoder: &if(&1.value == 1, do: :plc_loop, else: :bacnet_loop)
+         ]
+       )
+     end),
+  schedule:
+    (quote do
+       field(:time_before_operation, non_neg_integer())
+     end)
+
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.
 import_config "#{config_env()}.exs"
+
+if desktop_mode? do
+  import_config "desktop.exs"
+end

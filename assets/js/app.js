@@ -33,11 +33,19 @@ import StopPropagation from "./hooks/stop_propagation"
 const csrfToken =
   document.querySelector("meta[name='csrf-token']")?.getAttribute("content") ?? ""
 
+function initialLocale() {
+  const stored = localStorage.getItem("bacview_locale")
+  if (stored) return stored
+
+  const root = document.querySelector("[data-locale]")
+  return root?.dataset.locale || "de"
+}
+
 const liveSocket = new LiveSocket("/live", Socket, {
   longPollFallbackMs: 2500,
   params: () => ({
     _csrf_token: csrfToken,
-    locale: localStorage.getItem("bacview_locale") || "de",
+    locale: initialLocale(),
   }),
   hooks: {...colocatedHooks, BacViewRoot, FilterMenu, TrendLogChart, StopPropagation},
 })

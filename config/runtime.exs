@@ -1,5 +1,11 @@
 import Config
 
+if Application.get_env(:bacview, :desktop_mode) do
+  config :bacview,
+         :runtime_settings_path,
+         Path.join([Desktop.OS.home(), ".config", "bacview", "runtime_settings.json"])
+end
+
 # config/runtime.exs is executed for all environments, including
 # during releases. It is executed after compilation and before the
 # system starts, so it is typically used to load production configuration

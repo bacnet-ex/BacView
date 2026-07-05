@@ -7,6 +7,8 @@ defmodule BacView.Application do
   def start(_type, _args) do
     load_all_bacstack_modules()
     configure_bacstack_logging()
+    maybe_configure_desktop_locale()
+    maybe_init_desktop_session_table()
 
     bacnet_children =
       if Application.get_env(:bacview, :start_bacnet, true) do
@@ -34,7 +36,8 @@ defmodule BacView.Application do
         BacView.Settings
       ] ++
         bacnet_children ++
-        [BacViewWeb.Endpoint]
+        [BacViewWeb.Endpoint] ++
+        desktop_window_children()
 
     opts = [strategy: :one_for_one, name: BacView.Supervisor]
 
@@ -48,6 +51,48 @@ defmodule BacView.Application do
     end
   end
 
+  @impl true
+  def config_change(changed, _new, removed) do
+    BacViewWeb.Endpoint.config_change(changed, removed)
+    :ok
+  end
+
+  if Application.compile_env(:bacview, :desktop_mode) do
+    defp maybe_configure_desktop_locale() do
+      Desktop.identify_default_locale(BacViewWeb.Gettext)
+
+      detected =
+        Application.get_env(:gettext, :default_locale) ||
+          Application.get_env(:bacview, BacViewWeb.Gettext)[:default_locale] ||
+          "de"
+
+      Application.put_env(:bacview, BacViewWeb.Gettext, default_locale: detected)
+      Gettext.put_locale(BacViewWeb.Gettext, detected)
+    end
+
+    defp maybe_init_desktop_session_table() do
+      :ets.new(:bacview_session, [:named_table, :public, read_concurrency: true])
+    end
+
+    defp desktop_window_children() do
+      [
+        {Desktop.Window,
+         [
+           app: :bacview,
+           id: BacViewWindow,
+           title: "BacView",
+           size: {1280, 800},
+           icon: "icon.png",
+           url: &BacViewWeb.Endpoint.url/0
+         ]}
+      ]
+    end
+  else
+    defp maybe_configure_desktop_locale(), do: :ok
+    defp maybe_init_desktop_session_table(), do: :ok
+    defp desktop_window_children(), do: []
+  end
+
   defp maybe_start_bacnet_runtime() do
     if Application.get_env(:bacview, :start_bacnet, true) do
       case BacView.BACnet.Stack.Boot.start_runtime() do
@@ -59,12 +104,6 @@ defmodule BacView.Application do
           Logger.warning("BACnet stack is offline until settings are fixed: #{inspect(reason)}")
       end
     end
-  end
-
-  @impl true
-  def config_change(changed, _new, removed) do
-    BacViewWeb.Endpoint.config_change(changed, removed)
-    :ok
   end
 
   # We need to make sure all bacstack modules are loaded in :prod

@@ -9,6 +9,8 @@ defmodule BacView.Settings do
   @settings_file "runtime_settings.json"
 
   @stack_keys ~w(transport interface mstp_local_address mstp_baud_rate)a
+  @mstp_enabled Application.compile_env!(:bacview, :mstp_enabled)
+  @supported_transports if @mstp_enabled, do: ~w(ipv4 mstp), else: ~w(ipv4)
 
   @type t :: %{
           transport: String.t(),
@@ -192,7 +194,7 @@ defmodule BacView.Settings do
     end)
   end
 
-  defp supported_transports(), do: ~w(ipv4 mstp)
+  defp supported_transports(), do: @supported_transports
 
   defp load_settings() do
     path = settings_path()
@@ -249,7 +251,18 @@ defmodule BacView.Settings do
     |> update_in([:cov_increment], &parse_cov_increment/1)
     |> update_in([:mstp_baud_rate], &normalize_mstp_baud_rate/1)
     |> update_in([:bbmd_host], &empty_to_nil/1)
+    |> maybe_coerce_mstp_transport()
   end
+
+  defp maybe_coerce_mstp_transport(%{transport: "mstp"} = settings) do
+    if @mstp_enabled do
+      settings
+    else
+      %{settings | transport: "ipv4", interface: nil}
+    end
+  end
+
+  defp maybe_coerce_mstp_transport(settings), do: settings
 
   defp normalize_mstp_baud_rate(:auto), do: :auto
   defp normalize_mstp_baud_rate("auto"), do: :auto

@@ -12,7 +12,11 @@ defmodule BacView.BACnet.TransportResolver do
     "bacnet_sc" => BacView.BACnet.Transport.BACnetSC
   }
 
-  @ui_transports ~w(ipv4 mstp)
+  @ui_transports (if Application.compile_env(:bacview, :mstp_enabled, true) do
+                    ~w(ipv4 mstp)
+                  else
+                    ~w(ipv4)
+                  end)
 
   @spec resolve() :: {:ok, module(), keyword()} | {:error, term()}
   def resolve() do

@@ -8,13 +8,21 @@ defmodule BacViewWeb.LocaleHook do
   alias BacViewWeb.Locale
   alias BacViewWeb.LocaleStore
 
+  @spec resolve_locale(map() | nil, map(), map() | nil) :: String.t()
+  def resolve_locale(connect_params, session, gettext_config \\ nil) do
+    connect_params = connect_params || %{}
+    session = session || %{}
+
+    connect_params["locale"] ||
+      session["locale"] ||
+      (gettext_config || Application.get_env(:bacview, BacViewWeb.Gettext))[:default_locale] ||
+      "de"
+  end
+
   def on_mount(:default, _params, session, socket) do
     locale =
       transport_locale(socket) ||
-        get_connect_params(socket)["locale"] ||
-        session["locale"] ||
-        Application.get_env(:bacview, BacViewWeb.Gettext)[:default_locale] ||
-        "de"
+        resolve_locale(get_connect_params(socket), session)
 
     Gettext.put_locale(BacViewWeb.Gettext, locale)
 
