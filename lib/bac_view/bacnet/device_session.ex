@@ -344,10 +344,12 @@ defmodule BacView.BACnet.DeviceSession do
            read_object_fallback(address, device_obj, allow_unknown_properties: true),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
          {:ok, scanned} <- scan_object_list(device_id, address, device_obj, object_ids) do
+      scanned_len = length(scanned)
+
       report_progress(device_id, %{
         stage: :building_hierarchy,
-        done: length(scanned),
-        total: length(scanned)
+        done: scanned_len,
+        total: scanned_len
       })
 
       objects =
@@ -502,7 +504,8 @@ defmodule BacView.BACnet.DeviceSession do
     else
       scan_opts = [
         allow_unknown_properties: true,
-        remote_device_id: device_obj.instance
+        remote_device_id: device_obj.instance,
+        skip_property_validation_remote_object: true
       ]
 
       done_counter = :counters.new(1, [])
