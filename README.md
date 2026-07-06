@@ -38,7 +38,7 @@ To discover devices on a **remote BACnet/IP network**, register BacView as a For
 
 Copy `.env.example` to `.env` and adjust as needed (optional in dev).
 
-## Desktop app (optional)
+## Desktop app -experimental- (optional)
 
 BacView can also run as a native desktop app via [elixir-desktop](https://github.com/elixir-desktop/desktop). The web workflow above stays the default.
 
