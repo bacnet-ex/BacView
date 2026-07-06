@@ -2,9 +2,9 @@
 * text=auto eol=lf
 
 # mark dirs as linguist vendored
-assets/vendor/* linguist-vendored
-priv/static/* linguist-vendored
+assets/vendor/** linguist-vendored
+priv/static/** linguist-vendored
 
 # mark dirs as linguist undetectable
-assets/vendor/* -linguist-detectable
-priv/static/* -linguist-detectable
+assets/vendor/** -linguist-detectable
+priv/static/** -linguist-detectable
