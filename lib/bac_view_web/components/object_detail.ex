@@ -10,6 +10,7 @@ defmodule BacViewWeb.ObjectDetail do
 
   alias BacView.BACnet.Protocol.TrendLogReader
 
+  alias BacView.BACnet.HierarchySplit
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.FileTransferPanel
   alias BacViewWeb.ObjectTypeIcon
@@ -24,6 +25,7 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:return_cov_view, :string, default: "subscriptions")
   attr(:return_hierarchy_view, :string, default: "explorer")
   attr(:return_hierarchy_path, :list, default: [])
+  attr(:return_hierarchy_split, :any, default: nil)
   attr(:objects_search, :string, default: "")
   attr(:objects_type_filter, :list, default: [])
   attr(:objects_status_filter, :list, default: [])
@@ -672,7 +674,8 @@ defmodule BacViewWeb.ObjectDetail do
       alarm_view: assigns.return_alarm_view,
       cov_view: assigns.return_cov_view,
       hierarchy_view: assigns.return_hierarchy_view,
-      hierarchy_path: assigns.return_hierarchy_path
+      hierarchy_path: assigns.return_hierarchy_path,
+      h_split: HierarchySplit.encode(assigns.return_hierarchy_split)
     )
   end
 

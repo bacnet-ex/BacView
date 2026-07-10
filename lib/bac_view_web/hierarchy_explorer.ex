@@ -58,7 +58,7 @@ defmodule BacViewWeb.HierarchyExplorer do
     Enum.find_value(nodes, fn node ->
       cond do
         node_key(node) == key -> node
-        node.type == :structured_view -> find_node(node.children, key)
+        HierarchyNode.folder?(node) -> find_node(node.children, key)
         true -> nil
       end
     end)
@@ -86,14 +86,13 @@ defmodule BacViewWeb.HierarchyExplorer do
   end
 
   @spec selection_keys_for_node(HierarchyNode.t(), MapSet.t()) :: MapSet.t()
-  def selection_keys_for_node(%HierarchyNode{type: :structured_view} = node, selectable_keys) do
-    descendant_selectable_keys(node, selectable_keys)
-  end
-
   def selection_keys_for_node(%HierarchyNode{} = node, selectable_keys) do
-    key = node_key(node)
-
-    if MapSet.member?(selectable_keys, key), do: MapSet.new([key]), else: MapSet.new()
+    if HierarchyNode.folder?(node) do
+      descendant_selectable_keys(node, selectable_keys)
+    else
+      key = node_key(node)
+      if MapSet.member?(selectable_keys, key), do: MapSet.new([key]), else: MapSet.new()
+    end
   end
 
   @spec breadcrumbs([HierarchyNode.t()], [segment()]) :: [{String.t(), [segment()]}]
@@ -157,7 +156,8 @@ defmodule BacViewWeb.HierarchyExplorer do
     Enum.map(children, &enrich_entry(&1, objects_index, selectable_keys))
   end
 
-  defp enrich_entry(%HierarchyNode{type: :structured_view} = node, objects_index, selectable_keys) do
+  defp enrich_entry(%HierarchyNode{type: type} = node, objects_index, selectable_keys)
+       when type in [:structured_view, :name_folder] do
     object = Map.get(objects_index, {node.type, node.instance}, %{})
 
     %{
@@ -242,7 +242,8 @@ defmodule BacViewWeb.HierarchyExplorer do
 
   defp node_key(%HierarchyNode{type: type, instance: instance}), do: {type, instance}
 
-  defp descendant_object_keys_private(%HierarchyNode{type: :structured_view, children: children}) do
+  defp descendant_object_keys_private(%HierarchyNode{type: type, children: children})
+       when type in [:structured_view, :name_folder] do
     Enum.flat_map(children, &descendant_object_keys_private/1)
   end
 

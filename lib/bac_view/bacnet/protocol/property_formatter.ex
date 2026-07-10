@@ -278,11 +278,9 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
 
   defp real_present_value?(_value3, _object, _value), do: false
 
-  defp editable_real_present_value?(value, object, prop) when is_number(value) do
+  defp editable_real_present_value?(value, object, prop) when is_float(value) do
     present_value_property?(prop) and real_present_value?(value, object, prop)
   end
-
-  defp editable_real_present_value?(_value, _object, _prop), do: false
 
   defp present_value_property?(%{property: property})
        when property in [:present_value, :relinquish_default],

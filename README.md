@@ -1,8 +1,9 @@
 # BacView
 
-Standalone bilingual BACnet explorer (German primary) built with Elixir, Phoenix LiveView, and [bacstack](https://github.com/bacnet-ex/bacstack).
+BACnet explorer built in Elixir with Phoenix LiveView and [bacstack](https://github.com/bacnet-ex/bacstack).
 
-Discover devices, browse Structured View hierarchies, read properties, subscribe to COV updates, and monitor alarms/events — all in real time from the browser.
+Discover devices, browse Structured View hierarchies or create your own based upon object names,
+read and write properties, subscribe to COV updates, and monitor alarms — all in real time from the browser.
 
 This project has been built with Grok Build and the Composer 2.5 Fast model.
 
@@ -12,7 +13,7 @@ This project has been built with Grok Build and the Composer 2.5 Fast model.
 - **Structured View** — hierarchy tree with search and flat-list reveal
 - **Object explorer** — property reads (chunked RPM), live COV badges
 - **COV subscriptions** — per-property subscribe, bulk Present_Value subscribe, auto-renewal
-- **Alarms & events** — GetEventInformation polling, live event notifications, JSON/CSV export
+- **Alarms & events** — GetAlarmSummary polling, live event notifications, JSON/CSV export
 - **i18n** — German (default) and English, persisted in `localStorage`
 - **Keyboard shortcuts** — press `?` for help (`/`, `r`, `1`–`4` on device pages)
 
@@ -21,7 +22,7 @@ This project has been built with Grok Build and the Composer 2.5 Fast model.
 - Elixir ~> 1.18
 - Erlang/OTP 26+
 - Node.js (asset bundling in dev)
-- UDP port **47808** available for BACnet/IP
+- UDP port **47808** available for BACnet/IP (others choosable)
 
 ## Quick start (development)
 
@@ -131,8 +132,7 @@ but considered experimental. `BacView.BACnet.Transport.BACnetSC` is a documented
 ## Tests
 
 ```bash
-mix test
-mix precommit   # compile, format check, unused deps
+mix precommit   # compile, format check, unused deps, test
 ```
 
 BACnet is disabled in test (`config/test.exs`: `start_bacnet: false`) to avoid UDP port conflicts.

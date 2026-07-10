@@ -165,6 +165,27 @@ defmodule BacViewWeb.DeviceUrlTest do
            ) == "/devices/42?hierarchy_view=tree&h_path=structured_view%3A1"
   end
 
+  test "device_path with name hierarchy split" do
+    assert DeviceUrl.device_path(42, tab: "hierarchy", h_split: "delimiter,_") ==
+             "/devices/42?h_split=delimiter%2C_"
+
+    assert DeviceUrl.device_path(42, tab: "hierarchy", h_split: "delimiter,all") ==
+             "/devices/42?h_split=delimiter%2Call"
+
+    assert DeviceUrl.normalize_hierarchy_split("delimiter,all") == {:delimiter, :all_special}
+    assert DeviceUrl.normalize_hierarchy_split("positions,10,5,8") == {:positions, [10, 5, 8]}
+  end
+
+  test "object_path preserves manual hierarchy split for return navigation" do
+    assert DeviceUrl.object_path(42, :analog_input, 1,
+             tab: "hierarchy",
+             hierarchy_view: "explorer",
+             hierarchy_path: [{:name_folder, 123}],
+             h_split: "delimiter,all"
+           ) ==
+             "/devices/42/objects/analog_input/1?h_path=name_folder%3A123&h_split=delimiter%2Call"
+  end
+
   test "device_path with cov_view on subscriptions tab" do
     assert DeviceUrl.device_path(42, tab: "subscriptions", cov_view: "notifications") ==
              "/devices/42?tab=subscriptions&cov_view=notifications"

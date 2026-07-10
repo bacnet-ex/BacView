@@ -103,8 +103,6 @@ defmodule BacView.BACnet.Protocol.TrendLogNavigation do
     end)
   end
 
-  defp references_object?(_refs, _object, _device_instance), do: false
-
   defp same_device_ref?(%DeviceObjectPropertyRef{device_identifier: nil}, _device_instance),
     do: true
 

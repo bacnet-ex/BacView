@@ -92,7 +92,7 @@ defmodule BacView.BACnet.Subscription do
   def needs_renewal?(%{lifetime: lifetime} = sub, now) when lifetime > 0 do
     case effective_remaining(sub, now) do
       remaining when is_integer(remaining) -> remaining <= renewal_threshold(lifetime)
-      _ -> false
+      _remaining -> false
     end
   end
 

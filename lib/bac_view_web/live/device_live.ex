@@ -8,6 +8,8 @@ defmodule BacViewWeb.DeviceLive do
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.HierarchyBuilder
+  alias BacView.BACnet.HierarchySplit
+  alias BacView.BACnet.NameHierarchyBuilder
   alias BacView.BACnet.NotificationClassRecipient
   alias BacView.BACnet.SubscriptionManager
 
@@ -60,6 +62,10 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:tab, @default_tab)
          |> assign(:objects, [])
          |> assign(:hierarchy, empty_hierarchy())
+         |> assign(:sv_hierarchy, empty_hierarchy())
+         |> assign(:hierarchy_split, nil)
+         |> assign(:hierarchy_source, :structured)
+         |> assign(:name_hierarchy_form_open, false)
          |> assign(:tree_roots, [])
          |> assign(:tree_match_count, 0)
          |> assign(:tree_search, "")
@@ -157,7 +163,8 @@ defmodule BacViewWeb.DeviceLive do
        DeviceUrl.normalize_hierarchy_view(Map.get(params, "hierarchy_view"))
      )
      |> assign(:hierarchy_path, DeviceUrl.normalize_hierarchy_path(Map.get(params, "h_path")))
-     |> refresh_hierarchy_explorer()}
+     |> assign(:hierarchy_split, DeviceUrl.normalize_hierarchy_split(Map.get(params, "h_split")))
+     |> apply_active_hierarchy()}
   end
 
   @impl true
@@ -582,6 +589,53 @@ defmodule BacViewWeb.DeviceLive do
      socket
      |> assign(:explorer_search, search)
      |> refresh_hierarchy_explorer()}
+  end
+
+  @impl true
+  def handle_event("build_name_hierarchy", %{"name_hierarchy" => params}, socket) do
+    case HierarchySplit.parse_form(params) do
+      nil ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gt("Ungültige Aufteilungsregeln für die Objektnamen-Hierarchie.")
+         )}
+
+      split ->
+        path =
+          DeviceUrl.device_path(
+            socket.assigns.device_id,
+            name_hierarchy_device_opts(socket, split)
+          )
+
+        {:noreply,
+         socket
+         |> assign(:hierarchy_path, [])
+         |> assign(:name_hierarchy_form_open, false)
+         |> push_patch(to: path)}
+    end
+  end
+
+  @impl true
+  def handle_event("clear_name_hierarchy", _params, socket) do
+    path =
+      DeviceUrl.device_path(
+        socket.assigns.device_id,
+        name_hierarchy_device_opts(socket, nil)
+      )
+
+    {:noreply,
+     socket
+     |> assign(:hierarchy_path, [])
+     |> assign(:name_hierarchy_form_open, false)
+     |> push_patch(to: path)}
+  end
+
+  @impl true
+  def handle_event("toggle_name_hierarchy_form", _params, socket) do
+    {:noreply,
+     assign(socket, :name_hierarchy_form_open, !socket.assigns.name_hierarchy_form_open)}
   end
 
   @impl true
@@ -1347,6 +1401,32 @@ defmodule BacViewWeb.DeviceLive do
     )
   end
 
+  defp apply_active_hierarchy(socket) do
+    sv_hierarchy = Map.get(socket.assigns, :sv_hierarchy, empty_hierarchy())
+    objects = Map.get(socket.assigns, :objects, [])
+    split = Map.get(socket.assigns, :hierarchy_split)
+
+    hierarchy =
+      case split do
+        nil ->
+          sv_hierarchy
+
+        split_config ->
+          NameHierarchyBuilder.build(objects, split_config)
+      end
+
+    hierarchy = normalize_hierarchy(hierarchy)
+    tree_expanded = default_expanded(hierarchy.roots)
+
+    socket
+    |> assign(:hierarchy, hierarchy)
+    |> assign(:hierarchy_source, if(split, do: :name, else: :structured))
+    |> assign(:tree_roots, hierarchy.roots)
+    |> assign(:tree_match_count, count_tree_nodes(hierarchy.roots))
+    |> assign(:tree_expanded, tree_expanded)
+    |> refresh_hierarchy_explorer()
+  end
+
   defp refresh_hierarchy_explorer(socket) do
     roots = Map.get(socket.assigns.hierarchy, :roots, [])
     path = Map.get(socket.assigns, :hierarchy_path, [])
@@ -1388,6 +1468,21 @@ defmodule BacViewWeb.DeviceLive do
       tab: "hierarchy",
       hierarchy_view: socket.assigns.hierarchy_view,
       hierarchy_path: socket.assigns.hierarchy_path,
+      h_split: HierarchySplit.encode(socket.assigns.hierarchy_split),
+      search: socket.assigns.search,
+      types: socket.assigns.type_filter,
+      status: socket.assigns.status_filter,
+      sort: socket.assigns.sort_by,
+      dir: socket.assigns.sort_dir
+    ]
+  end
+
+  defp name_hierarchy_device_opts(socket, split) do
+    [
+      tab: "hierarchy",
+      hierarchy_view: socket.assigns.hierarchy_view,
+      hierarchy_path: [],
+      h_split: HierarchySplit.encode(split),
       search: socket.assigns.search,
       types: socket.assigns.type_filter,
       status: socket.assigns.status_filter,
@@ -1482,22 +1577,18 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   defp apply_loaded_device(socket, loaded) do
-    hierarchy = loaded |> Map.get(:hierarchy, empty_hierarchy()) |> normalize_hierarchy()
-    tree_expanded = default_expanded(hierarchy.roots)
+    sv_hierarchy = loaded |> Map.get(:hierarchy, empty_hierarchy()) |> normalize_hierarchy()
 
     socket
     |> assign(:device, loaded)
     |> assign(:objects, normalize_objects(loaded.objects))
     |> assign(:selectable_object_keys, selectable_object_keys(loaded.objects))
-    |> assign(:hierarchy, hierarchy)
-    |> assign(:tree_roots, hierarchy.roots)
-    |> assign(:tree_match_count, count_tree_nodes(hierarchy.roots))
-    |> assign(:tree_expanded, tree_expanded)
+    |> assign(:sv_hierarchy, sv_hierarchy)
     |> assign(:loading, false)
     |> assign(:load_progress, nil)
+    |> apply_active_hierarchy()
     |> refresh_cov_state()
     |> refresh_cov_notifications()
-    |> refresh_hierarchy_explorer()
     |> refresh_active_alarm_objects()
     |> refresh_notification_class_counts()
     |> spawn_nc_sync()
@@ -1532,10 +1623,11 @@ defmodule BacViewWeb.DeviceLive do
     |> MapSet.new()
   end
 
-  defp object_selection_keys(socket, :structured_view, instance) do
+  defp object_selection_keys(socket, type, instance)
+       when type in [:structured_view, :name_folder] do
     case HierarchyExplorer.find_node(
            Map.get(socket.assigns.hierarchy, :roots, []),
-           {:structured_view, instance}
+           {type, instance}
          ) do
       nil ->
         MapSet.new()
@@ -1842,7 +1934,8 @@ defmodule BacViewWeb.DeviceLive do
   defp format_parse_error(:invalid_number), do: gt("erwartet Zahl")
   defp format_parse_error(reason), do: inspect(reason)
 
-  defp empty_hierarchy(), do: %{roots: [], empty?: true, structured_view_count: 0}
+  defp empty_hierarchy(),
+    do: %{roots: [], empty?: true, structured_view_count: 0, source: :structured, split: nil}
 
   defp normalize_tab(tab) when tab in @valid_tabs, do: tab
   defp normalize_tab(_tab), do: @default_tab
@@ -1906,6 +1999,7 @@ defmodule BacViewWeb.DeviceLive do
     cov_view = Keyword.get(opts, :cov_view, nil)
     hierarchy_view = Keyword.get(opts, :hierarchy_view, nil)
     hierarchy_path = Keyword.get(opts, :hierarchy_path, nil)
+    hierarchy_split = Keyword.get(opts, :h_split, nil)
 
     url_opts = [
       tab: tab,
@@ -1935,6 +2029,7 @@ defmodule BacViewWeb.DeviceLive do
         url_opts
         |> maybe_put(:hierarchy_view, hierarchy_view)
         |> maybe_put(:hierarchy_path, hierarchy_path)
+        |> maybe_put(:h_split, hierarchy_split)
       else
         url_opts
       end
@@ -1960,6 +2055,7 @@ defmodule BacViewWeb.DeviceLive do
       cov_view: assigns.cov_view,
       hierarchy_view: assigns.hierarchy_view,
       hierarchy_path: assigns.hierarchy_path,
+      h_split: HierarchySplit.encode(assigns.hierarchy_split),
       device_id: assigns.device_id
     ]
   end
@@ -1968,8 +2064,14 @@ defmodule BacViewWeb.DeviceLive do
     %{
       roots: Map.get(hierarchy, :roots, []),
       empty?: Map.get(hierarchy, :empty?, true),
-      structured_view_count: Map.get(hierarchy, :structured_view_count, 0)
+      structured_view_count: Map.get(hierarchy, :structured_view_count, 0),
+      source: Map.get(hierarchy, :source, :structured),
+      split: Map.get(hierarchy, :split)
     }
+  end
+
+  defp structured_hierarchy?(sv_hierarchy) do
+    not Map.get(sv_hierarchy, :empty?, true)
   end
 
   @impl true
@@ -2149,6 +2251,10 @@ defmodule BacViewWeb.DeviceLive do
               hierarchy_view_paths={hierarchy_view_paths(@device_id, device_tab_opts(assigns))}
               hierarchy_root_path={@hierarchy_root_path}
               hierarchy_path_links={@hierarchy_path_links}
+              hierarchy_source={@hierarchy_source}
+              hierarchy_split={@hierarchy_split}
+              name_hierarchy_form_open={@name_hierarchy_form_open}
+              structured_hierarchy?={structured_hierarchy?(@sv_hierarchy)}
               device_id={@device_id}
               roots={@hierarchy.roots}
               entries={@hierarchy_entries}

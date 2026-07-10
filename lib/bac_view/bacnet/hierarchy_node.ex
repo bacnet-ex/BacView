@@ -5,6 +5,8 @@ defmodule BacView.BACnet.HierarchyNode do
 
   alias BACnet.Protocol.ObjectIdentifier
 
+  @folder_type :name_folder
+
   @type t :: %__MODULE__{
           object_id: ObjectIdentifier.t(),
           type: atom(),
@@ -35,4 +37,11 @@ defmodule BacView.BACnet.HierarchyNode do
 
   @spec id(t()) :: String.t()
   def id(%__MODULE__{type: type, instance: instance}), do: "#{type}:#{instance}"
+
+  @spec folder_type() :: :name_folder
+  def folder_type(), do: @folder_type
+
+  @spec folder?(t() | map()) :: boolean()
+  def folder?(%__MODULE__{type: type}), do: type in [:structured_view, @folder_type]
+  def folder?(_node), do: false
 end

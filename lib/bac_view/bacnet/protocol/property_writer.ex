@@ -242,9 +242,8 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     end
   end
 
-  defp format_priority_value(value, units, object_context) do
-    PropertyFormatter.format_present_value(value, object_context) ||
-      PropertyFormatter.format_value(value, units)
+  defp format_priority_value(value, _units, object_context) do
+    PropertyFormatter.format_present_value(value, object_context)
   end
 
   @doc false

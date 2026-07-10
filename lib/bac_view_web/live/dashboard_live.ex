@@ -4,9 +4,9 @@ defmodule BacViewWeb.DashboardLive do
 
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.Discovery
-  alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.InterfaceSelection
+  alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Stack
   alias BacView.BACnet.StackLifecycle
   alias BacView.BACnet.VendorNames

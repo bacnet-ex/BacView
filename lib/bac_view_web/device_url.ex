@@ -3,6 +3,7 @@ defmodule BacViewWeb.DeviceUrl do
 
   use BacViewWeb, :verified_routes
 
+  alias BacView.BACnet.HierarchySplit
   alias BacViewWeb.ObjectTable
 
   @default_tab "hierarchy"
@@ -20,8 +21,17 @@ defmodule BacViewWeb.DeviceUrl do
     cov_view = normalize_cov_view(Keyword.get(opts, :cov_view))
     hierarchy_view = normalize_hierarchy_view(Keyword.get(opts, :hierarchy_view))
     hierarchy_path = normalize_hierarchy_path(Keyword.get(opts, :hierarchy_path))
+    hierarchy_split = normalize_hierarchy_split(Keyword.get(opts, :h_split))
 
-    case device_query(tab, alarm_view, cov_view, hierarchy_view, hierarchy_path, opts) do
+    case device_query(
+           tab,
+           alarm_view,
+           cov_view,
+           hierarchy_view,
+           hierarchy_path,
+           hierarchy_split,
+           opts
+         ) do
       nil -> ~p"/devices/#{device_id}"
       query -> ~p"/devices/#{device_id}?#{query}"
     end
@@ -169,16 +179,27 @@ defmodule BacViewWeb.DeviceUrl do
     Enum.map_join(path, "/", fn {type, instance} -> "#{type}:#{instance}" end)
   end
 
+  def normalize_hierarchy_split(nil), do: nil
+  def normalize_hierarchy_split(split), do: HierarchySplit.normalize(split)
+
   def encode_sort_dir(:asc), do: "asc"
   def encode_sort_dir(:desc), do: "desc"
   def encode_sort_dir("asc"), do: "asc"
   def encode_sort_dir("desc"), do: "desc"
   def encode_sort_dir(_asc), do: "asc"
 
-  defp device_query(tab, alarm_view, cov_view, hierarchy_view, hierarchy_path, opts) do
+  defp device_query(
+         tab,
+         alarm_view,
+         cov_view,
+         hierarchy_view,
+         hierarchy_path,
+         hierarchy_split,
+         opts
+       ) do
     []
     |> maybe_param(:tab, tab, tab != @default_tab)
-    |> append_hierarchy_params(tab, hierarchy_view, hierarchy_path)
+    |> append_hierarchy_params(tab, hierarchy_view, hierarchy_path, hierarchy_split)
     |> maybe_param(
       :alarm_view,
       alarm_view,
@@ -199,10 +220,11 @@ defmodule BacViewWeb.DeviceUrl do
     cov_view = normalize_cov_view(Keyword.get(opts, :cov_view))
     hierarchy_view = normalize_hierarchy_view(Keyword.get(opts, :hierarchy_view))
     hierarchy_path = normalize_hierarchy_path(Keyword.get(opts, :hierarchy_path))
+    hierarchy_split = normalize_hierarchy_split(Keyword.get(opts, :h_split))
 
     []
     |> maybe_param(:tab, tab, tab != @default_tab)
-    |> append_hierarchy_params(tab, hierarchy_view, hierarchy_path)
+    |> append_hierarchy_params(tab, hierarchy_view, hierarchy_path, hierarchy_split)
     |> maybe_param(
       :alarm_view,
       alarm_view,
@@ -217,7 +239,7 @@ defmodule BacViewWeb.DeviceUrl do
     |> query_or_nil()
   end
 
-  defp append_hierarchy_params(params, tab, hierarchy_view, hierarchy_path) do
+  defp append_hierarchy_params(params, tab, hierarchy_view, hierarchy_path, hierarchy_split) do
     params
     |> maybe_param(
       :hierarchy_view,
@@ -228,6 +250,11 @@ defmodule BacViewWeb.DeviceUrl do
       :h_path,
       encode_hierarchy_path(hierarchy_path),
       tab == "hierarchy" and hierarchy_path != []
+    )
+    |> maybe_param(
+      :h_split,
+      HierarchySplit.encode(hierarchy_split),
+      tab == "hierarchy" and hierarchy_split != nil
     )
   end
 

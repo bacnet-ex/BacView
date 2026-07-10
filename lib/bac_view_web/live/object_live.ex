@@ -10,6 +10,7 @@ defmodule BacViewWeb.ObjectLive do
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.FileTransfer
+  alias BacView.BACnet.HierarchySplit
   alias BacView.BACnet.SubscriptionManager
 
   alias BacView.BACnet.Protocol.ComplexPropertyEditor
@@ -81,6 +82,7 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:return_cov_view, DeviceUrl.normalize_cov_view(nil))
            |> assign(:return_hierarchy_view, DeviceUrl.normalize_hierarchy_view(nil))
            |> assign(:return_hierarchy_path, [])
+           |> assign(:return_hierarchy_split, nil)
            |> assign(:objects_search, "")
            |> assign(:objects_type_filter, [])
            |> assign(:objects_status_filter, [])
@@ -148,6 +150,10 @@ defmodule BacViewWeb.ObjectLive do
      |> assign(
        :return_hierarchy_path,
        DeviceUrl.normalize_hierarchy_path(Map.get(params, "h_path"))
+     )
+     |> assign(
+       :return_hierarchy_split,
+       DeviceUrl.normalize_hierarchy_split(Map.get(params, "h_split"))
      )
      |> assign(:objects_search, DeviceUrl.normalize_search(params["search"]))
      |> assign(:objects_type_filter, DeviceUrl.normalize_types(params["types"]))
@@ -1098,7 +1104,8 @@ defmodule BacViewWeb.ObjectLive do
       alarm_view: socket.assigns.return_alarm_view,
       cov_view: socket.assigns.return_cov_view,
       hierarchy_view: socket.assigns.return_hierarchy_view,
-      hierarchy_path: socket.assigns.return_hierarchy_path
+      hierarchy_path: socket.assigns.return_hierarchy_path,
+      h_split: HierarchySplit.encode(socket.assigns.return_hierarchy_split)
     )
   end
 
@@ -1808,7 +1815,8 @@ defmodule BacViewWeb.ObjectLive do
       alarm_view: socket.assigns.return_alarm_view,
       cov_view: socket.assigns.return_cov_view,
       hierarchy_view: socket.assigns.return_hierarchy_view,
-      hierarchy_path: socket.assigns.return_hierarchy_path
+      hierarchy_path: socket.assigns.return_hierarchy_path,
+      h_split: HierarchySplit.encode(socket.assigns.return_hierarchy_split)
     ]
   end
 
@@ -1859,6 +1867,7 @@ defmodule BacViewWeb.ObjectLive do
           return_cov_view={@return_cov_view}
           return_hierarchy_view={@return_hierarchy_view}
           return_hierarchy_path={@return_hierarchy_path}
+          return_hierarchy_split={@return_hierarchy_split}
           objects_search={@objects_search}
           objects_type_filter={@objects_type_filter}
           objects_status_filter={@objects_status_filter}

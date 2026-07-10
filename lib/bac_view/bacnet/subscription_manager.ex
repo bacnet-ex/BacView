@@ -350,7 +350,7 @@ defmodule BacView.BACnet.SubscriptionManager do
       :subscribe_cov when property == :present_value ->
         subscribe_present_value(destination, object_id, property, opts, :subscribe_cov)
 
-      _ ->
+      _preferred_service ->
         subscribe_present_value(destination, object_id, property, opts, :subscribe_cov_property)
     end
   end
@@ -358,7 +358,7 @@ defmodule BacView.BACnet.SubscriptionManager do
   defp subscribe_present_value(destination, object_id, _property, opts, :subscribe_cov) do
     case Client.subscribe_cov(destination, object_id, opts) do
       :ok -> {:ok, :subscribe_cov}
-      {:error, _} = err -> err
+      {:error, _reason} = err -> err
     end
   end
 
@@ -388,7 +388,7 @@ defmodule BacView.BACnet.SubscriptionManager do
       :subscribe_cov when property == :present_value ->
         cancel_present_value(destination, object_id, opts, :subscribe_cov)
 
-      _ ->
+      _subscribe_service ->
         case Client.subscribe_cov_property(destination, object_id, property, opts) do
           :ok ->
             :ok
@@ -403,14 +403,8 @@ defmodule BacView.BACnet.SubscriptionManager do
     end
   end
 
-  defp cancel_present_value(destination, object_id, opts, preferred_service) do
-    case preferred_service do
-      :subscribe_cov ->
-        Client.subscribe_cov(destination, object_id, opts)
-
-      :subscribe_cov_property ->
-        Client.subscribe_cov_property(destination, object_id, :present_value, opts)
-    end
+  defp cancel_present_value(destination, object_id, opts, :subscribe_cov) do
+    Client.subscribe_cov(destination, object_id, opts)
   end
 
   defp handle_cov_notification(notification, source, ref, client_pid, confirmed?, invoke_id \\ 0) do

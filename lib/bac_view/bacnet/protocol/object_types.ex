@@ -110,7 +110,6 @@ defmodule BacView.BACnet.Protocol.ObjectTypes do
     |> Atom.to_string()
     |> String.replace("_", " ")
     |> String.split(" ", trim: true)
-    |> Enum.map(&String.capitalize/1)
-    |> Enum.join(" ")
+    |> Enum.map_join(" ", &String.capitalize/1)
   end
 end

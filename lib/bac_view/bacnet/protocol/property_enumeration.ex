@@ -171,11 +171,10 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
          %{property: :present_value} = prop,
          value,
          object,
-         units,
+         _units,
          _display
        ) do
-    PropertyFormatter.format_present_value(value, object, prop) ||
-      PropertyFormatter.format_value(value, units)
+    PropertyFormatter.format_present_value(value, object, prop)
   end
 
   defp multistate_state_property_formatted(

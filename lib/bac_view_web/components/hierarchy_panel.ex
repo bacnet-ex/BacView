@@ -3,6 +3,7 @@ defmodule BacViewWeb.HierarchyPanel do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.HierarchySplit
   alias BacViewWeb.DeviceTree
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.HierarchyExplorer
@@ -10,6 +11,10 @@ defmodule BacViewWeb.HierarchyPanel do
   alias BacViewWeb.StatusFlagsIcons
 
   attr(:hierarchy_view, :string, required: true)
+  attr(:hierarchy_source, :atom, default: :structured)
+  attr(:hierarchy_split, :any, default: nil)
+  attr(:name_hierarchy_form_open, :boolean, default: false)
+  attr(:structured_hierarchy?, :boolean, default: false)
   attr(:hierarchy_view_paths, :map, required: true)
   attr(:hierarchy_root_path, :string, required: true)
   attr(:hierarchy_path_links, :list, default: [])
@@ -32,6 +37,21 @@ defmodule BacViewWeb.HierarchyPanel do
   def hierarchy_panel(assigns) do
     ~H"""
     <div class="space-y-5">
+      <.name_hierarchy_banner
+        :if={@hierarchy_source == :name && !@empty_hierarchy?}
+        hierarchy_split={@hierarchy_split}
+        structured_hierarchy?={@structured_hierarchy?}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
+      <.name_hierarchy_builder
+        :if={show_name_hierarchy_builder?(@empty_hierarchy?, @hierarchy_source, @name_hierarchy_form_open, @structured_hierarchy?)}
+        empty_hierarchy?={@empty_hierarchy?}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
       <div :if={!@empty_hierarchy?} class="bac-tabs">
         <.link
           patch={@hierarchy_view_paths["explorer"]}
@@ -51,7 +71,7 @@ defmodule BacViewWeb.HierarchyPanel do
         </.link>
       </div>
 
-      <div :if={@empty_hierarchy?} class="bac-hero py-16">
+      <div :if={@empty_hierarchy? && @hierarchy_source != :name} class="bac-hero py-16">
         <div class="bac-hero-icon">
           <.icon name="hero-folder-open" class="size-7" />
         </div>
@@ -66,6 +86,37 @@ defmodule BacViewWeb.HierarchyPanel do
         >
           {t(@locale, @locale_version, "Alle Objekte anzeigen")}
         </.link>
+      </div>
+
+      <div :if={@empty_hierarchy? && @hierarchy_source == :name} class="bac-hero py-12">
+        <p class="bac-hero-text">
+          {t(@locale, @locale_version,
+            "Mit den gewählten Aufteilungsregeln konnte keine Hierarchie erstellt werden."
+          )}
+        </p>
+        <button
+          type="button"
+          id="clear-name-hierarchy-empty"
+          phx-click="clear_name_hierarchy"
+          class="bac-btn bac-btn-secondary bac-btn-sm"
+        >
+          {t(@locale, @locale_version, "Aufteilung zurücksetzen")}
+        </button>
+      </div>
+
+      <div
+        :if={@structured_hierarchy? && @hierarchy_source == :structured && !@name_hierarchy_form_open}
+        class="flex justify-end"
+      >
+        <button
+          type="button"
+          id="open-name-hierarchy-form"
+          phx-click="toggle_name_hierarchy_form"
+          class="bac-btn bac-btn-ghost bac-btn-sm"
+        >
+          <.icon name="hero-squares-2x2" class="size-4" />
+          {t(@locale, @locale_version, "Hierarchie aus Objektnamen erstellen")}
+        </button>
       </div>
 
       <.explorer_panel
@@ -386,4 +437,212 @@ defmodule BacViewWeb.HierarchyPanel do
   end
 
   defp present_value_label(entry), do: entry.present_value_formatted
+
+  attr(:hierarchy_split, :any, required: true)
+  attr(:structured_hierarchy?, :boolean, default: false)
+  attr(:locale, :string, required: true)
+  attr(:locale_version, :integer, required: true)
+
+  defp name_hierarchy_banner(assigns) do
+    ~H"""
+    <div
+      id="name-hierarchy-banner"
+      class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[var(--bac-border)] bg-[var(--bac-surface)] px-4 py-3"
+    >
+      <div class="min-w-0">
+        <p class="text-sm font-medium text-[var(--bac-text)]">
+          {t(@locale, @locale_version, "Hierarchie aus Objektnamen")}
+        </p>
+        <p class="text-xs bac-text-muted truncate">
+          {split_summary(@locale, @locale_version, @hierarchy_split)}
+        </p>
+      </div>
+      <button
+        type="button"
+        id="clear-name-hierarchy"
+        phx-click="clear_name_hierarchy"
+        class="bac-btn bac-btn-secondary bac-btn-sm shrink-0"
+      >
+        <%= if @structured_hierarchy? do %>
+          {t(@locale, @locale_version, "Strukturansichten verwenden")}
+        <% else %>
+          {t(@locale, @locale_version, "Aufteilung zurücksetzen")}
+        <% end %>
+      </button>
+    </div>
+    """
+  end
+
+  attr(:empty_hierarchy?, :boolean, required: true)
+  attr(:locale, :string, required: true)
+  attr(:locale_version, :integer, required: true)
+
+  defp name_hierarchy_builder(assigns) do
+    ~H"""
+    <div
+      id="name-hierarchy-builder"
+      class={[
+        "rounded-xl border border-[var(--bac-border)] bg-[var(--bac-surface)] p-4 space-y-4",
+        @empty_hierarchy? && "max-w-2xl mx-auto"
+      ]}
+    >
+      <div class="space-y-1">
+        <h3 class="text-sm font-semibold text-[var(--bac-text)]">
+          {t(@locale, @locale_version, "Hierarchie aus Objektnamen erstellen")}
+        </h3>
+        <p class="text-xs bac-text-muted">
+          {t(@locale, @locale_version,
+            "Teilt Objektnamen nach Trennzeichen oder festen Zeichenpositionen in Ordner auf."
+          )}
+        </p>
+      </div>
+
+      <form id="name-hierarchy-form" phx-submit="build_name_hierarchy" class="space-y-5">
+        <div class="grid gap-4 sm:grid-cols-2">
+          <div class="space-y-1.5 min-w-0">
+            <label for="name-hierarchy-mode" class="block text-xs font-medium bac-text-muted">
+              {t(@locale, @locale_version, "Aufteilungsmodus")}
+            </label>
+            <select
+              id="name-hierarchy-mode"
+              name="name_hierarchy[mode]"
+              class="bac-input bac-input-sm w-full"
+            >
+              <option value="delimiter">{t(@locale, @locale_version, "Trennzeichen")}</option>
+              <option value="positions">{t(@locale, @locale_version, "Zeichenpositionen")}</option>
+            </select>
+          </div>
+
+          <div class="space-y-1.5 min-w-0">
+            <label for="name-hierarchy-delimiter" class="block text-xs font-medium bac-text-muted">
+              {t(@locale, @locale_version, "Trennzeichen")}
+            </label>
+            <select
+              id="name-hierarchy-delimiter"
+              name="name_hierarchy[delimiter]"
+              class="bac-input bac-input-sm w-full"
+            >
+              <%= for %{id: id} <- HierarchySplit.delimiter_options() do %>
+                <option value={id}>{delimiter_option_label(@locale, @locale_version, id)}</option>
+              <% end %>
+            </select>
+          </div>
+        </div>
+
+        <div class="space-y-1.5">
+          <label for="name-hierarchy-positions" class="block text-xs font-medium bac-text-muted">
+            {t(@locale, @locale_version, "Positionen (kommagetrennt)")}
+          </label>
+          <input
+            id="name-hierarchy-positions"
+            type="text"
+            name="name_hierarchy[positions]"
+            placeholder="10, 5, 8"
+            class="bac-input bac-input-sm w-full"
+          />
+          <p class="text-xs bac-text-faint leading-relaxed pt-0.5">
+            {t(@locale, @locale_version,
+              "Nur bei Modus „Zeichenpositionen“. Beispiel: 10, 5, 8 teilt nach 10, dann 5 und danach 8 Zeichen."
+            )}
+          </p>
+        </div>
+
+        <div class="mt-2 border-t border-[var(--bac-border)] pt-5">
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="submit" id="build-name-hierarchy" class="bac-btn bac-btn-primary bac-btn-sm">
+              <.icon name="hero-folder-plus" class="size-4" />
+              {t(@locale, @locale_version, "Hierarchie erstellen")}
+            </button>
+            <button
+              :if={!@empty_hierarchy?}
+              type="button"
+              id="cancel-name-hierarchy-form"
+              phx-click="toggle_name_hierarchy_form"
+              class="bac-btn bac-btn-ghost bac-btn-sm"
+            >
+              {t(@locale, @locale_version, "Abbrechen")}
+            </button>
+          </div>
+        </div>
+      </form>
+    </div>
+    """
+  end
+
+  defp show_name_hierarchy_builder?(
+         empty_hierarchy?,
+         hierarchy_source,
+         form_open,
+         structured_hierarchy?
+       ) do
+    cond do
+      hierarchy_source == :name && empty_hierarchy? -> true
+      empty_hierarchy? && not structured_hierarchy? -> true
+      form_open -> true
+      true -> false
+    end
+  end
+
+  defp split_summary(locale, locale_version, {:delimiter, delim}) do
+    t(locale, locale_version, "Trennzeichen: %{delimiter}",
+      delimiter: delimiter_summary_label(locale, locale_version, delim)
+    )
+  end
+
+  defp split_summary(locale, locale_version, {:positions, positions}) do
+    t(locale, locale_version, "Positionen: %{positions}", positions: Enum.join(positions, ", "))
+  end
+
+  defp split_summary(_locale, _locale_version, _split), do: ""
+
+  defp delimiter_summary_label(locale, locale_version, :all_special),
+    do: t(locale, locale_version, "Alle Sonderzeichen")
+
+  defp delimiter_summary_label(locale, locale_version, " "),
+    do: t(locale, locale_version, "Leerzeichen")
+
+  defp delimiter_summary_label(locale, locale_version, "_"),
+    do: t(locale, locale_version, "Unterstrich (_)")
+
+  defp delimiter_summary_label(locale, locale_version, "."),
+    do: t(locale, locale_version, "Punkt (.)")
+
+  defp delimiter_summary_label(locale, locale_version, ":"),
+    do: t(locale, locale_version, "Doppelpunkt (:)")
+
+  defp delimiter_summary_label(locale, locale_version, "-"),
+    do: t(locale, locale_version, "Bindestrich (-)")
+
+  defp delimiter_summary_label(locale, locale_version, "/"),
+    do: t(locale, locale_version, "Schrägstrich (/)")
+
+  defp delimiter_summary_label(_locale, _locale_version, delim),
+    do: HierarchySplit.delimiter_label(delim)
+
+  defp delimiter_option_label(locale, locale_version, "all"),
+    do: t(locale, locale_version, "Alle Sonderzeichen")
+
+  defp delimiter_option_label(locale, locale_version, "space"),
+    do: t(locale, locale_version, "Leerzeichen")
+
+  defp delimiter_option_label(locale, locale_version, "_"),
+    do: t(locale, locale_version, "Unterstrich (_)")
+
+  defp delimiter_option_label(locale, locale_version, "."),
+    do: t(locale, locale_version, "Punkt (.)")
+
+  defp delimiter_option_label(locale, locale_version, ":"),
+    do: t(locale, locale_version, "Doppelpunkt (:)")
+
+  defp delimiter_option_label(locale, locale_version, "-"),
+    do: t(locale, locale_version, "Bindestrich (-)")
+
+  defp delimiter_option_label(locale, locale_version, "/"),
+    do: t(locale, locale_version, "Schrägstrich (/)")
+
+  defp delimiter_option_label(locale, locale_version, id) do
+    char = HierarchySplit.delimiter_from_id(id) || id
+
+    t(locale, locale_version, "Sonderzeichen „%{char}“", char: char)
+  end
 end

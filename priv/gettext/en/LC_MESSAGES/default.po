@@ -126,6 +126,9 @@ msgstr "Select all objects"
 msgid "Alle PV abonnieren"
 msgstr "Subscribe all present values"
 
+msgid "Alle Sonderzeichen"
+msgstr "All special characters"
+
 msgid "Alle auswählen"
 msgstr "Select all"
 
@@ -143,6 +146,12 @@ msgstr "Attempting to reconnect"
 
 msgid "Aufklappen"
 msgstr "Expand"
+
+msgid "Aufteilung zurücksetzen"
+msgstr "Reset split rules"
+
+msgid "Aufteilungsmodus"
+msgstr "Split mode"
 
 msgid "Aus allen Meldungsklassen entfernt."
 msgstr "Removed from all notification classes."
@@ -203,6 +212,9 @@ msgstr "Description"
 
 msgid "Bestätigt"
 msgstr "Confirmed"
+
+msgid "Bindestrich (-)"
+msgstr "Hyphen (-)"
 
 msgid "Binär"
 msgstr "Binary"
@@ -356,6 +368,9 @@ msgstr "This structure type cannot be written yet"
 
 msgid "Diskrete Wertänderung"
 msgstr "Discrete value change"
+
+msgid "Doppelpunkt (:)"
+msgstr "Colon (:)"
 
 msgid "Dunkel"
 msgstr "Dark"
@@ -546,8 +561,17 @@ msgstr "Download"
 msgid "Hierarchie"
 msgstr "Hierarchy"
 
+msgid "Hierarchie aus Objektnamen"
+msgstr "Hierarchy from object names"
+
+msgid "Hierarchie aus Objektnamen erstellen"
+msgstr "Build hierarchy from object names"
+
 msgid "Hierarchie durchsuchen… (-Begriff zum Ausschließen)"
 msgstr "Search hierarchy… (-term to exclude)"
+
+msgid "Hierarchie erstellen"
+msgstr "Build hierarchy"
 
 msgid "Hilfe"
 msgstr "Help"
@@ -660,6 +684,9 @@ msgstr "Empty = object default"
 msgid "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
 msgstr "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is."
 
+msgid "Leerzeichen"
+msgstr "Space"
+
 msgid "Lesezugriff verweigert."
 msgstr "Read access denied."
 
@@ -692,6 +719,9 @@ msgstr "Notifications"
 
 msgid "Minimum %{min} ms"
 msgstr "Minimum %{min} ms"
+
+msgid "Mit den gewählten Aufteilungsregeln konnte keine Hierarchie erstellt werden."
+msgstr "No hierarchy could be built with the selected split rules."
 
 msgid "Nach Status filtern"
 msgstr "Filter by status"
@@ -765,6 +795,9 @@ msgstr "Show only %{type}"
 msgid "Nur I-Am-Antworten mit dieser BACnet-Hersteller-ID übernehmen."
 msgstr "Only accept I-Am responses with this BACnet vendor ID."
 
+msgid "Nur bei Modus „Zeichenpositionen“. Beispiel: 10, 5, 8 teilt nach 10, dann 5 und danach 8 Zeichen."
+msgstr "Only for “Character positions” mode. Example: 10, 5, 8 splits after 10, then 5, then 8 characters."
+
 msgid "Nur diesen Status anzeigen"
 msgstr "Show only this status"
 
@@ -831,6 +864,12 @@ msgstr "Path"
 msgid "Port"
 msgstr "Port"
 
+msgid "Positionen (kommagetrennt)"
+msgstr "Positions (comma-separated)"
+
+msgid "Positionen: %{positions}"
+msgstr "Positions: %{positions}"
+
 msgid "Present Value"
 msgstr "Present value"
 
@@ -854,6 +893,9 @@ msgstr "Failed to reset priority."
 
 msgid "Puffer bereit"
 msgstr "Buffer ready"
+
+msgid "Punkt (.)"
+msgstr "Dot (.)"
 
 msgid "Quittiert"
 msgstr "Acknowledged"
@@ -918,6 +960,9 @@ msgstr "Read-only"
 msgid "Schreibzugriff verweigert."
 msgstr "Write access denied."
 
+msgid "Schrägstrich (/)"
+msgstr "Slash (/)"
+
 msgid "Serieller Port ist belegt."
 msgstr "Serial port is busy."
 
@@ -929,6 +974,9 @@ msgstr "Security error"
 
 msgid "Something went wrong!"
 msgstr "Something went wrong!"
+
+msgid "Sonderzeichen „%{char}“"
+msgstr "Special character “%{char}”"
 
 msgid "Speichern"
 msgstr "Save"
@@ -954,6 +1002,9 @@ msgstr "Status"
 msgid "Status-Flags"
 msgstr "Status flags"
 
+msgid "Strukturansichten verwenden"
+msgstr "Use structured views"
+
 msgid "Störung"
 msgstr "Fault"
 
@@ -978,6 +1029,9 @@ msgstr "Tag number required for tagged/constructed encodings."
 msgid "Tastaturkürzel"
 msgstr "Keyboard shortcuts"
 
+msgid "Teilt Objektnamen nach Trennzeichen oder festen Zeichenpositionen in Ordner auf."
+msgstr "Splits object names into folders by delimiter or fixed character positions."
+
 msgid "Text"
 msgstr "Text"
 
@@ -998,6 +1052,12 @@ msgstr "Trend log"
 
 msgid "Trendprotokolle"
 msgstr "Trend logs"
+
+msgid "Trennzeichen"
+msgstr "Delimiter"
+
+msgid "Trennzeichen: %{delimiter}"
+msgstr "Delimiter: %{delimiter}"
 
 msgid "Trägt BacView per AddListElement in die recipient_list aller Meldungsklassen ein (Fallback: WriteProperty)."
 msgstr "Enrolls BacView via AddListElement into the recipient_list of all notification classes (fallback: WriteProperty)."
@@ -1022,6 +1082,9 @@ msgstr "Unnamed object"
 
 msgid "Ungültige Anfrageparameter."
 msgstr "Invalid request parameters."
+
+msgid "Ungültige Aufteilungsregeln für die Objektnamen-Hierarchie."
+msgstr "Invalid split rules for the object-name hierarchy."
 
 msgid "Ungültige Geräte-Instanz (0–4194303)."
 msgstr "Invalid device instance (0–4194303)."
@@ -1077,6 +1140,9 @@ msgstr "Unacknowledged"
 msgid "Untergrenze"
 msgstr "Low limit"
 
+msgid "Unterstrich (_)"
+msgstr "Underscore (_)"
+
 msgid "Untertabs im Alarm-Tab wechseln"
 msgstr "Switch alarm sub-tabs"
 
@@ -1130,6 +1196,9 @@ msgstr "Root"
 
 msgid "Wählen Sie ein Objekt aus der Liste."
 msgstr "Select an object from the list."
+
+msgid "Zeichenpositionen"
+msgstr "Character positions"
 
 msgid "Zeit"
 msgstr "Time"

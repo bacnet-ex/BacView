@@ -3,6 +3,7 @@ defmodule BacViewWeb.DeviceTree do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.HierarchyNode
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.HierarchyExplorer
   alias BacViewWeb.HierarchyNodeIcon
@@ -78,7 +79,7 @@ defmodule BacViewWeb.DeviceTree do
     node_id = BacView.BACnet.HierarchyNode.id(assigns.node)
     has_children = assigns.node.child_count > 0
     node_expanded = MapSet.member?(assigns.expanded, node_id)
-    is_sv = assigns.node.type == :structured_view
+    is_folder = HierarchyNode.folder?(assigns.node)
     selectable = hierarchy_selectable?(assigns.selectable_keys, assigns.node)
     selected = hierarchy_selected?(assigns.selected_keys, assigns.selectable_keys, assigns.node)
 
@@ -87,7 +88,7 @@ defmodule BacViewWeb.DeviceTree do
       |> assign(:node_id, node_id)
       |> assign(:has_children, has_children)
       |> assign(:node_expanded, node_expanded)
-      |> assign(:is_sv, is_sv)
+      |> assign(:is_folder, is_folder)
       |> assign(:selectable, selectable)
       |> assign(:selected, selected)
 
@@ -132,18 +133,39 @@ defmodule BacViewWeb.DeviceTree do
         <span :if={!@has_children} class="w-8 shrink-0" />
 
         <button
+          :if={@is_folder}
           type="button"
-          phx-click={JS.navigate(node_object_path(@device_id, @node, @list_opts))}
+          phx-click="toggle_tree_node"
+          phx-value-id={@node_id}
           class="flex items-center gap-2 flex-1 min-w-0 text-left"
         >
-          <span :if={@is_sv} title={HierarchyNodeIcon.tooltip(@node.node_subtype)} class="inline-flex">
+          <span title={HierarchyNodeIcon.tooltip(@node.node_subtype)} class="inline-flex">
             <.icon
               name={HierarchyNodeIcon.name(@node.node_type)}
               class={HierarchyNodeIcon.icon_class(@node.node_type)}
             />
           </span>
+          <span class="truncate text-sm font-medium text-[var(--bac-text)]">
+            {@node.name || "#{@node.type}:#{@node.instance}"}
+          </span>
+          <span :if={@node.annotation} class="truncate text-xs bac-text-faint hidden sm:inline">
+            {@node.annotation}
+          </span>
+          <span :if={@has_children} class="bac-badge bac-badge-sm shrink-0">
+            {@node.child_count}
+          </span>
+          <span :if={@node.cycle} class="bac-badge bac-badge-sm bac-badge-warning shrink-0">
+            {t(@locale, @locale_version, "Zyklus")}
+          </span>
+        </button>
+
+        <button
+          :if={!@is_folder}
+          type="button"
+          phx-click={JS.navigate(node_object_path(@device_id, @node, @list_opts))}
+          class="flex items-center gap-2 flex-1 min-w-0 text-left"
+        >
           <.icon
-            :if={!@is_sv}
             name={ObjectTypeIcon.name(@node.type)}
             class="size-4 shrink-0 text-[var(--bac-accent)]"
           />
@@ -153,15 +175,10 @@ defmodule BacViewWeb.DeviceTree do
           <span :if={@node.annotation} class="truncate text-xs bac-text-faint hidden sm:inline">
             {@node.annotation}
           </span>
-          <span :if={@is_sv && @has_children} class="bac-badge bac-badge-sm shrink-0">
-            {@node.child_count}
-          </span>
-          <span :if={@node.cycle} class="bac-badge bac-badge-sm bac-badge-warning shrink-0">
-            {t(@locale, @locale_version, "Zyklus")}
-          </span>
         </button>
 
         <button
+          :if={!@is_folder}
           type="button"
           phx-click="reveal_in_flat_list"
           phx-value-type={@node.type}
@@ -191,21 +208,24 @@ defmodule BacViewWeb.DeviceTree do
     """
   end
 
-  defp hierarchy_selectable?(keys, %{type: :structured_view} = node),
-    do: HierarchyExplorer.descendant_selectable_keys(node, keys) != MapSet.new()
-
-  defp hierarchy_selectable?(keys, node),
-    do: MapSet.member?(keys, {node.type, node.instance})
-
-  defp hierarchy_selected?(selected_keys, selectable_keys, %{type: :structured_view} = node) do
-    HierarchyExplorer.folder_selected?(
-      selected_keys,
-      HierarchyExplorer.descendant_selectable_keys(node, selectable_keys)
-    )
+  defp hierarchy_selectable?(keys, %{} = node) do
+    if HierarchyNode.folder?(node) do
+      HierarchyExplorer.descendant_selectable_keys(node, keys) != MapSet.new()
+    else
+      MapSet.member?(keys, {node.type, node.instance})
+    end
   end
 
-  defp hierarchy_selected?(selected_keys, _selectable_keys, node),
-    do: MapSet.member?(selected_keys, {node.type, node.instance})
+  defp hierarchy_selected?(selected_keys, selectable_keys, %{} = node) do
+    if HierarchyNode.folder?(node) do
+      HierarchyExplorer.folder_selected?(
+        selected_keys,
+        HierarchyExplorer.descendant_selectable_keys(node, selectable_keys)
+      )
+    else
+      MapSet.member?(selected_keys, {node.type, node.instance})
+    end
+  end
 
   defp all_visible_selected?(roots, selected_keys, selectable_keys) do
     visible = HierarchyExplorer.tree_visible_selection_keys(roots, selectable_keys)
