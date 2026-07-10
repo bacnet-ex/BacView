@@ -76,8 +76,12 @@ config :codepagex, :encodings, [
 # controlled at runtime via Logger application level, see BacView.Application).
 config :bacstack, :debug, true
 
-# Configure bacstack
-config :bacstack, :default_timezone, "Etc/UTC"
+# Timezone for BACnet wall-clock timestamps and UI display (IANA name).
+default_timezone = "Europe/Zurich"
+
+config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
+config :bacview, :timezone, default_timezone
+config :bacstack, :default_timezone, default_timezone
 
 # WAGO proprietary properties
 config :bacstack, :additional_property_identifiers,

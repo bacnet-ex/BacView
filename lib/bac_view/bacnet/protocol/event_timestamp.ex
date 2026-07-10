@@ -5,6 +5,7 @@ defmodule BacView.BACnet.Protocol.EventTimestamp do
   alias BACnet.Protocol.BACnetTime
   alias BACnet.Protocol.BACnetTimestamp
   alias BACnet.Protocol.EventTimestamps
+  alias BacView.Timezone
 
   @spec alarm_since(EventTimestamps.t() | nil, atom()) :: %{
           at: DateTime.t() | nil,
@@ -39,7 +40,7 @@ defmodule BacView.BACnet.Protocol.EventTimestamp do
       {:ok, %DateTime{} = at} ->
         %{
           at: at,
-          label: Calendar.strftime(at, "%d.%m.%Y %H:%M:%S"),
+          label: Timezone.format(at, "%d.%m.%Y %H:%M:%S"),
           sort_key: DateTime.to_unix(at, :microsecond)
         }
 

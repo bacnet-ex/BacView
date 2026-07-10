@@ -14,7 +14,7 @@ config :bacview, BacViewWeb.Endpoint,
   secret_key_base: "BPEhPozJWZC4B4NlNzi9zHtNT+hVjOveptnA/Yptqyy/D4GXCGSDnVzA73AsAJ+Z",
   server: false
 
-# Print only warnings and errors during test
+# Print warnings and errors during test (capture_log only where a test expects log output).
 config :logger, level: :warning
 
 # Initialize plugs at runtime for faster test compilation

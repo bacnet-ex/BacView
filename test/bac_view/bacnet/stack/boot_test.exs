@@ -8,6 +8,20 @@ defmodule BacView.BACnet.Stack.BootTest do
   alias BacView.Settings
 
   setup do
+    on_exit(fn ->
+      path = Application.get_env(:bacview, :runtime_settings_path)
+      if path, do: File.rm(path)
+
+      {:ok, _} =
+        Settings.update(
+          transport: "ipv4",
+          interface: first_ipv4_interface(),
+          ipv4_port: Settings.defaults().ipv4_port,
+          mstp_local_address: Settings.defaults().mstp_local_address,
+          mstp_baud_rate: Settings.defaults().mstp_baud_rate
+        )
+    end)
+
     stack_pid = start_supervised!(Stack)
     %{stack_pid: stack_pid}
   end
@@ -59,7 +73,7 @@ defmodule BacView.BACnet.Stack.BootTest do
 
   @tag :ipv4_runtime
   test "resubscribes dependents when runtime children restart" do
-    assert {:ok, settings} = Settings.update(transport: "ipv4")
+    assert {:ok, settings} = Settings.update(transport: "ipv4", ipv4_port: 48_123)
     assert settings.interface
 
     assert :ok = Boot.start_runtime()
@@ -78,6 +92,13 @@ defmodule BacView.BACnet.Stack.BootTest do
     state = :sys.get_state(Boot)
 
     assert state.runtime_snapshot.client == Process.whereis(client)
+  end
+
+  defp first_ipv4_interface do
+    case Settings.interface_options("ipv4") do
+      [%{value: value} | _] -> value
+      _ -> "lo"
+    end
   end
 
   defp wait_for_new_client_pid(client, original_pid, attempts \\ 50)

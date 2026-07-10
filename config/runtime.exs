@@ -1,5 +1,12 @@
 import Config
 
+timezone =
+  System.get_env("BACVIEW_TIMEZONE") ||
+    Application.get_env(:bacview, :timezone, "Europe/Zurich")
+
+config :bacview, :timezone, timezone
+config :bacstack, :default_timezone, timezone
+
 if Application.get_env(:bacview, :desktop_mode) do
   config :bacview,
          :runtime_settings_path,

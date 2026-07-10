@@ -15,6 +15,7 @@ defmodule BacView.BACnet.Discovery do
   alias BacView.BACnet.Client
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.IAmCollector
+  alias BacView.Settings
   alias BacView.Text
 
   @table :bacview_devices
@@ -478,7 +479,7 @@ defmodule BacView.BACnet.Discovery do
     if trimmed == "" do
       {:ok, nil}
     else
-      port = Address.default_bbmd_port()
+      port = Settings.get().ipv4_port
 
       with {:ok, ips} <- Address.expand_scan_targets(trimmed) do
         {:ok, Enum.map(ips, &{&1, port})}

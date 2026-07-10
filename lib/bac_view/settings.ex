@@ -4,17 +4,19 @@ defmodule BacView.Settings do
   """
   use GenServer
 
+  alias BacView.BACnet.Address
   alias BacView.BACnet.InterfaceSelection
 
   @settings_file "runtime_settings.json"
 
-  @stack_keys ~w(transport interface mstp_local_address mstp_baud_rate)a
+  @stack_keys ~w(transport interface ipv4_port mstp_local_address mstp_baud_rate)a
   @mstp_enabled Application.compile_env!(:bacview, :mstp_enabled)
   @supported_transports if @mstp_enabled, do: ~w(ipv4 mstp), else: ~w(ipv4)
 
   @type t :: %{
           transport: String.t(),
           interface: String.t() | nil,
+          ipv4_port: pos_integer(),
           device_id: pos_integer(),
           network_number: pos_integer(),
           cov_lifetime_seconds: non_neg_integer(),
@@ -70,6 +72,7 @@ defmodule BacView.Settings do
     %{
       transport: "ipv4",
       interface: nil,
+      ipv4_port: Address.default_ipv4_port(),
       device_id: 4_194_302,
       network_number: 1,
       cov_lifetime_seconds: 3600,
@@ -146,6 +149,9 @@ defmodule BacView.Settings do
           {:cont, {:ok, %{acc | interface: trimmed}}}
         end
 
+      {:ipv4_port, value}, {:ok, acc} when is_integer(value) and value in 47_808..65_535 ->
+        {:cont, {:ok, %{acc | ipv4_port: value}}}
+
       {:device_id, value}, {:ok, acc} when is_integer(value) and value in 0..4_194_303 ->
         {:cont, {:ok, %{acc | device_id: value}}}
 
@@ -161,8 +167,8 @@ defmodule BacView.Settings do
       {:cov_increment, nil}, {:ok, acc} ->
         {:cont, {:ok, %{acc | cov_increment: nil}}}
 
-      {:cov_increment, value}, {:ok, acc} when is_float(value) and value >= 0 ->
-        {:cont, {:ok, %{acc | cov_increment: value}}}
+      {:cov_increment, value}, {:ok, acc} when is_number(value) and value >= 0 ->
+        {:cont, {:ok, %{acc | cov_increment: value * 1.0}}}
 
       {:mstp_local_address, value}, {:ok, acc} when is_integer(value) and value in 0..127 ->
         {:cont, {:ok, %{acc | mstp_local_address: value}}}

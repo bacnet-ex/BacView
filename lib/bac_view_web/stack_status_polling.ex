@@ -24,15 +24,12 @@ defmodule BacViewWeb.StackStatusPolling do
   @spec end_fast_poll?(integer() | nil, integer(), map()) :: boolean()
   def end_fast_poll?(fast_poll_until, now, status)
       when is_integer(fast_poll_until) and is_integer(now) and is_map(status) do
-    stack_offline_due_to_error?(status) or Map.get(status, :running?, false) or
-      now >= fast_poll_until
+    stack_offline?(status) or Map.get(status, :running?, false) or now >= fast_poll_until
   end
 
   def end_fast_poll?(nil, _now, _status), do: true
 
-  defp stack_offline_due_to_error?(%{running?: false, last_error: error})
-       when not is_nil(error),
-       do: true
-
-  defp stack_offline_due_to_error?(_stack_offline_due_to_error), do: false
+  @spec stack_offline?(map()) :: boolean()
+  def stack_offline?(%{running?: false, last_error: error}) when not is_nil(error), do: true
+  def stack_offline?(_status), do: false
 end

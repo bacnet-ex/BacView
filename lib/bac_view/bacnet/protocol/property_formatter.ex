@@ -16,6 +16,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
 
   alias BacView.BACnet.Protocol.BacnetCalendarFormat
   alias BacView.BACnet.Protocol.EngineeringUnits
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.Text
 
@@ -58,23 +59,65 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
 
   def coerce_present_value(value, _object, _prop), do: value
 
+  @spec format_edit_value(term(), map() | nil, map() | nil) :: String.t()
+  def format_edit_value(nil, _object, _prop), do: ""
+
+  def format_edit_value(value, _object, _prop) when is_boolean(value),
+    do: if(value, do: "true", else: "false")
+
+  def format_edit_value(value, _object, _prop) when is_atom(value), do: Atom.to_string(value)
+  def format_edit_value(value, _object, _prop) when is_binary(value), do: value
+
+  def format_edit_value(value, _object, _prop) when is_integer(value),
+    do: Integer.to_string(value)
+
+  def format_edit_value(value, object, prop) when is_float(value) do
+    if editable_real_present_value?(value, object, prop) do
+      format_present_float(value, object && Map.get(object, :resolution))
+    else
+      format_float(value)
+    end
+  end
+
+  def format_edit_value(_value, _object, _prop), do: ""
+
   @spec format_present_value(term(), map() | nil, map() | nil) :: String.t()
   def format_present_value(value, object, prop \\ nil) do
     coerced = coerce_present_value(value, object, prop)
     units = object && Map.get(object, :units)
 
-    if real_present_value?(coerced, object, prop) do
-      format_real_present_value(coerced, units)
-    else
-      format_value(coerced, units)
-    end
+    base =
+      cond do
+        MultistateState.multistate_object?(object) ->
+          MultistateState.format_present_value(coerced, object) ||
+            format_value(coerced, units)
+
+        real_present_value?(coerced, object, prop) ->
+          format_real_present_value(coerced, units, object)
+
+        true ->
+          format_value(coerced, units)
+      end
+
+    base
   end
 
   @spec format_float(float()) :: String.t()
   def format_float(value) when is_float(value) do
-    value
-    |> :erlang.float_to_binary(decimals: @max_float_decimals)
-    |> trim_trailing_zeros()
+    format_float(value, nil)
+  end
+
+  @spec format_float(float(), term()) :: String.t()
+  def format_float(value, resolution) when is_float(value) do
+    case decimal_places_from_resolution(resolution) do
+      nil ->
+        value
+        |> :erlang.float_to_binary(decimals: @max_float_decimals)
+        |> trim_trailing_zeros()
+
+      decimals ->
+        :erlang.float_to_binary(value, decimals: decimals)
+    end
   end
 
   @spec format_value(term(), term()) :: String.t()
@@ -235,6 +278,18 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
 
   defp real_present_value?(_value3, _object, _value), do: false
 
+  defp editable_real_present_value?(value, object, prop) when is_number(value) do
+    present_value_property?(prop) and real_present_value?(value, object, prop)
+  end
+
+  defp editable_real_present_value?(_value, _object, _prop), do: false
+
+  defp present_value_property?(%{property: property})
+       when property in [:present_value, :relinquish_default],
+       do: true
+
+  defp present_value_property?(_prop), do: false
+
   defp analog_object?(%{type: type}) when type in @analog_object_types, do: true
   defp analog_object?(_analog_object), do: false
 
@@ -242,16 +297,63 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   defp real_present_value_prop?(%{type: "REAL"}), do: true
   defp real_present_value_prop?(_real_present_value_prop), do: false
 
-  defp format_real_present_value(value, units) when is_integer(value) do
-    format_real_present_value(value * 1.0, units)
+  defp format_real_present_value(value, units, _object) when is_integer(value) do
+    with_units(Integer.to_string(value), units)
   end
 
-  defp format_real_present_value(value, units) when is_float(value) do
-    case EngineeringUnits.symbol(units) do
-      "" -> format_float(value)
-      symbol -> "#{format_float(value)} #{symbol}"
+  defp format_real_present_value(value, units, object) when is_float(value) do
+    resolution = object && Map.get(object, :resolution)
+    formatted = format_present_float(value, resolution)
+    with_units(formatted, units)
+  end
+
+  defp format_present_float(value, resolution) when is_float(value) do
+    case decimal_places_from_resolution(resolution) do
+      nil ->
+        value
+        |> :erlang.float_to_binary(decimals: @max_float_decimals)
+        |> trim_unneeded_decimals()
+
+      decimals ->
+        :erlang.float_to_binary(value, decimals: decimals)
     end
   end
+
+  defp with_units(formatted, units) do
+    case EngineeringUnits.symbol(units) do
+      "" -> formatted
+      symbol -> "#{formatted} #{symbol}"
+    end
+  end
+
+  @spec decimal_places_from_resolution(term()) :: non_neg_integer() | nil
+  def decimal_places_from_resolution(resolution) when is_integer(resolution) and resolution >= 1,
+    do: 0
+
+  def decimal_places_from_resolution(resolution) when is_integer(resolution) and resolution > 0 do
+    decimal_places_from_resolution(resolution * 1.0)
+  end
+
+  def decimal_places_from_resolution(resolution)
+      when is_float(resolution) and resolution >= 1.0,
+      do: 0
+
+  def decimal_places_from_resolution(resolution) when is_float(resolution) and resolution > 0 do
+    resolution
+    |> :erlang.float_to_binary(decimals: @max_float_decimals)
+    |> String.split(".", parts: 2)
+    |> case do
+      [_whole] ->
+        0
+
+      [_whole, fraction] ->
+        fraction
+        |> String.trim_trailing("0")
+        |> String.length()
+    end
+  end
+
+  def decimal_places_from_resolution(_resolution), do: nil
 
   defp trim_trailing_zeros(str) do
     if String.contains?(str, ".") do
@@ -259,6 +361,16 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
       trimmed = String.trim_trailing(fraction, "0")
       fraction = if trimmed == "", do: "0", else: trimmed
       whole <> "." <> fraction
+    else
+      str
+    end
+  end
+
+  defp trim_unneeded_decimals(str) do
+    if String.contains?(str, ".") do
+      str
+      |> String.trim_trailing("0")
+      |> String.trim_trailing(".")
     else
       str
     end

@@ -23,7 +23,7 @@ defmodule BacViewWeb.StackSettingsPanelTest do
 
     html =
       render_component(&StackSettingsPanel.stack_settings_panel/1,
-        form: stack_form(),
+        form: stack_form("mstp"),
         settings: settings,
         stack_status: stack_status,
         interface_options: [%{value: "ttyS0", label: "ttyS0"}],
@@ -39,7 +39,7 @@ defmodule BacViewWeb.StackSettingsPanelTest do
   test "renders active stack status without error" do
     html =
       render_component(&StackSettingsPanel.stack_settings_panel/1,
-        form: stack_form(),
+        form: stack_form("ipv4"),
         settings: %{transport: "ipv4", interface: "lo", interface_error: nil},
         stack_status: %{running?: true, last_error: nil},
         interface_options: [%{value: "lo", label: "lo"}],
@@ -50,14 +50,19 @@ defmodule BacViewWeb.StackSettingsPanelTest do
     assert html =~ "Aktiv"
     refute html =~ ~s/id="stack-status-error"/
     assert html =~ ~s/id="stack-settings-refresh-interfaces-btn"/
+    assert html =~ "UDP-Port"
+    assert html =~ "COV-Inkrement"
+    assert html =~ "COV-Lifetime (Sek.)"
   end
 
-  defp stack_form do
+  defp stack_form(transport) do
     params = %{
-      "transport" => "mstp",
+      "transport" => transport,
       "interface" => "ttyS0",
       "device_id" => "4194302",
+      "ipv4_port" => "47808",
       "cov_lifetime_seconds" => "3600",
+      "cov_increment" => "",
       "cov_confirmed" => "false",
       "network_number" => "1",
       "mstp_local_address" => "127",

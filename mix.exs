@@ -69,6 +69,7 @@ defmodule BacView.MixProject do
       {:phoenix_live_view, "~> 1.1"},
       {:req, "~> 0.5"},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:tzdata, "~> 1.1"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"}
     ]
@@ -127,7 +128,7 @@ defmodule BacView.MixProject do
         "format --check-formatted",
         "credo --strict --all",
         "dialyzer",
-        "test"
+        "test --warnings-as-errors"
       ]
     ]
   end

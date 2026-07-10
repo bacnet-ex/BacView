@@ -15,11 +15,15 @@ function chartLocale(el) {
   return el.dataset.locale || defaultLocale
 }
 
+function chartTimezone(el) {
+  return el.dataset.timezone || "UTC"
+}
+
 function formatChartTime(el, seconds) {
   const date = new Date(seconds * 1000)
 
   return new Intl.DateTimeFormat(chartLocale(el), {
-    timeZone: "UTC",
+    timeZone: chartTimezone(el),
     hour: "2-digit",
     minute: "2-digit",
     hour12: false,
@@ -30,7 +34,7 @@ function formatChartDateTime(el, seconds) {
   const date = new Date(seconds * 1000)
 
   return new Intl.DateTimeFormat(chartLocale(el), {
-    timeZone: "UTC",
+    timeZone: chartTimezone(el),
     day: "2-digit",
     month: "2-digit",
     year: "numeric",

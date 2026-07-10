@@ -4,6 +4,9 @@ defmodule BacView.BACnet.SubscriptionManager do
   """
   use GenServer
 
+  require Logger
+
+  alias BACnet.Protocol.APDU
   alias BACnet.Protocol.APDU.ConfirmedServiceRequest
   alias BACnet.Protocol.APDU.SimpleACK
   alias BACnet.Protocol.APDU.UnconfirmedServiceRequest
@@ -25,7 +28,6 @@ defmodule BacView.BACnet.SubscriptionManager do
   @table :bacview_subscriptions
   @notification_log :bacview_cov_notification_log
   @notification_seq :bacview_cov_notification_seq
-  @renew_interval_ms 45_000
   @topic_cov "cov:updates"
 
   def start_link(opts \\ []) do
@@ -157,21 +159,15 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   @impl true
   def handle_info(:renew_subscriptions, state) do
+    schedule_renewal()
     now = DateTime.utc_now()
 
     if :ets.whereis(@table) != :undefined do
-      for {key, sub} <- :ets.tab2list(@table), Subscription.needs_renewal?(sub, now) do
-        {_device_id, _type, _instance, property} = key
-
-        do_subscribe(sub.device_id, sub.object_id, property,
-          lifetime: sub.lifetime,
-          confirmed: sub.confirmed,
-          process_id: sub.process_id
-        )
+      for {_key, sub} <- :ets.tab2list(@table), Subscription.needs_renewal?(sub, now) do
+        renew_subscription(sub)
       end
     end
 
-    schedule_renewal()
     {:noreply, state}
   end
 
@@ -217,13 +213,7 @@ defmodule BacView.BACnet.SubscriptionManager do
     if :ets.whereis(@table) != :undefined do
       @table
       |> :ets.tab2list()
-      |> Enum.each(fn {_key, sub} ->
-        do_subscribe(sub.device_id, sub.object_id, sub.property,
-          lifetime: sub.lifetime,
-          confirmed: sub.confirmed,
-          process_id: sub.process_id
-        )
-      end)
+      |> Enum.each(fn {_key, sub} -> renew_subscription(sub) end)
     end
 
     {:noreply, state}
@@ -249,6 +239,18 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   @doc false
+  @spec cov_property_fallback?(term()) :: boolean()
+  def cov_property_fallback?({:bacnet_error, %APDU.Error{code: code}})
+      when code in [:optional_functionality_not_supported, :not_cov_property],
+      do: true
+
+  def cov_property_fallback?({:bacnet_reject, %APDU.Reject{reason: reason}})
+      when reason in [:reject_unrecognized_service, :unrecognized_service],
+      do: true
+
+  def cov_property_fallback?(_reason), do: false
+
+  @doc false
   @spec resubscribe_all_active() :: :ok
   def resubscribe_all_active() do
     if Process.whereis(__MODULE__) do
@@ -256,6 +258,24 @@ defmodule BacView.BACnet.SubscriptionManager do
     end
 
     :ok
+  end
+
+  defp renew_subscription(sub) do
+    case do_subscribe(sub.device_id, sub.object_id, sub.property,
+           lifetime: sub.lifetime,
+           confirmed: sub.confirmed,
+           process_id: sub.process_id,
+           subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
+         ) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        Logger.warning(
+          "COV renewal failed for device #{sub.device_id} " <>
+            "#{inspect(sub.object_id)} #{inspect(sub.property)}: #{inspect(reason)}"
+        )
+    end
   end
 
   defp do_subscribe(device_id, object_id, property, opts) do
@@ -271,13 +291,23 @@ defmodule BacView.BACnet.SubscriptionManager do
         pid: process_id
       ] ++ cov_increment_opt(settings)
 
+    preferred_service = Keyword.get(opts, :subscribe_service, :subscribe_cov_property)
+
     with {:ok, device} <- fetch_device(device_id),
-         :ok <- send_subscribe(device.address, object_id, property, sub_opts) do
+         {:ok, subscribe_service} <-
+           send_subscribe(device.address, object_id, property, sub_opts, preferred_service) do
+      cov_increment =
+        if subscribe_service == :subscribe_cov_property,
+          do: Keyword.get(sub_opts, :cov_increment),
+          else: nil
+
       sub =
         Subscription.build(device_id, device.address, object_id, property,
           lifetime: lifetime,
           confirmed: confirmed,
-          process_id: process_id
+          process_id: process_id,
+          cov_increment: cov_increment,
+          subscribe_service: subscribe_service
         )
 
       :ets.insert(@table, {Subscription.key(device_id, object_id, property), sub})
@@ -289,14 +319,24 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   defp do_unsubscribe(device_id, object_id, property) do
-    process_id =
+    {process_id, subscribe_service} =
       case lookup_subscription(device_id, object_id, property) do
-        {:ok, sub} -> sub.process_id
-        :error -> Subscription.process_id()
+        {:ok, sub} ->
+          {sub.process_id, Map.get(sub, :subscribe_service, :subscribe_cov_property)}
+
+        :error ->
+          {Subscription.process_id(), :subscribe_cov_property}
       end
 
     with {:ok, device} <- fetch_device(device_id),
-         :ok <- cancel_subscription(device.address, object_id, property, process_id) do
+         :ok <-
+           cancel_subscription(
+             device.address,
+             object_id,
+             property,
+             process_id,
+             subscribe_service
+           ) do
       :ets.delete(@table, Subscription.key(device_id, object_id, property))
       broadcast_cov_meta()
       :ok
@@ -305,23 +345,72 @@ defmodule BacView.BACnet.SubscriptionManager do
     end
   end
 
-  defp send_subscribe(destination, object_id, :present_value, opts) do
-    Client.subscribe_cov(destination, object_id, opts)
+  defp send_subscribe(destination, object_id, property, opts, preferred_service) do
+    case preferred_service do
+      :subscribe_cov when property == :present_value ->
+        subscribe_present_value(destination, object_id, property, opts, :subscribe_cov)
+
+      _ ->
+        subscribe_present_value(destination, object_id, property, opts, :subscribe_cov_property)
+    end
   end
 
-  defp send_subscribe(destination, object_id, property, opts) do
-    Client.subscribe_cov_property(destination, object_id, property, opts)
+  defp subscribe_present_value(destination, object_id, _property, opts, :subscribe_cov) do
+    case Client.subscribe_cov(destination, object_id, opts) do
+      :ok -> {:ok, :subscribe_cov}
+      {:error, _} = err -> err
+    end
   end
 
-  defp cancel_subscription(destination, object_id, :present_value, process_id) do
-    Client.subscribe_cov(destination, object_id, lifetime: nil, pid: process_id)
+  defp subscribe_present_value(destination, object_id, property, opts, :subscribe_cov_property) do
+    case Client.subscribe_cov_property(destination, object_id, property, opts) do
+      :ok ->
+        {:ok, :subscribe_cov_property}
+
+      {:error, reason} = err ->
+        if property == :present_value and cov_property_fallback?(reason) do
+          Logger.debug(
+            "Subscribe COV Property failed for #{inspect(object_id)}, " <>
+              "falling back to Subscribe COV: #{inspect(reason)}"
+          )
+
+          subscribe_present_value(destination, object_id, property, opts, :subscribe_cov)
+        else
+          err
+        end
+    end
   end
 
-  defp cancel_subscription(destination, object_id, property, process_id) do
-    Client.subscribe_cov_property(destination, object_id, property,
-      lifetime: nil,
-      pid: process_id
-    )
+  defp cancel_subscription(destination, object_id, property, process_id, subscribe_service) do
+    opts = [lifetime: nil, pid: process_id]
+
+    case subscribe_service do
+      :subscribe_cov when property == :present_value ->
+        cancel_present_value(destination, object_id, opts, :subscribe_cov)
+
+      _ ->
+        case Client.subscribe_cov_property(destination, object_id, property, opts) do
+          :ok ->
+            :ok
+
+          {:error, reason} ->
+            if property == :present_value and cov_property_fallback?(reason) do
+              cancel_present_value(destination, object_id, opts, :subscribe_cov)
+            else
+              {:error, reason}
+            end
+        end
+    end
+  end
+
+  defp cancel_present_value(destination, object_id, opts, preferred_service) do
+    case preferred_service do
+      :subscribe_cov ->
+        Client.subscribe_cov(destination, object_id, opts)
+
+      :subscribe_cov_property ->
+        Client.subscribe_cov_property(destination, object_id, :present_value, opts)
+    end
   end
 
   defp handle_cov_notification(notification, source, ref, client_pid, confirmed?, invoke_id \\ 0) do
@@ -340,14 +429,17 @@ defmodule BacView.BACnet.SubscriptionManager do
       formatted = format_cov_value(device_id, object_id, property, value)
       key = Subscription.key(device_id, object_id, property)
 
+      received_now = DateTime.utc_now()
+
       updated_sub =
         case :ets.lookup(@table, key) do
           [{^key, sub}] ->
             MapHelpers.update(sub, %{
-              last_cov_at: DateTime.utc_now(),
+              last_cov_at: received_now,
               last_value: value,
               last_value_formatted: formatted,
-              time_remaining: notification.time_remaining
+              time_remaining: notification.time_remaining,
+              expires_at: expires_at_from_notification(notification.time_remaining, received_now)
             })
 
           [] ->
@@ -356,7 +448,7 @@ defmodule BacView.BACnet.SubscriptionManager do
 
       if updated_sub, do: :ets.insert(@table, {key, updated_sub})
 
-      received_at = DateTime.utc_now()
+      received_at = received_now
 
       log_entry =
         append_notification(%{
@@ -455,8 +547,31 @@ defmodule BacView.BACnet.SubscriptionManager do
   defp cov_increment_opt(%{cov_increment: inc}), do: [cov_increment: inc]
 
   defp schedule_renewal() do
-    Process.send_after(self(), :renew_subscriptions, @renew_interval_ms)
+    interval =
+      active_lifetimes()
+      |> Enum.min(fn -> BacView.Settings.cov_lifetime() end)
+      |> Subscription.renew_check_interval_ms()
+
+    Process.send_after(self(), :renew_subscriptions, interval)
   end
+
+  defp active_lifetimes() do
+    if :ets.whereis(@table) == :undefined do
+      []
+    else
+      @table
+      |> :ets.tab2list()
+      |> Enum.map(fn {_key, %{lifetime: lifetime}} -> lifetime end)
+      |> Enum.filter(&(&1 > 0))
+    end
+  end
+
+  defp expires_at_from_notification(time_remaining, now)
+       when is_integer(time_remaining) and time_remaining > 0 do
+    DateTime.add(now, time_remaining, :second)
+  end
+
+  defp expires_at_from_notification(_time_remaining, now), do: now
 
   defp broadcast_cov_meta() do
     Phoenix.PubSub.broadcast(BacView.PubSub, @topic_cov, :cov_updated)

@@ -98,6 +98,112 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "cov increment"
   end
 
+  test "renders multistate present value with state text and dropdown options" do
+    object = %{
+      name: "MSV-1",
+      type: :multi_state_value,
+      instance: 1,
+      writable: true,
+      commandable: false,
+      present_value: 2,
+      present_value_formatted: "2 (On)",
+      number_of_states: 2,
+      state_text: ["Off", "On"],
+      units: nil,
+      updated_at: nil
+    }
+
+    prop =
+      BacView.BACnet.Protocol.PropertyWriter.enrich_properties(
+        [
+          %{
+            property: :present_value,
+            property_name: "present value",
+            type: "INTEGER",
+            value: 2,
+            writable: true,
+            bac_type: :unsigned_integer,
+            value_display: %{kind: :scalar, formatted: "2", fields: [], items: []},
+            value_formatted: "2"
+          }
+        ],
+        object
+      )
+      |> List.first()
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          locale: "de",
+          locale_version: 0,
+          write_priority: 8,
+          writing_property: nil
+        }
+      )
+
+    assert html =~ "2 (On)"
+    assert html =~ ~s(<select)
+    assert html =~ "1 (Off)"
+    assert html =~ "2 (On)"
+  end
+
+  test "renders multistate relinquish_default with state text and dropdown options" do
+    object = %{
+      name: "MSV-1",
+      type: :multi_state_value,
+      instance: 1,
+      writable: false,
+      commandable: true,
+      present_value: 2,
+      present_value_formatted: "2 (On)",
+      number_of_states: 2,
+      state_text: ["Off", "On"],
+      units: nil,
+      updated_at: nil
+    }
+
+    prop =
+      BacView.BACnet.Protocol.PropertyWriter.enrich_properties(
+        [
+          %{
+            property: :relinquish_default,
+            property_name: "relinquish default",
+            type: "INTEGER",
+            value: 1,
+            writable: true,
+            bac_type: :unsigned_integer,
+            value_display: %{kind: :scalar, formatted: "1", fields: [], items: []},
+            value_formatted: "1"
+          }
+        ],
+        object
+      )
+      |> List.first()
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          locale: "de",
+          locale_version: 0,
+          write_priority: 8,
+          writing_property: nil
+        }
+      )
+
+    assert html =~ "1 (Off)"
+    assert html =~ ~s(<select)
+    assert html =~ "1 (Off)"
+    assert html =~ "2 (On)"
+  end
+
   test "renders writable enumerations as dropdowns even after property row sanitization" do
     prop =
       BacView.Text.sanitize_property_row(%{
@@ -318,13 +424,12 @@ defmodule BacViewWeb.ObjectDetailTest do
           object: object,
           properties: properties,
           properties_loading: true,
-          properties_reading_visible: true,
           locale: "de",
           locale_version: 0
         }
       )
 
-    assert html =~ ~s(id="object-reading-status")
+    assert html =~ ~s(id="object-refresh-banner")
     assert html =~ "Eigenschaften werden gelesen…"
     assert html =~ "bac-reading-bar"
     assert html =~ "bac-table-reading"
@@ -361,6 +466,97 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ ~s(<button type="button" id="refresh-properties-btn")
     assert html =~ "disabled"
     assert html =~ "animate-spin"
+  end
+
+  test "renders single trend log jump button next to cov controls" do
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      writable: false,
+      present_value: 1.0,
+      present_value_formatted: "1.0",
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0,
+          object_nav_targets: [
+            %{
+              type: :trend_log,
+              instance: 2,
+              name: "Trend 2",
+              label: "Trend 2 (trend_log:2)",
+              href: "/devices/1/objects/trend_log/2"
+            }
+          ]
+        }
+      )
+
+    assert html =~ ~s(id="object-nav-jump")
+    assert html =~ "Zum Trendprotokoll"
+    refute html =~ ~s(id="object-nav-menu-toggle")
+  end
+
+  test "renders referenced object dropdown for trend log multiple targets" do
+    object = %{
+      name: "Trend 5",
+      type: :trend_log_multiple,
+      instance: 5,
+      present_value: nil,
+      present_value_formatted: "—",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0,
+          object_nav_targets: [
+            %{
+              type: :analog_input,
+              instance: 1,
+              name: "AI-1",
+              label: "AI-1 (analog_input:1)",
+              href: "/devices/1/objects/analog_input/1"
+            },
+            %{
+              type: :binary_input,
+              instance: 2,
+              name: "BI-2",
+              label: "BI-2 (binary_input:2)",
+              href: "/devices/1/objects/binary_input/2"
+            }
+          ],
+          object_nav_menu_open: true
+        }
+      )
+
+    assert html =~ ~s(id="object-nav-menu-toggle")
+    assert html =~ "Referenzierte Objekte"
+    assert html =~ ~s(id="object-nav-menu")
+    assert html =~ "AI-1 (analog_input:1)"
+    assert html =~ "BI-2 (binary_input:2)"
+    refute html =~ ~s(id="object-nav-jump")
   end
 
   test "renders chart button on log buffer without cov or write actions" do

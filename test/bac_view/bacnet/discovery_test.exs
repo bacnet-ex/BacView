@@ -2,6 +2,7 @@ defmodule BacView.BACnet.DiscoveryTest do
   use ExUnit.Case, async: true
 
   alias BacView.BACnet.Discovery
+  alias BacView.Settings
 
   test "normalize_device_name sanitizes BACnet object names" do
     assert Discovery.normalize_device_name("AHU-1") == "AHU-1"
@@ -78,7 +79,7 @@ defmodule BacView.BACnet.DiscoveryTest do
                Discovery.parse_scan_params(%{"timeout_ms" => "1000", "target_ip" => "10.0.0.42"})
 
       assert Keyword.fetch!(opts, :timeout) == 1000
-      assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, 47_808}]
+      assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, Settings.get().ipv4_port}]
     end
 
     test "parses target IP octet range for multiple unicast Who-Is" do
@@ -90,12 +91,14 @@ defmodule BacView.BACnet.DiscoveryTest do
 
       assert Keyword.fetch!(opts, :timeout) == 1000
 
+      port = Settings.get().ipv4_port
+
       assert Keyword.fetch!(opts, :destination) == [
-               {{192, 168, 100, 31}, 47_808},
-               {{192, 168, 100, 32}, 47_808},
-               {{192, 168, 100, 33}, 47_808},
-               {{192, 168, 100, 34}, 47_808},
-               {{192, 168, 100, 35}, 47_808}
+               {{192, 168, 100, 31}, port},
+               {{192, 168, 100, 32}, port},
+               {{192, 168, 100, 33}, port},
+               {{192, 168, 100, 34}, port},
+               {{192, 168, 100, 35}, port}
              ]
     end
 

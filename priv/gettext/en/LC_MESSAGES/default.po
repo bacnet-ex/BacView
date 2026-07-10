@@ -18,9 +18,6 @@ msgstr "%{count} properties"
 msgid "%{count} Einträge"
 msgstr "%{count} entries"
 
-msgid "%{count} Fehler"
-msgstr "%{count} errors"
-
 msgid "%{count} Felder"
 msgstr "%{count} fields"
 
@@ -252,6 +249,9 @@ msgstr "COV subscription failed: %{detail}"
 msgid "COV-Abonnement kündigen fehlgeschlagen: %{detail}"
 msgstr "COV unsubscribe failed: %{detail}"
 
+msgid "COV-Inkrement"
+msgstr "COV increment"
+
 msgid "COV-Lifetime (Sek.)"
 msgstr "COV lifetime (sec.)"
 
@@ -432,8 +432,14 @@ msgstr "Failed to fetch events: %{detail}"
 msgid "Ereignisse aktualisiert."
 msgstr "Events updated."
 
+msgid "Erneut abonnieren"
+msgstr "Resubscribe"
+
 msgid "Erweitert"
 msgstr "Advanced"
+
+msgid "Fehlerprotokoll (%{count})"
+msgstr "Error log (%{count})"
 
 msgid "Felder"
 msgstr "Fields"
@@ -464,9 +470,6 @@ msgstr "Reinitialize device"
 
 msgid "Gerät nicht gefunden."
 msgstr "Device not found."
-
-msgid "Gerät wird geladen…"
-msgstr "Loading device…"
 
 msgid "Gerät wird neu initialisiert."
 msgstr "Device is being reinitialized."
@@ -618,6 +621,9 @@ msgstr "No active alarms. Objects with in-alarm or fault status appear here."
 msgid "Keine aktiven COV-Abonnements."
 msgstr "No active COV subscriptions."
 
+msgid "Keine seriellen Ports gefunden."
+msgstr "No serial ports found."
+
 msgid "Klicken zum Schreiben"
 msgstr "Click to write"
 
@@ -647,6 +653,9 @@ msgstr "Life safety alarm"
 
 msgid "Lebensschutz-Änderung"
 msgstr "Life safety change"
+
+msgid "Leer = Objektstandard"
+msgstr "Empty = object default"
 
 msgid "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
 msgstr "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is."
@@ -701,6 +710,9 @@ msgstr "Network"
 
 msgid "Netzwerk scannen"
 msgstr "Scan network"
+
+msgid "Netzwerkadresse ist nicht verfügbar (eaddrnotavail)."
+msgstr "Network address is not available (eaddrnotavail)."
 
 msgid "Netzwerknummer"
 msgstr "Network number"
@@ -852,6 +864,9 @@ msgstr "Acknowledgement"
 msgid "Quittierung erforderlich"
 msgstr "Acknowledgement required"
 
+msgid "Referenzierte Objekte"
+msgstr "Referenced objects"
+
 msgid "Registrieren"
 msgstr "Register"
 
@@ -981,11 +996,17 @@ msgstr "Transport & local device"
 msgid "Trendprotokoll"
 msgstr "Trend log"
 
+msgid "Trendprotokolle"
+msgstr "Trend logs"
+
 msgid "Trägt BacView per AddListElement in die recipient_list aller Meldungsklassen ein (Fallback: WriteProperty)."
 msgstr "Enrolls BacView via AddListElement into the recipient_list of all notification classes (fallback: WriteProperty)."
 
 msgid "Typ"
 msgstr "Type"
+
+msgid "UDP-Port"
+msgstr "UDP port"
 
 msgid "UTC"
 msgstr "UTC"
@@ -1136,6 +1157,12 @@ msgstr "Target IP (optional)"
 
 msgid "Zugriff auf den seriellen Port verweigert (Berechtigung fehlt)."
 msgstr "Access to the serial port denied (permission missing)."
+
+msgid "Zum Objekt"
+msgstr "To object"
+
+msgid "Zum Trendprotokoll"
+msgstr "To trend log"
 
 msgid "Zur Geräteansicht"
 msgstr "To device view"

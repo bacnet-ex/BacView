@@ -39,4 +39,12 @@ defmodule BacViewWeb.ShortcutsTest do
 
     assert has_element?(view, "#refreshed", "true")
   end
+
+  test "uppercase R also triggers refresh" do
+    {:ok, view, _html} = live_isolated(build_conn(), RefreshLive, [])
+
+    render_click(view, "global_keydown", %{"key" => "R"})
+
+    assert has_element?(view, "#refreshed", "true")
+  end
 end

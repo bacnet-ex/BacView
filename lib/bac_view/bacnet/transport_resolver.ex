@@ -59,6 +59,12 @@ defmodule BacView.BACnet.TransportResolver do
           baudrate: settings.mstp_baud_rate
         )
 
+      "ipv4" ->
+        Keyword.merge(base,
+          local_ip: settings.interface,
+          bacnet_port: settings.ipv4_port
+        )
+
       _settings ->
         Keyword.put(base, :local_ip, settings.interface)
     end

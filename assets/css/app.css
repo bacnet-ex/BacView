@@ -514,6 +514,50 @@ body {
   font-size: 0.8125rem;
 }
 
+.bac-table--resizable {
+  table-layout: fixed;
+}
+
+.bac-table-col-header {
+  position: relative;
+  overflow: visible;
+}
+
+.bac-col-resize-handle {
+  position: absolute;
+  top: 0;
+  right: -3px;
+  width: 7px;
+  height: 100%;
+  cursor: col-resize;
+  user-select: none;
+  touch-action: none;
+  z-index: 2;
+}
+
+.bac-col-resize-handle::after {
+  content: "";
+  position: absolute;
+  top: 20%;
+  bottom: 20%;
+  left: 3px;
+  width: 1px;
+  background: var(--bac-accent);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.bac-table-col-header:hover .bac-col-resize-handle::after,
+body.bac-col-resizing .bac-col-resize-handle::after {
+  opacity: 0.55;
+}
+
+body.bac-col-resizing,
+body.bac-col-resizing * {
+  cursor: col-resize !important;
+  user-select: none !important;
+}
+
 .bac-table thead {
   background: var(--bac-bg-elevated);
   border-bottom: 1px solid var(--bac-border);

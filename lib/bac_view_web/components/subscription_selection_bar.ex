@@ -17,6 +17,15 @@ defmodule BacViewWeb.SubscriptionSelectionBar do
       <div class="flex flex-wrap items-center gap-2 ml-auto">
         <button
           type="button"
+          id="resubscribe-selected-subscriptions"
+          phx-click="resubscribe_selected_subscriptions"
+          class="bac-btn bac-btn-primary bac-btn-sm"
+        >
+          <.icon name="hero-signal" class="size-4" />
+          {t(@locale, @locale_version, "Erneut abonnieren")}
+        </button>
+        <button
+          type="button"
           phx-click="unsubscribe_selected_subscriptions"
           class="bac-btn bac-btn-ghost bac-btn-sm text-[var(--bac-rose)]"
         >

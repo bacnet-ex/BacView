@@ -69,4 +69,30 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
 
     assert ErrorMessage.format_reason(reason) =~ "verweigert"
   end
+
+  test "formats BACnet/IP port bind failures with explicit reason" do
+    reason =
+      {{:shutdown, {:failed_to_start_child, BACnet.Stack.Transport.IPv4Transport, :eaddrinuse}},
+       {:child, :undefined, BacView.BACnet.Stack.Runtime, :start_link, :temporary, false,
+        :infinity, :supervisor, [BacView.BACnet.Stack.Runtime]}}
+
+    message = ErrorMessage.format_reason(reason)
+
+    assert message =~ "eaddrinuse"
+    assert message =~ "UDP-Port"
+    assert message =~ "BACnet-Anwendung"
+  end
+
+  test "formats missing serial ports startup failures" do
+    reason =
+      {:no_serial_ports,
+       {:child, :undefined, BacView.BACnet.Stack.Runtime, :start_link, :temporary, false,
+        :infinity, :supervisor, [BacView.BACnet.Stack.Runtime]}}
+
+    assert ErrorMessage.format_reason(reason) =~ "seriellen Ports"
+  end
+
+  test "formats unknown atoms with readable reason code" do
+    assert ErrorMessage.format_reason(:einval) =~ "einval"
+  end
 end

@@ -87,8 +87,9 @@ defmodule BacViewWeb.LocaleRefresh do
   defp refresh_properties_assign(socket) do
     case socket.assigns do
       %{properties: properties} when is_list(properties) ->
-        units = socket.assigns[:object] && Map.get(socket.assigns.object, :units)
-        assign(socket, :properties, refresh_properties(properties, units: units))
+        object = socket.assigns[:object]
+        units = object && Map.get(object, :units)
+        assign(socket, :properties, refresh_properties(properties, units: units, object: object))
 
       _socket ->
         socket

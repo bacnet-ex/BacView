@@ -34,4 +34,11 @@ defmodule BacViewWeb.StackStatusPollingTest do
 
     assert StackStatusPolling.end_fast_poll?(nil, now, %{running?: false, last_error: :eacces})
   end
+
+  test "stack_offline? is true only when stack failed to start" do
+    refute StackStatusPolling.stack_offline?(%{running?: true, last_error: nil})
+    refute StackStatusPolling.stack_offline?(%{running?: false, last_error: nil})
+
+    assert StackStatusPolling.stack_offline?(%{running?: false, last_error: :eacces})
+  end
 end

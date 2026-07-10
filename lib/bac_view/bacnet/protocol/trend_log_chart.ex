@@ -1,30 +1,19 @@
 defmodule BacView.BACnet.Protocol.TrendLogChart do
   @moduledoc false
 
+  alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.BACnetDateTime
   alias BACnet.Protocol.DeviceObjectPropertyRef
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.TrendLogReader
-
-  # BACnet log timestamps are device-local wall clock. We anchor them to UTC for
-  # chart epochs and format axis labels in UTC on the client so browsers do not
-  # apply a local offset (no tzdata dependency required).
-  @chart_epoch_zone "Etc/UTC"
+  alias BacView.Timezone
 
   @spec naive_to_unix_ms(NaiveDateTime.t()) :: integer()
-  def naive_to_unix_ms(%NaiveDateTime{} = naive) do
-    naive
-    |> DateTime.from_naive!(@chart_epoch_zone)
-    |> DateTime.to_unix(:millisecond)
-  end
+  defdelegate naive_to_unix_ms(naive), to: Timezone
 
   @spec unix_ms_to_naive(integer()) :: NaiveDateTime.t()
-  def unix_ms_to_naive(ms) when is_integer(ms) do
-    ms
-    |> DateTime.from_unix!(:millisecond)
-    |> DateTime.to_naive()
-  end
+  defdelegate unix_ms_to_naive(ms), to: Timezone
 
   @spec range_from_records([map()]) :: {NaiveDateTime.t(), NaiveDateTime.t()}
   def range_from_records(records) when is_list(records) do
@@ -340,6 +329,12 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   def property_refs_from_properties(_properties), do: []
 
   defp unwrap_refs(%DeviceObjectPropertyRef{} = ref), do: [ref]
+
+  defp unwrap_refs(%BACnetArray{} = array) do
+    array
+    |> BACnetArray.to_list()
+    |> Enum.flat_map(&unwrap_refs/1)
+  end
 
   defp unwrap_refs(%{items: items}) when is_list(items), do: Enum.flat_map(items, &unwrap_refs/1)
 

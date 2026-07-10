@@ -14,6 +14,11 @@ defmodule BacView.BACnet.AddressTest do
   test "parse_port accepts integer and string" do
     assert {:ok, 47_808} = Address.parse_port(47_808)
     assert {:ok, 47_808} = Address.parse_port("47808")
+    assert Address.default_ipv4_port() == 47_808
+    assert Address.valid_ipv4_port?(47_808)
+    assert Address.valid_ipv4_port?(65_535)
+    refute Address.valid_ipv4_port?(47_807)
+    refute Address.valid_ipv4_port?(65_536)
   end
 
   test "format_ip renders tuple" do

@@ -683,7 +683,7 @@ defmodule BacViewWeb.AlarmsPanel do
   defp state_badge_class(:life_safety_alarm), do: "bac-badge-error"
   defp state_badge_class(_normal), do: "bac-badge-ghost"
 
-  defp format_time(%DateTime{} = dt), do: Calendar.strftime(dt, "%H:%M:%S")
+  defp format_time(%DateTime{} = dt), do: BacView.Timezone.format(dt, "%H:%M:%S")
   defp format_time(_format_time), do: "—"
 
   defp object_path(device_id, type, instance, list_opts) do

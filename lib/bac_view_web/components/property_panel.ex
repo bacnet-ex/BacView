@@ -57,7 +57,7 @@ defmodule BacViewWeb.PropertyPanel do
         </div>
 
         <div :if={@object && !@loading && @properties != []} class="bac-table-wrap">
-          <table class="bac-table">
+          <table class="bac-table" id="property-panel-table">
             <thead>
               <tr>
                 <th>{t(@locale, @locale_version, "Name")}</th>

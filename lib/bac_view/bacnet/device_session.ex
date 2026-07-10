@@ -6,7 +6,6 @@ defmodule BacView.BACnet.DeviceSession do
 
   require Logger
 
-  alias BACnet.Protocol.APDU
   alias BACnet.Protocol.ApplicationTags.Encoding
   alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.EventTimestamps
@@ -16,12 +15,16 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.DeviceSessionSupervisor
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.HierarchyBuilder
+  alias BacView.BACnet.Protocol.ErrorMessage
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyReader
   alias BacView.BACnet.Protocol.PropertyWriter
   alias BacView.BACnet.Protocol.StatusFlagsParser
+  alias BacView.BACnet.Protocol.TrendLogNavigation
+  alias BacView.BACnet.Segmentation
   alias BacView.MapHelpers
 
   @objects_table :bacview_objects
@@ -205,7 +208,7 @@ defmodule BacView.BACnet.DeviceSession do
 
             state =
               state
-              |> Map.update!(:objects, &sync_alarm_fields_from_properties(&1, object, props))
+              |> Map.update!(:objects, &sync_object_fields_from_properties(&1, object, props))
               |> sync_objects_cache()
 
             {{:ok, props}, state}
@@ -392,7 +395,7 @@ defmodule BacView.BACnet.DeviceSession do
         {:ok, object_ids}
 
       {:error, _address} = err ->
-        if segmentation_not_supported_error?(err) do
+        if Segmentation.fallback_error?(err) do
           read_object_list_indexed(address, device_obj, device_id)
         else
           err
@@ -512,7 +515,7 @@ defmodule BacView.BACnet.DeviceSession do
       error_counter = :counters.new(1, [])
       skip_counter = :counters.new(1, [])
 
-      scanned =
+      {scanned, error_log} =
         object_ids
         |> Task.async_stream(
           fn object_id ->
@@ -526,20 +529,21 @@ defmodule BacView.BACnet.DeviceSession do
           ordered: false,
           timeout: :infinity
         )
-        |> Enum.reduce([], fn
-          {:ok, {:ok, pair}}, acc ->
+        |> Enum.reduce({[], []}, fn
+          {:ok, {:ok, pair}}, {acc, error_log} ->
             bump_scan_progress(
               device_id,
               done_counter,
               error_counter,
               skip_counter,
               total,
-              pair
+              pair,
+              error_log
             )
 
-            [pair | acc]
+            {[pair | acc], error_log}
 
-          {:ok, {:skipped, object_id}}, acc ->
+          {:ok, {:skipped, object_id}}, {acc, error_log} ->
             :counters.add(skip_counter, 1, 1)
 
             bump_scan_progress(
@@ -548,40 +552,80 @@ defmodule BacView.BACnet.DeviceSession do
               error_counter,
               skip_counter,
               total,
-              object_id
+              object_id,
+              error_log
             )
 
-            acc
+            {acc, error_log}
 
-          {:ok, {:error, object_id, reason}}, acc ->
+          {:ok, {:error, object_id, reason}}, {acc, error_log} ->
             Logger.warning(
               "Failed to read object #{format_current_object(object_id)}: #{inspect(reason)}"
             )
 
             :counters.add(error_counter, 1, 1)
-            bump_scan_progress(device_id, done_counter, error_counter, skip_counter, total, nil)
-            acc
 
-          {:exit, exit_reason}, acc ->
+            error_log = prepend_scan_error(error_log, object_id, reason)
+
+            bump_scan_progress(
+              device_id,
+              done_counter,
+              error_counter,
+              skip_counter,
+              total,
+              nil,
+              error_log
+            )
+
+            {acc, error_log}
+
+          {:exit, exit_reason}, {acc, error_log} ->
             Logger.warning("Object read task exited: #{inspect(exit_reason)}")
             :counters.add(error_counter, 1, 1)
-            bump_scan_progress(device_id, done_counter, error_counter, skip_counter, total, nil)
-            acc
 
-          other, acc ->
+            error_log = prepend_scan_error(error_log, nil, exit_reason)
+
+            bump_scan_progress(
+              device_id,
+              done_counter,
+              error_counter,
+              skip_counter,
+              total,
+              nil,
+              error_log
+            )
+
+            {acc, error_log}
+
+          other, {acc, error_log} ->
             Logger.warning("Unexpected object read stream result: #{inspect(other)}")
             :counters.add(error_counter, 1, 1)
-            bump_scan_progress(device_id, done_counter, error_counter, skip_counter, total, nil)
-            acc
+
+            error_log = prepend_scan_error(error_log, nil, other)
+
+            bump_scan_progress(
+              device_id,
+              done_counter,
+              error_counter,
+              skip_counter,
+              total,
+              nil,
+              error_log
+            )
+
+            {acc, error_log}
         end)
-        |> Enum.reverse()
+
+      scanned = Enum.reverse(scanned)
+      error_log = Enum.reverse(error_log)
 
       report_progress(device_id, %{
         stage: :scanning_objects,
         done: total,
         total: total,
         errors: :counters.get(error_counter, 1),
-        skipped: :counters.get(skip_counter, 1)
+        skipped: :counters.get(skip_counter, 1),
+        error_log: error_log
       })
 
       {:ok, scanned}
@@ -601,29 +645,13 @@ defmodule BacView.BACnet.DeviceSession do
         err
 
       {:error, _address} = err ->
-        if segmentation_not_supported_error?(err) do
+        if Segmentation.fallback_error?(err) do
           read_properties_for_scan(address, object, opts)
         else
           err
         end
     end
   end
-
-  defp segmentation_not_supported_error?({:error, :segmentation_not_supported}), do: true
-
-  defp segmentation_not_supported_error?({:error, {:segmentation_not_supported, _oid}}), do: true
-
-  defp segmentation_not_supported_error?({:error, {:bacnet_abort, %APDU.Abort{reason: reason}}})
-       when reason in [:segmentation_not_supported, 4],
-       do: true
-
-  defp segmentation_not_supported_error?(
-         {:error, {{:bacnet_abort, %APDU.Abort{reason: reason}}, _oid}}
-       )
-       when reason in [:segmentation_not_supported, 4],
-       do: true
-
-  defp segmentation_not_supported_error?(_segmentation_not_supported_error), do: false
 
   # Fallback that reads a curated set of properties individually (no RPM).
   # This allows scanning devices that do not support segmentation.
@@ -639,6 +667,9 @@ defmodule BacView.BACnet.DeviceSession do
       :event_state,
       :event_timestamps,
       :priority_array,
+      :number_of_states,
+      :state_text,
+      :resolution,
       :out_of_service,
       :subordinate_list,
       :subordinate_annotations,
@@ -668,7 +699,15 @@ defmodule BacView.BACnet.DeviceSession do
     |> then(&{:ok, &1})
   end
 
-  defp bump_scan_progress(device_id, done_counter, error_counter, skip_counter, total, current) do
+  defp bump_scan_progress(
+         device_id,
+         done_counter,
+         error_counter,
+         skip_counter,
+         total,
+         current,
+         error_log
+       ) do
     :counters.add(done_counter, 1, 1)
     done = :counters.get(done_counter, 1)
 
@@ -679,9 +718,20 @@ defmodule BacView.BACnet.DeviceSession do
         total: total,
         errors: :counters.get(error_counter, 1),
         skipped: :counters.get(skip_counter, 1),
-        detail: format_current_object(current)
+        detail: format_current_object(current),
+        error_log: Enum.reverse(error_log)
       })
     end
+  end
+
+  defp prepend_scan_error(error_log, object_id, reason) do
+    [
+      %{
+        object: format_current_object(object_id),
+        message: ErrorMessage.format_reason(reason)
+      }
+      | error_log
+    ]
   end
 
   defp bump_object_list_progress(device_id, counter, total) do
@@ -723,6 +773,27 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp format_current_object(_format_current_object), do: nil
 
+  defp normalize_error_log(error_log) when is_list(error_log) do
+    Enum.map(error_log, fn
+      %{object: object, message: message} when is_binary(message) ->
+        %{object: object, message: message}
+
+      %{object: object, message: message} ->
+        %{object: object, message: to_string(message)}
+
+      {object, message} ->
+        %{object: object, message: to_string(message)}
+
+      message when is_binary(message) ->
+        %{object: nil, message: message}
+
+      other ->
+        %{object: nil, message: inspect(other)}
+    end)
+  end
+
+  defp normalize_error_log(_error_log), do: []
+
   defp report_progress(device_id, progress) when is_map(progress) do
     normalized =
       %{
@@ -731,7 +802,8 @@ defmodule BacView.BACnet.DeviceSession do
         total: Map.get(progress, :total),
         errors: Map.get(progress, :errors, 0),
         skipped: Map.get(progress, :skipped, 0),
-        detail: Map.get(progress, :detail)
+        detail: Map.get(progress, :detail),
+        error_log: normalize_error_log(Map.get(progress, :error_log, []))
       }
 
     Phoenix.PubSub.broadcast(
@@ -746,27 +818,33 @@ defmodule BacView.BACnet.DeviceSession do
     present_value = Map.get(obj, :present_value)
     units = Map.get(obj, :units)
 
-    Map.merge(
-      %{
-        object_id: object_id,
-        type: type,
-        instance: instance,
-        type_label: ObjectTypes.short_label(type),
-        name: name,
-        description: object_description(obj) || nil,
-        status_flags: extract_status_flags(obj),
-        event_state: Map.get(obj, :event_state),
-        event_timestamps: extract_event_timestamps(obj),
-        present_value: present_value,
-        present_value_formatted:
-          PropertyFormatter.format_present_value(present_value, %{type: type, units: units}),
-        units: units,
-        writable: writable?(obj),
-        commandable: commandable?(obj),
-        updated_at: DateTime.utc_now()
-      },
-      PropertyWriter.active_priority_info(obj)
-    )
+    object_context =
+      Map.merge(
+        %{type: type, units: units, resolution: Map.get(obj, :resolution)},
+        MultistateState.object_fields(obj)
+      )
+
+    %{
+      object_id: object_id,
+      type: type,
+      instance: instance,
+      type_label: ObjectTypes.short_label(type),
+      name: name,
+      description: object_description(obj) || nil,
+      status_flags: extract_status_flags(obj),
+      event_state: Map.get(obj, :event_state),
+      event_timestamps: extract_event_timestamps(obj),
+      present_value: present_value,
+      present_value_formatted:
+        PropertyFormatter.format_present_value(present_value, object_context),
+      units: units,
+      writable: writable?(obj),
+      commandable: commandable?(obj),
+      updated_at: DateTime.utc_now()
+    }
+    |> Map.merge(object_context)
+    |> Map.merge(PropertyWriter.active_priority_info(obj, units, object_context))
+    |> maybe_put_log_property_refs(type, obj)
   end
 
   defp object_name(obj) when is_map(obj) do
@@ -796,27 +874,120 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
-  defp sync_alarm_fields_from_properties(
+  @doc false
+  @spec refresh_object_from_properties(map(), [map()]) :: map()
+  def refresh_object_from_properties(%{} = object, props) when is_list(props) do
+    apply_properties_to_object(object, props)
+  end
+
+  defp sync_object_fields_from_properties(
          objects,
          %ObjectIdentifier{type: type, instance: instance},
          props
        )
        when is_list(objects) and is_list(props) do
-    event_timestamps = property_row_value(props, :event_timestamps)
-    event_state = property_row_value(props, :event_state)
-
     Enum.map(objects, fn obj ->
       if obj.type == type and obj.instance == instance do
-        obj
-        |> maybe_put_field(:event_timestamps, event_timestamps)
-        |> maybe_put_field(:event_state, event_state)
+        apply_properties_to_object(obj, props)
       else
         obj
       end
     end)
   end
 
-  defp sync_alarm_fields_from_properties(objects, _object, _props), do: objects
+  defp sync_object_fields_from_properties(objects, _object, _props), do: objects
+
+  defp apply_properties_to_object(obj, props) do
+    now = DateTime.utc_now()
+    present_prop = Enum.find(props, &(&1.property == :present_value))
+
+    obj
+    |> maybe_put_field(:name, object_name_from_properties(props))
+    |> maybe_put_field(:description, description_from_properties(props))
+    |> maybe_put_field(:units, property_row_value(props, :units))
+    |> maybe_put_field(:resolution, property_row_value(props, :resolution))
+    |> maybe_put_field(:out_of_service, property_row_value(props, :out_of_service))
+    |> maybe_put_present_value(present_prop)
+    |> maybe_put_multistate_fields(props)
+    |> maybe_put_status_flags(props)
+    |> maybe_put_field(:event_state, property_row_value(props, :event_state))
+    |> maybe_put_field(:event_timestamps, extract_event_timestamps_from_properties(props))
+    |> maybe_put_priority_array(props)
+    |> maybe_put_log_property_refs_from_properties(props)
+    |> Map.put(:updated_at, now)
+    |> then(fn updated ->
+      Map.merge(updated, %{
+        writable: writable?(updated),
+        commandable: commandable?(updated)
+      })
+    end)
+  end
+
+  defp object_name_from_properties(props) do
+    case property_row_value(props, :object_name) do
+      name when is_binary(name) and name != "" -> name
+      _props -> nil
+    end
+  end
+
+  defp description_from_properties(props) do
+    case property_row_value(props, :description) do
+      desc when is_binary(desc) and desc != "" -> desc
+      _props -> nil
+    end
+  end
+
+  defp maybe_put_present_value(obj, %{value: value} = prop) do
+    coerced = PropertyFormatter.coerce_present_value(value, obj, prop)
+
+    MapHelpers.update(obj, %{
+      present_value: coerced,
+      present_value_formatted: PropertyFormatter.format_present_value(value, obj, prop)
+    })
+  end
+
+  defp maybe_put_present_value(obj, _prop), do: obj
+
+  defp maybe_put_multistate_fields(obj, props) do
+    obj
+    |> maybe_put_field(:number_of_states, property_row_value(props, :number_of_states))
+    |> maybe_put_field(
+      :state_text,
+      MultistateState.normalize_state_text(property_row_value(props, :state_text))
+    )
+  end
+
+  defp maybe_put_status_flags(obj, props) do
+    case property_row_value(props, :status_flags) do
+      nil ->
+        obj
+
+      flags ->
+        case StatusFlagsParser.normalize(flags) do
+          nil -> obj
+          normalized -> MapHelpers.update(obj, %{status_flags: normalized})
+        end
+    end
+  end
+
+  defp maybe_put_priority_array(obj, props) do
+    case property_row_value(props, :priority_array) do
+      nil ->
+        obj
+
+      priority_array ->
+        obj_with_pa = Map.put(obj, :priority_array, priority_array)
+
+        MapHelpers.update(obj_with_pa, PropertyWriter.active_priority_info(obj_with_pa))
+    end
+  end
+
+  defp extract_event_timestamps_from_properties(props) do
+    case property_row_value(props, :event_timestamps) do
+      %EventTimestamps{} = timestamps -> timestamps
+      _props -> nil
+    end
+  end
 
   defp property_row_value(props, property) do
     props
@@ -829,6 +1000,38 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp maybe_put_field(obj, _key, nil), do: obj
   defp maybe_put_field(obj, key, value), do: Map.put(obj, key, value)
+
+  defp maybe_put_log_property_refs(obj, type, raw_obj)
+       when type in [:trend_log, :trend_log_multiple] do
+    Map.put(
+      obj,
+      :log_property_refs,
+      TrendLogNavigation.log_property_refs_from_value(
+        Map.get(raw_obj, :log_device_object_property)
+      )
+    )
+  end
+
+  defp maybe_put_log_property_refs(obj, _type, _raw_obj), do: obj
+
+  defp maybe_put_log_property_refs_from_properties(
+         %{type: type} = obj,
+         props
+       )
+       when type in [:trend_log, :trend_log_multiple] and is_list(props) do
+    refs =
+      Enum.find_value(props, fn
+        %{property: :log_device_object_property, value: value} ->
+          TrendLogNavigation.log_property_refs_from_value(value)
+
+        _prop ->
+          nil
+      end) || []
+
+    Map.put(obj, :log_property_refs, refs)
+  end
+
+  defp maybe_put_log_property_refs_from_properties(obj, _props), do: obj
 
   defp apply_property_update(state, object_id, property, value, formatted) do
     now = DateTime.utc_now()
@@ -921,12 +1124,18 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp refresh_cached_property(prop, :present_value, value, _formatted, obj, now) do
     coerced = PropertyFormatter.coerce_present_value(value, obj, prop)
-    display = BacView.BACnet.Protocol.PropertyDisplay.build(coerced)
+
+    display =
+      coerced
+      |> PropertyDisplay.build()
+      |> put_present_value_display_formatted(coerced, obj, prop)
+
+    formatted = Map.get(display, :formatted)
 
     MapHelpers.update(prop, %{
       value: coerced,
       value_display: display,
-      value_formatted: PropertyFormatter.format_present_value(coerced, obj, prop),
+      value_formatted: formatted,
       updated_at: now
     })
   end
@@ -954,6 +1163,11 @@ defmodule BacView.BACnet.DeviceSession do
       value_formatted: formatted,
       updated_at: now
     })
+  end
+
+  defp put_present_value_display_formatted(display, value, obj, prop) do
+    formatted = PropertyFormatter.format_present_value(value, obj, prop)
+    Map.put(display, :formatted, formatted)
   end
 
   defp format_published_property(:present_value, value, obj) do

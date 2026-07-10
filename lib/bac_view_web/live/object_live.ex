@@ -14,6 +14,7 @@ defmodule BacViewWeb.ObjectLive do
 
   alias BacView.BACnet.Protocol.ComplexPropertyEditor
   alias BacView.BACnet.Protocol.ErrorMessage
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyReader
@@ -21,6 +22,7 @@ defmodule BacViewWeb.ObjectLive do
   alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.BACnet.Protocol.TrendLogChart
   alias BacView.BACnet.Protocol.TrendLogExport
+  alias BacView.BACnet.Protocol.TrendLogNavigation
   alias BacView.BACnet.Protocol.TrendLogReader
   alias BacView.BACnet.Protocol.WeeklyScheduleEditor
 
@@ -69,7 +71,6 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:properties, [])
            |> assign(:loading, true)
            |> assign(:properties_loading, true)
-           |> assign(:properties_reading_visible, false)
            |> assign(:subscribed_keys, MapSet.new())
            |> assign(:write_priority, PropertyWriter.default_priority())
            |> assign(:writing_property, nil)
@@ -97,6 +98,8 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:trend_chart_has_data, false)
            |> assign(:trend_chart_record_count, 0)
            |> assign(:device_objects, cached_device_objects(device_id))
+           |> assign(:object_nav_targets, [])
+           |> assign(:object_nav_menu_open, false)
            |> assign(:alarm_tab_count, 0)
            |> assign(:alarm_summary, %{
              active_count: 0,
@@ -182,6 +185,8 @@ defmodule BacViewWeb.ObjectLive do
           nil
       end
 
+    object = refresh_object_from_properties(object, props_result)
+
     {properties, properties_loading} =
       case props_result do
         {:ok, properties} -> {PropertyWriter.enrich_properties(properties, object), false}
@@ -218,6 +223,8 @@ defmodule BacViewWeb.ObjectLive do
       |> assign(:device_objects, device_objects)
       |> assign(:file_metadata, file_metadata)
       |> assign(:file_content, nil)
+      |> assign_object_nav_targets(object, properties, device_objects)
+      |> maybe_refresh_object_summary(properties, object)
       |> refresh_alarm_state()
 
     socket =
@@ -393,20 +400,13 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   @impl true
-  def handle_info(:cov_updated, socket) do
-    {:noreply, refresh_cov_state(socket)}
+  def handle_info({:cov_notification, _entry}, socket) do
+    {:noreply, socket}
   end
 
   @impl true
-  def handle_info(:show_properties_reading, socket) do
-    socket =
-      if socket.assigns.properties_loading do
-        assign(socket, :properties_reading_visible, true)
-      else
-        socket
-      end
-
-    {:noreply, socket}
+  def handle_info(:cov_updated, socket) do
+    {:noreply, refresh_cov_state(socket)}
   end
 
   @impl true
@@ -419,21 +419,23 @@ defmodule BacViewWeb.ObjectLive do
     socket =
       case result do
         {:ok, properties} ->
-          object = socket.assigns.object
+          object =
+            refresh_object_from_properties(socket.assigns.object, {:ok, properties})
+
           enriched = PropertyWriter.enrich_properties(properties, object)
 
           socket
+          |> assign(:object, Text.sanitize_object(object))
           |> assign(:properties, enriched)
           |> assign(:properties_loading, false)
-          |> assign(:properties_reading_visible, false)
           |> assign(:writing_property, nil)
-          |> maybe_refresh_object_summary(properties, object)
+          |> assign_object_nav_targets(object, enriched, socket.assigns.device_objects)
+          |> maybe_refresh_object_summary(enriched, object)
           |> maybe_refresh_file_metadata(object, enriched)
 
         {:error, reason} ->
           socket
           |> assign(:properties_loading, false)
-          |> assign(:properties_reading_visible, false)
           |> assign(:writing_property, nil)
           |> LiveFlash.put_error(:refresh_properties, reason)
       end
@@ -444,6 +446,16 @@ defmodule BacViewWeb.ObjectLive do
   @impl true
   def handle_event("refresh_properties", _params, socket) do
     {:noreply, start_properties_refresh(socket)}
+  end
+
+  @impl true
+  def handle_event("toggle_object_nav_menu", _params, socket) do
+    {:noreply, assign(socket, :object_nav_menu_open, !socket.assigns.object_nav_menu_open)}
+  end
+
+  @impl true
+  def handle_event("close_object_nav_menu", _params, socket) do
+    {:noreply, assign(socket, :object_nav_menu_open, false)}
   end
 
   @impl true
@@ -1011,10 +1023,17 @@ defmodule BacViewWeb.ObjectLive do
 
   @impl true
   def handle_event("global_keydown", params, socket) do
-    if BacViewWeb.Shortcuts.go_up_pressed?(params) do
-      {:noreply, push_navigate(socket, to: device_return_path(socket))}
-    else
-      BacViewWeb.Shortcuts.handle(params, socket, refresh: :refresh_object, tabs: %{})
+    key = Map.get(params, "key", "")
+
+    cond do
+      BacViewWeb.Shortcuts.go_up_pressed?(params) ->
+        {:noreply, push_navigate(socket, to: device_return_path(socket))}
+
+      BacViewWeb.Shortcuts.refresh_key?(key) ->
+        {:noreply, start_properties_refresh(socket)}
+
+      true ->
+        BacViewWeb.Shortcuts.handle(params, socket, tabs: %{})
     end
   end
 
@@ -1382,55 +1401,14 @@ defmodule BacViewWeb.ObjectLive do
     Enum.find(properties, &(&1.property == property))
   end
 
+  defp refresh_object_from_properties(object, {:ok, properties}) when is_map(object) do
+    DeviceSession.refresh_object_from_properties(object, properties)
+  end
+
+  defp refresh_object_from_properties(object, _result), do: object
+
   defp maybe_refresh_object_summary(socket, properties, object) when is_map(object) do
-    present =
-      case Enum.find(properties, &(&1.property == :present_value)) do
-        %{value: value} = prop ->
-          %{
-            present_value: PropertyFormatter.coerce_present_value(value, object, prop),
-            present_value_formatted: PropertyFormatter.format_present_value(value, object, prop)
-          }
-
-        _socket ->
-          nil
-      end
-
-    status =
-      case Enum.find(properties, &(&1.property == :status_flags)) do
-        %{value: flags} ->
-          case StatusFlagsParser.normalize(flags) do
-            nil -> %{}
-            normalized -> %{status_flags: normalized}
-          end
-
-        _socket ->
-          %{}
-      end
-
-    case present do
-      fields when is_map(fields) ->
-        assign(
-          socket,
-          :object,
-          MapHelpers.update(
-            object,
-            fields
-            |> Map.merge(status)
-            |> Map.put(:updated_at, DateTime.utc_now())
-          )
-        )
-
-      _socket ->
-        if status == %{} do
-          socket
-        else
-          assign(
-            socket,
-            :object,
-            MapHelpers.update(object, Map.merge(status, %{updated_at: DateTime.utc_now()}))
-          )
-        end
-    end
+    assign(socket, :object, refresh_object_from_properties(object, {:ok, properties}))
   end
 
   defp maybe_refresh_object_summary(socket, _properties, _object), do: socket
@@ -1456,16 +1434,8 @@ defmodule BacViewWeb.ObjectLive do
         send(parent, {:properties_refreshed, result})
       end)
 
-      socket
-      |> assign(:properties_loading, true)
-      |> assign(:properties_reading_visible, false)
-      |> schedule_properties_reading_indicator()
+      assign(socket, :properties_loading, true)
     end
-  end
-
-  defp schedule_properties_reading_indicator(socket) do
-    Process.send_after(self(), :show_properties_reading, 300)
-    socket
   end
 
   defp format_parse_error(:invalid_boolean), do: gt("erwartet true/false")
@@ -1708,21 +1678,53 @@ defmodule BacViewWeb.ObjectLive do
 
     display = PropertyDisplay.build(value)
 
-    formatted =
-      if prop.property == :present_value do
-        PropertyFormatter.format_present_value(value, object, prop)
-      else
-        display.formatted
-      end
+    formatted = multistate_state_property_formatted(prop, value, object, display)
 
-    MapHelpers.update(prop, %{
-      value: value,
-      value_display: display,
-      value_formatted: formatted,
-      type: if(display.kind in [:struct, :priority_array, :array], do: "STRUCT", else: prop.type),
-      updated_at: at || DateTime.utc_now()
-    })
+    display = Map.put(display, :formatted, formatted)
+
+    refreshed =
+      MapHelpers.update(prop, %{
+        value: value,
+        value_display: display,
+        value_formatted: formatted,
+        type:
+          if(display.kind in [:struct, :priority_array, :array], do: "STRUCT", else: prop.type),
+        updated_at: at || DateTime.utc_now()
+      })
+
+    if MultistateState.state_value_property?(refreshed.property) do
+      case PropertyWriter.enrich_properties([refreshed], object) do
+        [enriched | _rest] -> enriched
+        _properties -> refreshed
+      end
+    else
+      refreshed
+    end
   end
+
+  defp multistate_state_property_formatted(
+         %{property: :present_value} = prop,
+         value,
+         object,
+         _display
+       ) do
+    PropertyFormatter.format_present_value(value, object, prop)
+  end
+
+  defp multistate_state_property_formatted(
+         %{property: :relinquish_default},
+         value,
+         object,
+         display
+       ) do
+    if MultistateState.multistate_object?(object) do
+      MultistateState.format_present_value(value, object) || display.formatted
+    else
+      display.formatted
+    end
+  end
+
+  defp multistate_state_property_formatted(_prop, _value, _object, display), do: display.formatted
 
   defp refresh_alarm_popup(socket) do
     ActiveAlarmsAssigns.refresh(socket,
@@ -1771,6 +1773,45 @@ defmodule BacViewWeb.ObjectLive do
     assign(socket, :device_objects, device_objects)
   end
 
+  defp assign_object_nav_targets(socket, object, properties, device_objects) do
+    targets =
+      if object do
+        TrendLogNavigation.targets_for_object(
+          socket.assigns.device_id,
+          object,
+          device_objects,
+          properties,
+          device_instance(socket.assigns.device),
+          object_nav_url_opts(socket)
+        )
+      else
+        []
+      end
+
+    socket
+    |> assign(:object_nav_targets, targets)
+    |> assign(:object_nav_menu_open, false)
+  end
+
+  defp device_instance(%{instance: instance}) when is_integer(instance), do: instance
+  defp device_instance(_device), do: nil
+
+  defp object_nav_url_opts(socket) do
+    [
+      device_id: socket.assigns.device_id,
+      tab: socket.assigns.return_tab,
+      search: socket.assigns.objects_search,
+      types: socket.assigns.objects_type_filter,
+      status: socket.assigns.objects_status_filter,
+      sort: socket.assigns.objects_sort_by,
+      dir: socket.assigns.objects_sort_dir,
+      alarm_view: socket.assigns.return_alarm_view,
+      cov_view: socket.assigns.return_cov_view,
+      hierarchy_view: socket.assigns.return_hierarchy_view,
+      hierarchy_path: socket.assigns.return_hierarchy_path
+    ]
+  end
+
   defp cached_device_objects(device_id) do
     if :ets.whereis(:bacview_objects) == :undefined do
       []
@@ -1803,14 +1844,13 @@ defmodule BacViewWeb.ObjectLive do
         <% end %>
       </:topbar_end>
 
-      <%= for _ <- [{@locale_version, @loading, @properties_loading, @properties_reading_visible}] do %>
+      <%= for _ <- [{@locale_version, @loading, @properties_loading}] do %>
         <ObjectDetail.object_detail
           device={@device}
           object={@object}
           properties={@properties}
           loading={@loading}
           properties_loading={@properties_loading}
-          properties_reading_visible={@properties_reading_visible}
           subscribed_keys={@subscribed_keys}
           write_priority={@write_priority}
           writing_property={@writing_property}
@@ -1824,6 +1864,8 @@ defmodule BacViewWeb.ObjectLive do
           objects_status_filter={@objects_status_filter}
           objects_sort_by={@objects_sort_by}
           objects_sort_dir={@objects_sort_dir}
+          object_nav_targets={@object_nav_targets}
+          object_nav_menu_open={@object_nav_menu_open}
           properties_sort_by={@properties_sort_by}
           properties_sort_dir={@properties_sort_dir}
           file_metadata={@file_metadata}

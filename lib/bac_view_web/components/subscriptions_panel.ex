@@ -363,12 +363,12 @@ defmodule BacViewWeb.SubscriptionsPanel do
   defp format_time(nil), do: "—"
 
   defp format_time(%DateTime{} = dt),
-    do: Calendar.strftime(dt, "%H:%M:%S")
+    do: BacView.Timezone.format(dt, "%H:%M:%S")
 
   defp format_datetime(nil), do: "—"
 
   defp format_datetime(%DateTime{} = dt),
-    do: Calendar.strftime(dt, "%Y-%m-%d %H:%M:%S")
+    do: BacView.Timezone.format(dt, "%Y-%m-%d %H:%M:%S")
 
   defp confirmed_label(true, locale, lv), do: t(locale, lv, "Ja")
   defp confirmed_label(false, locale, lv), do: t(locale, lv, "Nein")

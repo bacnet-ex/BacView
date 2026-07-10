@@ -1,9 +1,25 @@
+import {initAllResizableTables} from "./resizable_table"
+
 const SEARCH_INPUT_IDS = [
   "device-search",
   "hierarchy-explorer-search",
   "tree-search",
   "object-search",
 ]
+
+const FORM_FIELD_SELECTOR = "input, textarea, select, [contenteditable=true]"
+
+// Keys documented in the keyboard-shortcuts modal that must work even when a
+// filter/search field still has focus (otherwise "r" never triggers refresh).
+const GLOBAL_SHORTCUT_KEYS = new Set(["r", "R", "?", "Escape"])
+
+function isFormField(el) {
+  return el?.matches?.(FORM_FIELD_SELECTOR) ?? false
+}
+
+function isGlobalShortcutKey(e) {
+  return GLOBAL_SHORTCUT_KEYS.has(e.key)
+}
 
 function focusVisibleSearch() {
   for (const id of SEARCH_INPUT_IDS) {
@@ -23,8 +39,9 @@ function focusVisibleSearch() {
 const BacViewRoot = {
   mounted() {
     this.keydownHandler = (e) => {
-      if (e.target.matches("input, textarea, select, [contenteditable=true]")) return
+      if (isFormField(e.target) && !isGlobalShortcutKey(e)) return
       if (e.ctrlKey || e.metaKey || e.altKey) return
+      if (e.repeat) return
 
       this.pushEvent("global_keydown", {key: e.key, code: e.code, shift: e.shiftKey})
     }
@@ -70,6 +87,16 @@ const BacViewRoot = {
       anchor.click()
       URL.revokeObjectURL(url)
     })
+
+    this.initResizableTables()
+  },
+
+  updated() {
+    this.initResizableTables()
+  },
+
+  initResizableTables() {
+    initAllResizableTables(this.el)
   },
 
   destroyed() {

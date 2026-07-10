@@ -15,6 +15,7 @@ defmodule BacView.BACnet.TransportResolverTest do
         Settings.update(
           transport: "ipv4",
           interface: first_ipv4_interface(),
+          ipv4_port: Settings.defaults().ipv4_port,
           device_id: Settings.defaults().device_id,
           network_number: Settings.defaults().network_number,
           mstp_local_address: Settings.defaults().mstp_local_address,
@@ -35,6 +36,14 @@ defmodule BacView.BACnet.TransportResolverTest do
     assert {:ok, BacView.BACnet.Transport.IPv4, opts} = TransportResolver.resolve()
     assert opts[:name] == BacView.BACnet.TransportLayer
     assert is_binary(opts[:local_ip])
+    assert opts[:bacnet_port] == Settings.defaults().ipv4_port
+  end
+
+  test "resolves ipv4 transport with custom port" do
+    assert {:ok, _} = Settings.update(ipv4_port: 48_000)
+
+    assert {:ok, BacView.BACnet.Transport.IPv4, opts} = TransportResolver.resolve()
+    assert opts[:bacnet_port] == 48_000
   end
 
   test "ipv4 transport exposes bacstack module for client wiring" do

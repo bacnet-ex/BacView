@@ -4,6 +4,7 @@ defmodule BacViewWeb.DashboardLive do
 
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.Discovery
+  alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.InterfaceSelection
   alias BacView.BACnet.Stack
@@ -11,6 +12,7 @@ defmodule BacViewWeb.DashboardLive do
   alias BacView.BACnet.VendorNames
 
   alias BacView.Settings
+  alias BacView.Timezone
 
   alias BacViewWeb.ActiveAlarmsAssigns
   alias BacViewWeb.ActiveAlarmsPopup
@@ -514,7 +516,7 @@ defmodule BacViewWeb.DashboardLive do
         <span>
           BacView v{Application.spec(:bacview, :vsn)}
           <span :if={@last_scan_at}>
-            · {t(@locale, @locale_version, "Letzter Scan")}: {Calendar.strftime(@last_scan_at, "%H:%M:%S")}
+            · {t(@locale, @locale_version, "Letzter Scan")}: {Timezone.format(@last_scan_at, "%H:%M:%S")}
           </span>
         </span>
         <span class="bac-text-faint">
@@ -725,8 +727,10 @@ defmodule BacViewWeb.DashboardLive do
       "transport" => settings.transport,
       "interface" => settings.interface || "",
       "device_id" => Integer.to_string(settings.device_id),
+      "ipv4_port" => Integer.to_string(settings.ipv4_port),
       "network_number" => Integer.to_string(settings.network_number),
       "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+      "cov_increment" => cov_increment_form_value(settings.cov_increment),
       "cov_confirmed" => if(settings.cov_confirmed, do: "true", else: "false"),
       "mstp_local_address" => Integer.to_string(settings.mstp_local_address),
       "mstp_baud_rate" => mstp_baud_rate_form_value(settings.mstp_baud_rate)
@@ -738,8 +742,10 @@ defmodule BacViewWeb.DashboardLive do
       "transport" => form[:transport].value,
       "interface" => form[:interface].value,
       "device_id" => form[:device_id].value,
+      "ipv4_port" => form[:ipv4_port].value,
       "network_number" => form[:network_number].value,
       "cov_lifetime_seconds" => form[:cov_lifetime_seconds].value,
+      "cov_increment" => form[:cov_increment].value,
       "cov_confirmed" => form[:cov_confirmed].value,
       "mstp_local_address" => form[:mstp_local_address].value,
       "mstp_baud_rate" => form[:mstp_baud_rate].value
@@ -756,9 +762,14 @@ defmodule BacViewWeb.DashboardLive do
     mstp_baud_rate_param =
       params["mstp_baud_rate"] || mstp_baud_rate_form_value(current_settings.mstp_baud_rate)
 
+    ipv4_port_param =
+      params["ipv4_port"] || Integer.to_string(current_settings.ipv4_port)
+
     with {:ok, device_id} <- parse_required_int(params["device_id"], 0, 4_194_303),
+         {:ok, ipv4_port} <- parse_required_int(ipv4_port_param, 47_808, 65_535),
          {:ok, network_number} <- parse_required_int(params["network_number"], 1, 65_535),
          {:ok, cov_lifetime} <- parse_required_int(params["cov_lifetime_seconds"], 0, 864_000),
+         {:ok, cov_increment} <- parse_cov_increment(params["cov_increment"]),
          {:ok, mstp_local_address} <-
            parse_required_int(mstp_local_address_param, 0, 127),
          {:ok, mstp_baud_rate} <- parse_mstp_baud_rate(mstp_baud_rate_param),
@@ -767,9 +778,11 @@ defmodule BacViewWeb.DashboardLive do
        [
          transport: transport,
          interface: interface,
+         ipv4_port: ipv4_port,
          device_id: device_id,
          network_number: network_number,
          cov_lifetime_seconds: cov_lifetime,
+         cov_increment: cov_increment,
          cov_confirmed: cov_confirmed?(params["cov_confirmed"]),
          mstp_local_address: mstp_local_address,
          mstp_baud_rate: mstp_baud_rate
@@ -782,6 +795,30 @@ defmodule BacViewWeb.DashboardLive do
   defp cov_confirmed?(value) when value in [true, "true", "on"], do: true
   defp cov_confirmed?(["false", "true"]), do: true
   defp cov_confirmed?(_value), do: false
+
+  defp cov_increment_form_value(nil), do: ""
+
+  defp cov_increment_form_value(value) when is_number(value),
+    do: PropertyFormatter.format_float(value * 1.0)
+
+  defp parse_cov_increment(nil), do: {:ok, nil}
+  defp parse_cov_increment(""), do: {:ok, nil}
+
+  defp parse_cov_increment(value) when is_binary(value) do
+    trimmed = String.trim(value)
+
+    if trimmed == "" do
+      {:ok, nil}
+    else
+      case Float.parse(trimmed) do
+        {float, ""} when float >= 0 -> {:ok, float * 1.0}
+        _value -> {:error, :invalid_settings}
+      end
+    end
+  end
+
+  defp parse_cov_increment(value) when is_number(value) and value >= 0, do: {:ok, value * 1.0}
+  defp parse_cov_increment(_value), do: {:error, :invalid_settings}
 
   defp parse_required_int(value, min, max) do
     case Integer.parse(to_string(value || "")) do
@@ -831,7 +868,9 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   defp save_stack_settings(socket, updates, opts \\ []) do
-    restart? = Keyword.get(opts, :restart?, false)
+    restart? =
+      Keyword.get(opts, :restart?, false) or
+        StackStatusPolling.stack_offline?(socket.assigns.stack_status)
 
     case Settings.update(updates) do
       {:ok, settings} ->

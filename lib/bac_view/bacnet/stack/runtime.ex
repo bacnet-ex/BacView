@@ -50,7 +50,7 @@ defmodule BacView.BACnet.Stack.Runtime do
 
   defp build_ipv4_children(settings) do
     {:ok, %{interface: interface}} = InterfaceSelection.resolve_ipv4(settings.interface)
-    transport_opts = [name: @transport, local_ip: interface]
+    transport_opts = ipv4_transport_opts(interface, settings.ipv4_port)
     {:ok, stack_children(IPv4, IPv4Transport, transport_opts)}
   end
 
@@ -99,7 +99,15 @@ defmodule BacView.BACnet.Stack.Runtime do
     ]
   end
 
+  defp transport_opts(settings, interface, "ipv4") do
+    ipv4_transport_opts(interface, settings.ipv4_port)
+  end
+
   defp transport_opts(_settings, interface, _transport) do
     [name: @transport, local_ip: interface]
+  end
+
+  defp ipv4_transport_opts(interface, port) do
+    [name: @transport, local_ip: interface, bacnet_port: port]
   end
 end

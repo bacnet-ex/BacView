@@ -1,13 +1,32 @@
 defmodule BacViewWeb.DashboardLiveScanTest do
   use BacViewWeb.ConnCase, async: false
 
+  import ExUnit.CaptureLog
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
   setup do
+    {:ok, _} =
+      BacView.Settings.update(
+        transport: "ipv4",
+        interface: first_ipv4_interface(),
+        ipv4_port: BacView.Settings.defaults().ipv4_port,
+        mstp_local_address: BacView.Settings.defaults().mstp_local_address,
+        mstp_baud_rate: BacView.Settings.defaults().mstp_baud_rate
+      )
+
     on_exit(fn ->
       path = Application.get_env(:bacview, :runtime_settings_path)
       if path, do: File.rm(path)
+
+      {:ok, _} =
+        BacView.Settings.update(
+          transport: "ipv4",
+          interface: first_ipv4_interface(),
+          ipv4_port: BacView.Settings.defaults().ipv4_port,
+          mstp_local_address: BacView.Settings.defaults().mstp_local_address,
+          mstp_baud_rate: BacView.Settings.defaults().mstp_baud_rate
+        )
     end)
 
     :ok
@@ -64,6 +83,101 @@ defmodule BacViewWeb.DashboardLiveScanTest do
 
     assert has_element?(view, "#stack-settings-form")
     assert has_element?(view, "#stack-settings-refresh-interfaces-btn")
+  end
+
+  test "stack settings save retries start when stack is offline due to error", %{conn: conn} do
+    alias BacView.BACnet.Stack
+    alias BacView.BACnet.Stack.Boot
+
+    start_supervised!(Stack)
+
+    assert {:ok, _} =
+             BacView.Settings.update(
+               transport: "mstp",
+               interface: "ttyS0",
+               mstp_local_address: 127,
+               mstp_baud_rate: :auto
+             )
+
+    _log =
+      capture_log(fn ->
+        assert {:error, _} = Boot.start_runtime()
+      end)
+
+    refute Stack.running?()
+    assert Stack.last_error() != nil
+
+    assert {:ok, settings} = BacView.Settings.update(transport: "ipv4", ipv4_port: 48_124)
+
+    {:ok, view, html} = live(conn, ~p"/")
+    assert html =~ ~s/id="stack-status-error"/
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "transport" => settings.transport,
+        "interface" => settings.interface,
+        "device_id" => Integer.to_string(settings.device_id),
+        "network_number" => Integer.to_string(settings.network_number),
+        "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+        "cov_confirmed" => "false"
+      }
+    })
+    |> render_submit()
+
+    html =
+      Enum.reduce_while(1..20, render(view), fn _attempt, html ->
+        if html =~ "BACnet-Stack neu gestartet" or html =~ "Stack-Neustart fehlgeschlagen" do
+          {:halt, html}
+        else
+          Process.sleep(50)
+          {:cont, render(view)}
+        end
+      end)
+
+    assert html =~ "BACnet-Stack neu gestartet" or html =~ "Stack-Neustart fehlgeschlagen"
+  end
+
+  test "stack settings save persists cov_increment", %{conn: conn} do
+    assert {:ok, _} = BacView.Settings.update(cov_increment: 0.1)
+
+    {:ok, view, html} = live(conn, ~p"/")
+    settings = BacView.Settings.get()
+
+    assert html =~ "0.1"
+    refute html =~ "e-01"
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "transport" => settings.transport,
+        "interface" => settings.interface,
+        "device_id" => Integer.to_string(settings.device_id),
+        "network_number" => Integer.to_string(settings.network_number),
+        "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+        "cov_increment" => "0.5",
+        "cov_confirmed" => "false"
+      }
+    })
+    |> render_submit()
+
+    assert BacView.Settings.get().cov_increment == 0.5
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "transport" => settings.transport,
+        "interface" => settings.interface,
+        "device_id" => Integer.to_string(settings.device_id),
+        "network_number" => Integer.to_string(settings.network_number),
+        "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+        "cov_increment" => "",
+        "cov_confirmed" => "false"
+      }
+    })
+    |> render_submit()
+
+    assert BacView.Settings.get().cov_increment == nil
   end
 
   test "stack settings save without restart returns valid LiveView response", %{conn: conn} do
@@ -222,5 +336,12 @@ defmodule BacViewWeb.DashboardLiveScanTest do
 
     assert has_element?(view, "#scan-network-form-submit[disabled]")
     assert has_element?(view, "#scan_timeout_ms[disabled]")
+  end
+
+  defp first_ipv4_interface do
+    case BacView.Settings.interface_options("ipv4") do
+      [%{value: value} | _] -> value
+      _ -> "lo"
+    end
   end
 end

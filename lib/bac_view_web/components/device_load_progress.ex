@@ -3,56 +3,86 @@ defmodule BacViewWeb.DeviceLoadProgress do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
-  attr(:progress, :map, required: true)
+  attr(:progress, :map, default: nil)
 
-  def load_progress(assigns) do
-    assigns = assign(assigns, :progress, normalize_progress(assigns.progress))
+  def status_banner(assigns) do
+    progress = normalize_progress(assigns.progress)
+
+    assigns =
+      assigns
+      |> assign(:progress, progress)
+      |> assign(:heading, stage_label(progress.stage))
+      |> assign(:subtext, status_subtext(progress))
 
     ~H"""
-    <div id="device-load-progress" class="bac-panel mb-5">
-      <div class="bac-panel-body space-y-4">
-        <div class="flex items-start justify-between gap-4">
-          <div class="flex items-center gap-3 min-w-0">
-            <div class="bac-logo-mark shrink-0">
-              <.icon name="hero-arrow-path" class="size-4 animate-spin" />
-            </div>
-            <div class="min-w-0">
-              <p class="font-semibold text-sm text-[var(--bac-text)]">
-                {stage_label(@progress.stage)}
-              </p>
-              <p :if={progress_detail(@progress)} class="text-xs bac-text-muted mt-0.5 truncate">
-                {progress_detail(@progress)}
-              </p>
-            </div>
-          </div>
-          <span :if={progress_percent(@progress)} class="bac-badge bac-badge-accent shrink-0">
-            {progress_percent(@progress)}%
+    <div
+      id="device-refresh-banner"
+      role="status"
+      aria-live="polite"
+      class="mx-5 mt-3 rounded-lg border border-[var(--bac-accent)]/25 bg-[var(--bac-accent)]/8 px-4 py-3"
+    >
+      <div class="flex items-center gap-3 min-w-0">
+        <.icon
+          name="hero-arrow-path"
+          class="size-4 shrink-0 animate-spin text-[var(--bac-accent)]"
+        />
+        <p class="text-sm font-medium text-[var(--bac-text)] truncate">{@heading}</p>
+        <span :if={progress_percent(@progress)} class="bac-badge bac-badge-accent bac-badge-sm ml-auto shrink-0">
+          {progress_percent(@progress)}%
+        </span>
+      </div>
+      <p :if={@subtext} class="text-xs bac-text-muted mt-1.5 ml-7">{@subtext}</p>
+      <div :if={@progress.total} class="mt-3 ml-7 space-y-1.5">
+        <progress class="bac-progress" value={@progress.done} max={max(@progress.total, 1)} />
+        <div class="flex flex-wrap items-center justify-between gap-2 text-xs bac-text-faint">
+          <span>
+            {t(@locale, @locale_version, "%{done} / %{total}", done: @progress.done, total: @progress.total)}
+          </span>
+          <span :if={@progress.skipped > 0}>
+            {t(@locale, @locale_version, "%{count} übersprungen", count: @progress.skipped)}
           </span>
         </div>
-
-        <div :if={@progress.total}>
-          <progress class="bac-progress" value={@progress.done} max={max(@progress.total, 1)}>
-          </progress>
-          <div class="flex flex-wrap items-center justify-between gap-2 mt-2 text-xs bac-text-faint">
-            <span>
-              {t(@locale, @locale_version, "%{done} / %{total}", done: @progress.done, total: @progress.total)}
-            </span>
-            <span :if={@progress.errors > 0} class="text-[var(--bac-amber)]">
-              {t(@locale, @locale_version, "%{count} Fehler", count: @progress.errors)}
-            </span>
-            <span :if={@progress.skipped > 0}>
-              {t(@locale, @locale_version, "%{count} übersprungen", count: @progress.skipped)}
-            </span>
-          </div>
-        </div>
-
-        <p :if={is_nil(@progress.total) && @progress.stage != :building_hierarchy} class="text-xs bac-text-faint">
-          {t(@locale, @locale_version, "Warte auf BACnet-Antwort…")}
-        </p>
       </div>
+
+      <details
+        :if={@progress.errors > 0}
+        id="device-scan-error-log"
+        class="bac-collapsible mt-3 ml-7"
+      >
+        <summary class="bac-collapsible-summary text-xs text-[var(--bac-amber)]">
+          <.icon name="hero-chevron-right" class="bac-collapsible-icon size-3.5 shrink-0" />
+          <span>
+            {t(@locale, @locale_version, "Fehlerprotokoll (%{count})", count: @progress.errors)}
+          </span>
+        </summary>
+        <ul class="bac-collapsible-content space-y-1.5 text-xs">
+          <li
+            :for={{entry, index} <- Enum.with_index(@progress.error_log, 1)}
+            id={"device-scan-error-#{index}"}
+            class="min-w-0"
+          >
+            <span :if={entry.object} class="bac-mono text-[var(--bac-text)]">
+              {entry.object}
+            </span>
+            <span :if={entry.object} class="bac-text-faint mx-1">·</span>
+            <span class="text-[var(--bac-amber)]">{entry.message}</span>
+          </li>
+        </ul>
+      </details>
     </div>
     """
   end
+
+  defp normalize_progress(nil),
+    do: %{
+      stage: :connecting,
+      done: 0,
+      total: nil,
+      errors: 0,
+      skipped: 0,
+      detail: nil,
+      error_log: []
+    }
 
   defp normalize_progress(progress) when is_map(progress) do
     %{
@@ -61,9 +91,31 @@ defmodule BacViewWeb.DeviceLoadProgress do
       total: Map.get(progress, :total),
       errors: Map.get(progress, :errors, 0),
       skipped: Map.get(progress, :skipped, 0),
-      detail: Map.get(progress, :detail)
+      detail: Map.get(progress, :detail),
+      error_log: normalize_error_log(Map.get(progress, :error_log, []))
     }
   end
+
+  defp normalize_error_log(error_log) when is_list(error_log) do
+    Enum.map(error_log, fn
+      %{object: object, message: message} when is_binary(message) ->
+        %{object: object, message: message}
+
+      %{object: object, message: message} ->
+        %{object: object, message: to_string(message)}
+
+      {object, message} ->
+        %{object: object, message: to_string(message)}
+
+      message when is_binary(message) ->
+        %{object: nil, message: message}
+
+      other ->
+        %{object: nil, message: inspect(other)}
+    end)
+  end
+
+  defp normalize_error_log(_error_log), do: []
 
   defp stage_label(:connecting),
     do: dgettext(BacViewWeb.Gettext, "default", "Verbindung zum Gerät…")
@@ -115,4 +167,17 @@ defmodule BacViewWeb.DeviceLoadProgress do
   end
 
   defp progress_detail(_detail), do: nil
+
+  defp status_subtext(progress) do
+    case progress_detail(progress) do
+      nil -> waiting_subtext(progress)
+      detail -> detail
+    end
+  end
+
+  defp waiting_subtext(%{stage: :building_hierarchy}), do: nil
+
+  defp waiting_subtext(_progress) do
+    dgettext(BacViewWeb.Gettext, "default", "Warte auf BACnet-Antwort…")
+  end
 end

@@ -10,6 +10,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
   }
 
   alias BacView.BACnet.Protocol.{TrendLogChart, TrendLogReader}
+  alias BacView.Timezone
 
   defp datetime(year, month, day, hour, minute, second) do
     %BACnetDateTime{
@@ -143,7 +144,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
     assert {:ok, ^naive} = TrendLogChart.parse_form_value("2025-03-15T18:28")
   end
 
-  test "build anchors BACnet wall clock timestamps to UTC chart epochs" do
+  test "build anchors BACnet wall clock timestamps to configured timezone chart epochs" do
     records = [
       %{
         type: :log_record,
@@ -163,10 +164,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
         end_dt: ~N[2025-03-15 19:00:00]
       )
 
-    expected_ms =
-      ~N[2025-03-15 18:28:00]
-      |> DateTime.from_naive!("Etc/UTC")
-      |> DateTime.to_unix(:millisecond)
+    expected_ms = Timezone.naive_to_unix_ms(~N[2025-03-15 18:28:00])
 
     assert [%{t: ^expected_ms, v: 21.5}] = hd(data.series).points
   end

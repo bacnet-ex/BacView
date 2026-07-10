@@ -5,6 +5,7 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
 
   alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.PriorityArray
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
 
@@ -21,6 +22,8 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   def enrich_properties(properties, object) when is_list(properties) do
     Enum.map(properties, fn prop ->
       prop
+      |> enrich_multistate_state_property(object)
+      |> enrich_present_value_formatting(object)
       |> maybe_commandable_present_value(object)
       |> then(fn enriched ->
         if Map.get(enriched, :writable, false) do
@@ -33,6 +36,54 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   end
 
   def enrich_properties(properties, _properties), do: properties
+
+  defp enrich_multistate_state_property(%{property: property} = prop, object)
+       when property in [:present_value, :relinquish_default] and is_map(object) do
+    if MultistateState.multistate_object?(object) do
+      formatted = multistate_state_property_formatted(property, prop, object)
+      display = Map.put(prop.value_display, :formatted, formatted)
+      options = MultistateState.state_options(object)
+
+      prop
+      |> Map.put(:value_display, display)
+      |> Map.put(:value_formatted, formatted)
+      |> Map.put(:enum_options, options)
+      |> Map.put(:type, "INTEGER")
+    else
+      prop
+    end
+  end
+
+  defp enrich_multistate_state_property(prop, _object), do: prop
+
+  defp enrich_present_value_formatting(
+         %{property: :present_value, value: value, value_display: display} = prop,
+         object
+       )
+       when is_map(object) do
+    if MultistateState.multistate_object?(object) do
+      prop
+    else
+      formatted = PropertyFormatter.format_present_value(value, object, prop)
+      display = Map.put(display, :formatted, formatted)
+
+      prop
+      |> Map.put(:value_display, display)
+      |> Map.put(:value_formatted, formatted)
+    end
+  end
+
+  defp enrich_present_value_formatting(%{property: :present_value} = prop, _object), do: prop
+
+  defp enrich_present_value_formatting(prop, _object), do: prop
+
+  defp multistate_state_property_formatted(:present_value, prop, object),
+    do: PropertyFormatter.format_present_value(prop.value, object, prop)
+
+  defp multistate_state_property_formatted(:relinquish_default, prop, object) do
+    MultistateState.format_present_value(prop.value, object) ||
+      PropertyFormatter.format_value(prop.value, nil)
+  end
 
   defp maybe_commandable_present_value(%{property: :present_value} = prop, object) do
     if commandable_for_ui?(object), do: Map.put(prop, :writable, true), else: prop
@@ -99,6 +150,11 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     PropertyEnumeration.parse_value(value, enum_type)
   end
 
+  defp parse_scalar_value(value, %{enum_options: options} = prop)
+       when is_list(options) and options != [] do
+    parse_input(value, prop)
+  end
+
   defp parse_scalar_value(value, prop) when is_binary(value), do: parse_input(value, prop)
 
   defp normalize_param_value(values) when is_list(values) do
@@ -123,41 +179,58 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
 
   @spec prop_hint_from_object(map()) :: map()
   def prop_hint_from_object(%{present_value: value} = object) do
-    %{
-      type: value_type_label(value),
+    hint = %{
+      type: prop_hint_type(object, value),
       value: value,
       property: :present_value,
       units: Map.get(object, :units)
     }
+
+    if MultistateState.multistate_object?(object) do
+      Map.put(hint, :enum_options, MultistateState.state_options(object))
+    else
+      hint
+    end
   end
 
   def prop_hint_from_object(_object), do: %{type: "REAL", value: nil}
 
+  defp prop_hint_type(object, value) do
+    if MultistateState.multistate_object?(object), do: "INTEGER", else: value_type_label(value)
+  end
+
   @doc false
-  @spec active_priority_info(map() | term(), term()) :: %{
+  @spec active_priority_info(map() | term(), term(), map() | nil) :: %{
           active_priority: 1..16 | nil,
           active_priority_value_formatted: String.t() | nil
         }
-  def active_priority_info(obj, units \\ nil)
+  def active_priority_info(obj, units \\ nil, object_context \\ nil)
 
-  def active_priority_info(%{} = obj, units) do
+  def active_priority_info(%{} = obj, units, object_context) do
+    context = object_context || obj
+    resolved_units = units || Map.get(obj, :units)
+
     case Map.get(obj, :priority_array) do
       %PriorityArray{} = pa ->
-        active_priority_from_array(pa, units || Map.get(obj, :units))
+        active_priority_from_array(pa, resolved_units, context)
 
       other ->
-        active_priority_from_array(normalize_priority_array(other), units || Map.get(obj, :units))
+        active_priority_from_array(
+          normalize_priority_array(other),
+          resolved_units,
+          context
+        )
     end
   end
 
-  defp active_priority_from_array(priority_array, units) do
+  defp active_priority_from_array(priority_array, units, object_context) do
     case normalize_priority_array(priority_array) do
       %PriorityArray{} = pa ->
         case PriorityArray.get_value(pa) do
           {priority, value} ->
             %{
               active_priority: priority,
-              active_priority_value_formatted: PropertyFormatter.format_value(value, units)
+              active_priority_value_formatted: format_priority_value(value, units, object_context)
             }
 
           nil ->
@@ -167,6 +240,11 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
       _priority_array ->
         empty_active_priority_info()
     end
+  end
+
+  defp format_priority_value(value, units, object_context) do
+    PropertyFormatter.format_present_value(value, object_context) ||
+      PropertyFormatter.format_value(value, units)
   end
 
   @doc false

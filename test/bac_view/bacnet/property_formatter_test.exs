@@ -4,6 +4,16 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
   alias BACnet.Protocol.{ObjectIdentifier, Recipient, RecipientAddress}
   alias BacView.BACnet.Protocol.PropertyFormatter
 
+  describe "decimal_places_from_resolution/1" do
+    test "derives decimal places from resolution" do
+      assert PropertyFormatter.decimal_places_from_resolution(1.0) == 0
+      assert PropertyFormatter.decimal_places_from_resolution(1) == 0
+      assert PropertyFormatter.decimal_places_from_resolution(0.1) == 1
+      assert PropertyFormatter.decimal_places_from_resolution(0.01) == 2
+      assert PropertyFormatter.decimal_places_from_resolution(nil) == nil
+    end
+  end
+
   describe "format_float/1" do
     test "never uses scientific notation for very small values" do
       assert PropertyFormatter.format_float(1.0e-5) == "0.00001"
@@ -19,6 +29,17 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
 
     test "preserves meaningful decimal precision" do
       assert PropertyFormatter.format_float(3.14159) == "3.14159"
+      assert PropertyFormatter.format_float(0.1) == "0.1"
+    end
+
+    test "formats without decimals when resolution is 1.0" do
+      assert PropertyFormatter.format_float(22.0, 1.0) == "22"
+      assert PropertyFormatter.format_float(21.5, 1.0) == "22"
+    end
+
+    test "formats with fixed decimals when resolution is set" do
+      assert PropertyFormatter.format_float(22.0, 0.1) == "22.0"
+      assert PropertyFormatter.format_float(22.0, 0.01) == "22.00"
     end
   end
 
@@ -27,6 +48,34 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
       pa = %BACnet.Protocol.PriorityArray{priority_8: 21.5, priority_16: 99.0}
 
       assert PropertyFormatter.format_value(pa, nil) == "21.5 (P8)"
+    end
+  end
+
+  describe "format_edit_value/3" do
+    test "formats analog present value edit input without unnecessary decimals" do
+      object = %{type: :analog_value, units: nil}
+
+      assert PropertyFormatter.format_edit_value(22.0, object, %{property: :present_value}) ==
+               "22"
+
+      assert PropertyFormatter.format_edit_value(21.5, object, %{property: :present_value}) ==
+               "21.5"
+
+      assert PropertyFormatter.format_edit_value(22, object, %{property: :present_value}) == "22"
+    end
+
+    test "formats analog present value edit input using resolution" do
+      object = %{type: :analog_input, units: nil, resolution: 1.0}
+
+      assert PropertyFormatter.format_edit_value(22.0, object, %{property: :present_value}) ==
+               "22"
+    end
+
+    test "keeps generic real property edit formatting for non-present values" do
+      object = %{type: :analog_input, units: nil, resolution: 1.0}
+      prop = %{property: :cov_increment, type: "REAL"}
+
+      assert PropertyFormatter.format_edit_value(1.0, object, prop) == "1.0"
     end
   end
 
@@ -39,19 +88,57 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
       assert PropertyFormatter.coerce_present_value(1, object) == true
     end
 
-    test "formats analog present values with at least one decimal place" do
+    test "formats integer analog present values without decimals" do
       object = %{type: :analog_value, units: nil}
 
-      assert PropertyFormatter.format_present_value(1, object) == "1.0"
-      assert PropertyFormatter.format_present_value(21.5, object) == "21.5"
-      assert PropertyFormatter.format_present_value(22.0, object) == "22.0"
+      assert PropertyFormatter.format_present_value(1, object) == "1"
+      assert PropertyFormatter.format_present_value(22, object) == "22"
       assert PropertyFormatter.coerce_present_value(1, object) == 1
+    end
+
+    test "formats float analog present values with decimals only when needed" do
+      object = %{type: :analog_value, units: nil}
+
+      assert PropertyFormatter.format_present_value(21.5, object) == "21.5"
+      assert PropertyFormatter.format_present_value(22.0, object) == "22"
     end
 
     test "formats analog present values with units" do
       object = %{type: :analog_input, units: :degrees_celsius}
 
-      assert PropertyFormatter.format_present_value(22.0, object) == "22.0 °C"
+      assert PropertyFormatter.format_present_value(22, object) == "22 °C"
+      assert PropertyFormatter.format_present_value(22.0, object) == "22 °C"
+      assert PropertyFormatter.format_present_value(21.5, object) == "21.5 °C"
+    end
+
+    test "formats analog present values without decimals when resolution is 1.0" do
+      object = %{type: :analog_value, units: nil, resolution: 1.0}
+
+      assert PropertyFormatter.format_present_value(22.0, object) == "22"
+      assert PropertyFormatter.format_present_value(21.5, object) == "22"
+    end
+
+    test "formats analog present values with decimals derived from resolution" do
+      object = %{type: :analog_input, units: nil, resolution: 0.1}
+
+      assert PropertyFormatter.format_present_value(22.0, object) == "22.0"
+      assert PropertyFormatter.format_present_value(21.55, object) == "21.6"
+    end
+
+    test "formats analog present values with units and resolution" do
+      object = %{type: :analog_input, units: :degrees_celsius, resolution: 1.0}
+
+      assert PropertyFormatter.format_present_value(22.0, object) == "22 °C"
+    end
+
+    test "formats multistate present values with active state text" do
+      object = %{
+        type: :multi_state_value,
+        number_of_states: 2,
+        state_text: ["Off", "On"]
+      }
+
+      assert PropertyFormatter.format_present_value(2, object) == "2 (On)"
     end
   end
 

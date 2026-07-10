@@ -135,52 +135,79 @@ defmodule BacViewWeb.StackSettingsPanel do
             />
           </div>
 
-          <div class="grid grid-cols-2 gap-2">
-            <div>
-              <label class="bac-label" for={@form[:cov_lifetime_seconds].id}>
-                {t(@locale, @locale_version, "COV-Lifetime (Sek.)")}
-              </label>
-              <.input
-                field={@form[:cov_lifetime_seconds]}
-                type="number"
-                min="0"
-                class="bac-input bac-input-sm"
+          <div>
+            <label class="bac-label" for={@form[:cov_lifetime_seconds].id}>
+              {t(@locale, @locale_version, "COV-Lifetime (Sek.)")}
+            </label>
+            <.input
+              field={@form[:cov_lifetime_seconds]}
+              type="number"
+              min="0"
+              class="bac-input bac-input-sm"
+            />
+          </div>
+
+          <div>
+            <label class="bac-label" for={@form[:cov_increment].id}>
+              {t(@locale, @locale_version, "COV-Inkrement")}
+            </label>
+            <.input
+              field={@form[:cov_increment]}
+              type="number"
+              min="0"
+              step="any"
+              placeholder={t(@locale, @locale_version, "Leer = Objektstandard")}
+              class="bac-input bac-input-sm"
+            />
+          </div>
+
+          <div>
+            <label
+              for={@form[:cov_confirmed].id}
+              class="flex items-center gap-2 text-xs bac-text-muted cursor-pointer min-h-9"
+            >
+              <input type="hidden" name={@form[:cov_confirmed].name} value="false" />
+              <input
+                type="checkbox"
+                id={@form[:cov_confirmed].id}
+                name={@form[:cov_confirmed].name}
+                value="true"
+                checked={@form[:cov_confirmed].value in [true, "true"]}
+                class="bac-checkbox shrink-0"
               />
-            </div>
-            <div class="flex items-end">
-              <label
-                for={@form[:cov_confirmed].id}
-                class="flex items-center gap-2 text-xs bac-text-muted cursor-pointer min-h-9"
-              >
-                <input type="hidden" name={@form[:cov_confirmed].name} value="false" />
-                <input
-                  type="checkbox"
-                  id={@form[:cov_confirmed].id}
-                  name={@form[:cov_confirmed].name}
-                  value="true"
-                  checked={@form[:cov_confirmed].value in [true, "true"]}
-                  class="bac-checkbox shrink-0"
-                />
-                {t(@locale, @locale_version, "COV bestätigt")}
-              </label>
-            </div>
+              {t(@locale, @locale_version, "COV bestätigt")}
+            </label>
           </div>
 
           <details class="group">
             <summary class="text-xs bac-text-faint cursor-pointer hover:bac-text-muted transition-colors">
               {t(@locale, @locale_version, "Erweitert")}
             </summary>
-            <div class="mt-2">
-              <label class="bac-label" for={@form[:network_number].id}>
-                {t(@locale, @locale_version, "Netzwerknummer")}
-              </label>
-              <.input
-                field={@form[:network_number]}
-                type="number"
-                min="1"
-                max="65535"
-                class="bac-input bac-input-sm"
-              />
+            <div class="mt-2 space-y-2">
+              <div :if={ipv4_transport?(@form[:transport].value)}>
+                <label class="bac-label" for={@form[:ipv4_port].id}>
+                  {t(@locale, @locale_version, "UDP-Port")}
+                </label>
+                <.input
+                  field={@form[:ipv4_port]}
+                  type="number"
+                  min="47808"
+                  max="65535"
+                  class="bac-input bac-input-sm"
+                />
+              </div>
+              <div>
+                <label class="bac-label" for={@form[:network_number].id}>
+                  {t(@locale, @locale_version, "Netzwerknummer")}
+                </label>
+                <.input
+                  field={@form[:network_number]}
+                  type="number"
+                  min="1"
+                  max="65535"
+                  class="bac-input bac-input-sm"
+                />
+              </div>
             </div>
           </details>
 
@@ -259,6 +286,9 @@ defmodule BacViewWeb.StackSettingsPanel do
 
   defp mstp_transport?("mstp"), do: true
   defp mstp_transport?(_mstp_transport), do: false
+
+  defp ipv4_transport?("ipv4"), do: true
+  defp ipv4_transport?(_ipv4_transport), do: false
 
   defp interface_error_label(:no_network_interfaces, locale, lv),
     do: t(locale, lv, "Keine Netzwerkschnittstellen gefunden.")

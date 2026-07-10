@@ -169,7 +169,7 @@ defmodule BacViewWeb.ObjectTable do
       </div>
 
       <div class="bac-table-wrap">
-        <table class="bac-table">
+        <table class="bac-table" id="object-table">
           <thead>
             <tr>
               <th class="w-10">
@@ -656,5 +656,5 @@ defmodule BacViewWeb.ObjectTable do
   defp format_time(nil), do: "—"
 
   defp format_time(%DateTime{} = dt),
-    do: Calendar.strftime(dt, "%H:%M:%S")
+    do: BacView.Timezone.format(dt, "%H:%M:%S")
 end

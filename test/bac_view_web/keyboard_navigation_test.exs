@@ -16,6 +16,12 @@ defmodule BacViewWeb.KeyboardNavigationTest do
     refute Shortcuts.shift_pressed?(%{})
   end
 
+  test "refresh_key? matches r and R" do
+    assert Shortcuts.refresh_key?("r")
+    assert Shortcuts.refresh_key?("R")
+    refute Shortcuts.refresh_key?("t")
+  end
+
   test "go_up_pressed? matches physical 0 key across layouts" do
     assert Shortcuts.go_up_pressed?(%{"key" => "0", "code" => "Digit0", "shift" => false})
     assert Shortcuts.go_up_pressed?(%{"key" => "0", "code" => "", "shift" => false})

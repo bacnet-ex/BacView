@@ -30,7 +30,7 @@ defmodule BacViewWeb.Shortcuts do
         key == "/" ->
           push_event(socket, "focus_search", %{})
 
-        key == "r" and not is_nil(refresh) ->
+        refresh_key?(key) and not is_nil(refresh) ->
           apply_refresh(socket, refresh)
 
         key == "Escape" ->
@@ -88,4 +88,8 @@ defmodule BacViewWeb.Shortcuts do
   end
 
   defp apply_refresh(socket, _socket), do: socket
+
+  @spec refresh_key?(String.t()) :: boolean()
+  def refresh_key?(key) when key in ["r", "R"], do: true
+  def refresh_key?(_key), do: false
 end

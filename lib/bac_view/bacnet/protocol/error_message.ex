@@ -141,6 +141,12 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:no_serial_port),
     do: gettext("Kein serieller Port für BACnet MS/TP verfügbar.")
 
+  def format_reason(:no_serial_ports),
+    do: gettext("Keine seriellen Ports gefunden.")
+
+  def format_reason({:no_serial_ports, _child}),
+    do: format_reason(:no_serial_ports)
+
   def format_reason({:transport_not_available, transport}),
     do: gettext("Transport %{transport} ist nicht verfügbar.", transport: label(transport))
 
@@ -156,6 +162,15 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:eacces),
     do: gettext("Zugriff auf den seriellen Port verweigert (Berechtigung fehlt).")
 
+  def format_reason(:eaddrinuse),
+    do:
+      gettext(
+        "UDP-Port ist bereits belegt (eaddrinuse). Möglicherweise läuft bereits eine andere BACnet-Anwendung auf diesem Port."
+      )
+
+  def format_reason(:eaddrnotavail),
+    do: gettext("Netzwerkadresse ist nicht verfügbar (eaddrnotavail).")
+
   def format_reason(:enoent), do: gettext("Serieller Port nicht gefunden.")
   def format_reason(:ebusy), do: gettext("Serieller Port ist belegt.")
   def format_reason(:eperm), do: gettext("Keine Berechtigung für den seriellen Port.")
@@ -166,11 +181,17 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
         detail: format_reason(reason)
       )
 
-  def format_reason(reason) when is_atom(reason), do: error_code_message(reason)
+  def format_reason(reason) when is_atom(reason) do
+    error_code_message(reason) || format_unknown_atom(reason)
+  end
+
   def format_reason(reason) when is_binary(reason), do: reason
 
   def format_reason(_reason),
     do: gettext("Ein unerwarteter Fehler ist aufgetreten.")
+
+  defp format_unknown_atom(reason),
+    do: gettext("Systemfehler: %{reason}", reason: label(reason))
 
   defp format_apdu_error(%APDU.Error{code: code, class: class}) do
     case error_code_message(code) do

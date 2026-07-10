@@ -4,6 +4,7 @@ defmodule BacView.BACnet.Address do
   """
 
   @bacnet_port 47_808
+  @ipv4_port_range 47_808..65_535
   @max_scan_targets 256
   @octet_range_re ~r/^\[(\d+)-(\d+)\]$/
 
@@ -67,6 +68,14 @@ defmodule BacView.BACnet.Address do
 
   @spec default_bbmd_port() :: pos_integer()
   def default_bbmd_port(), do: @bacnet_port
+
+  @spec default_ipv4_port() :: pos_integer()
+  def default_ipv4_port(), do: @bacnet_port
+
+  @spec valid_ipv4_port?(integer()) :: boolean()
+  def valid_ipv4_port?(port) when is_integer(port), do: port in @ipv4_port_range
+
+  def valid_ipv4_port?(_port), do: false
 
   defp expand_host_ranges(host) do
     parts = String.split(host, ".")

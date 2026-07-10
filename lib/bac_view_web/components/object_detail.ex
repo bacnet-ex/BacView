@@ -35,7 +35,6 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:properties_sort_dir, :atom, default: :asc)
   attr(:loading, :boolean, default: false)
   attr(:properties_loading, :boolean, default: false)
-  attr(:properties_reading_visible, :boolean, default: false)
   attr(:subscribed_keys, :any, default: MapSet.new())
   attr(:write_priority, :integer, default: 8)
   attr(:writing_property, :any, default: nil)
@@ -43,6 +42,8 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:file_content, :map, default: nil)
   attr(:file_transfer_busy, :boolean, default: false)
   attr(:uploads, :map, default: %{})
+  attr(:object_nav_targets, :list, default: [])
+  attr(:object_nav_menu_open, :boolean, default: false)
 
   def object_detail(assigns) do
     assigns =
@@ -93,21 +94,18 @@ defmodule BacViewWeb.ObjectDetail do
           </div>
         </div>
         <div :if={@object} class="flex items-center gap-2 shrink-0 pt-0.5">
-          <span
-            :if={@properties_reading_visible}
-            id="object-reading-status"
-            class="bac-badge bac-badge-sm bac-badge-accent inline-flex items-center gap-1.5 max-w-[14rem]"
-            role="status"
-          >
-            <.icon name="hero-arrow-path" class="size-3.5 animate-spin shrink-0" />
-            <span class="truncate">
-              {t(@locale, @locale_version, "Eigenschaften werden gelesen…")}
-            </span>
-          </span>
           <span :if={live?(@subscribed_keys, @object)} class="bac-badge bac-badge-success">
             <.icon name="hero-signal" class="size-3" />
             {t(@locale, @locale_version, "Live")}
           </span>
+          <.object_nav_controls
+            :if={@object_nav_targets != []}
+            object={@object}
+            targets={@object_nav_targets}
+            menu_open={@object_nav_menu_open}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
           <button
             :if={!subscribed?(@subscribed_keys, @object, :present_value)}
             type="button"
@@ -138,16 +136,43 @@ defmodule BacViewWeb.ObjectDetail do
             id="refresh-properties-btn"
             phx-click="refresh_properties"
             disabled={@properties_loading}
-            class="bac-btn bac-btn-ghost bac-btn-sm"
+            class={["bac-btn bac-btn-ghost bac-btn-sm", @properties_loading && "opacity-80"]}
             title={t(@locale, @locale_version, "Aktualisieren")}
+            aria-busy={to_string(@properties_loading)}
           >
             <.icon
               name="hero-arrow-path"
-              class={if(@properties_loading, do: "size-4 animate-spin", else: "size-4")}
+              class={
+                if(@properties_loading,
+                  do: "size-4 animate-spin text-[var(--bac-accent)]",
+                  else: "size-4"
+                )
+              }
             />
           </button>
         </div>
       </header>
+
+      <div
+        :if={@object && @properties_loading}
+        id="object-refresh-banner"
+        role="status"
+        aria-live="polite"
+        class="mx-5 mt-3 rounded-lg border border-[var(--bac-accent)]/25 bg-[var(--bac-accent)]/8 px-4 py-3"
+      >
+        <div class="flex items-center gap-3 min-w-0">
+          <.icon
+            name="hero-arrow-path"
+            class="size-4 shrink-0 animate-spin text-[var(--bac-accent)]"
+          />
+          <p class="text-sm font-medium text-[var(--bac-text)]">
+            {t(@locale, @locale_version, "Eigenschaften werden gelesen…")}
+          </p>
+        </div>
+        <p class="text-xs bac-text-muted mt-1.5 ml-7">
+          {t(@locale, @locale_version, "Warte auf BACnet-Antwort…")}
+        </p>
+      </div>
 
       <div class="flex-1 overflow-auto p-5 space-y-5">
         <div :if={@loading} class="bac-loading py-16">
@@ -170,7 +195,7 @@ defmodule BacViewWeb.ObjectDetail do
 
         <section
           :if={!@loading && @object}
-          class={["bac-object-hero", @properties_reading_visible && "bac-object-hero-reading"]}
+          class={["bac-object-hero", @properties_loading && "bac-object-hero-reading"]}
         >
           <div class="bac-object-hero-icon">
             <.icon name={ObjectTypeIcon.name(@object.type)} class="size-8" />
@@ -211,7 +236,7 @@ defmodule BacViewWeb.ObjectDetail do
           class="bac-panel"
           aria-busy={to_string(@properties_loading)}
         >
-          <div :if={@properties_reading_visible} class="bac-reading-bar" aria-hidden="true"></div>
+          <div :if={@properties_loading} class="bac-reading-bar" aria-hidden="true"></div>
           <div class="bac-panel-header flex-wrap gap-3">
             <div class="min-w-0">
               <p class="bac-section-title">{t(@locale, @locale_version, "Eigenschaften")}</p>
@@ -259,10 +284,10 @@ defmodule BacViewWeb.ObjectDetail do
             :if={@properties != []}
             class={[
               "bac-table-wrap border-0 rounded-none",
-              @properties_reading_visible && "bac-table-reading"
+              @properties_loading && "bac-table-reading"
             ]}
           >
-            <table class="bac-table">
+            <table class="bac-table" id="object-detail-properties-table">
               <thead>
                 <tr>
                   <th>
@@ -411,7 +436,7 @@ defmodule BacViewWeb.ObjectDetail do
                         <option
                           :for={opt <- prop.enum_options}
                           value={opt.value}
-                          selected={opt.value == prop.value}
+                          selected={enum_option_selected?(prop.value, opt.value)}
                         >
                           {opt.label}
                         </option>
@@ -420,7 +445,7 @@ defmodule BacViewWeb.ObjectDetail do
                         :if={!boolean_property?(prop) && !enumeration_property?(prop)}
                         type="text"
                         name="value"
-                        value={input_value(prop)}
+                        value={input_value(prop, @object)}
                         placeholder={write_placeholder(prop)}
                         class="bac-input bac-input-sm bac-mono w-full"
                       />
@@ -560,6 +585,23 @@ defmodule BacViewWeb.ObjectDetail do
     end
   end
 
+  defp enum_option_selected?(value, option_value)
+       when is_integer(value) and is_integer(option_value),
+       do: value == option_value
+
+  defp enum_option_selected?(value, option_value)
+       when is_float(value) and is_integer(option_value),
+       do: trunc(value) == option_value
+
+  defp enum_option_selected?(value, option_value)
+       when is_integer(value) and is_float(option_value),
+       do: value == trunc(option_value)
+
+  defp enum_option_selected?(value, option_value) when is_float(value) and is_float(option_value),
+    do: trunc(value) == trunc(option_value)
+
+  defp enum_option_selected?(value, option_value), do: value == option_value
+
   attr(:object, :map, required: true)
   attr(:prop, :map, required: true)
   attr(:writing_property, :any, default: nil)
@@ -598,14 +640,9 @@ defmodule BacViewWeb.ObjectDetail do
     """
   end
 
-  defp input_value(%{value: nil}), do: ""
-  defp input_value(%{value: v}) when is_float(v), do: PropertyFormatter.format_float(v)
-  defp input_value(%{value: true}), do: "true"
-  defp input_value(%{value: false}), do: "false"
-  defp input_value(%{value: v}) when is_atom(v), do: Atom.to_string(v)
-  defp input_value(%{value: v}) when is_integer(v), do: Integer.to_string(v)
-  defp input_value(%{value: v}) when is_binary(v), do: v
-  defp input_value(_input_value), do: ""
+  defp input_value(prop, object) do
+    PropertyFormatter.format_edit_value(Map.get(prop, :value), object, prop)
+  end
 
   defp write_placeholder(%{property: :present_value, type: "REAL"}),
     do: dgettext(BacViewWeb.Gettext, "default", "z. B. 21.5")
@@ -618,7 +655,7 @@ defmodule BacViewWeb.ObjectDetail do
   defp format_time(nil), do: "—"
 
   defp format_time(%DateTime{} = dt),
-    do: Calendar.strftime(dt, "%d.%m.%Y %H:%M:%S")
+    do: BacView.Timezone.format(dt, "%d.%m.%Y %H:%M:%S")
 
   defp property_param(property) when is_atom(property), do: Atom.to_string(property)
   defp property_param(property) when is_integer(property), do: Integer.to_string(property)
@@ -656,4 +693,98 @@ defmodule BacViewWeb.ObjectDetail do
 
   defp return_tab_button_label(_tab, locale, locale_version),
     do: t(locale, locale_version, "Zur Geräteansicht")
+
+  attr(:object, :map, required: true)
+  attr(:targets, :list, required: true)
+  attr(:menu_open, :boolean, default: false)
+  attr(:locale, :string, default: "de")
+  attr(:locale_version, :integer, default: 0)
+
+  defp object_nav_controls(assigns) do
+    assigns =
+      assign(
+        assign(assigns, :nav_kind, nav_kind(assigns.object)),
+        :single_target,
+        List.first(assigns.targets)
+      )
+
+    ~H"""
+    <.link
+      :if={length(@targets) == 1}
+      id="object-nav-jump"
+      navigate={@single_target.href}
+      class="bac-btn bac-btn-ghost bac-btn-sm"
+      title={@single_target.label}
+    >
+      <.icon name={nav_icon(@nav_kind)} class="size-4" />
+      {nav_button_label(@nav_kind, @locale, @locale_version)}
+    </.link>
+    <div :if={length(@targets) > 1} class="relative">
+      <button
+        type="button"
+        id="object-nav-menu-toggle"
+        phx-click="toggle_object_nav_menu"
+        class="bac-btn bac-btn-ghost bac-btn-sm"
+        aria-haspopup="menu"
+        aria-expanded={to_string(@menu_open)}
+        aria-controls={if(@menu_open, do: "object-nav-menu")}
+      >
+        <.icon name={nav_icon(@nav_kind)} class="size-4" />
+        {nav_menu_button_label(@nav_kind, @locale, @locale_version)}
+        <.icon name="hero-chevron-down" class="size-3.5 opacity-70" />
+      </button>
+      <div
+        :if={@menu_open}
+        id="object-nav-menu"
+        phx-hook="FilterMenu"
+        data-trigger-id="object-nav-menu-toggle"
+        data-close-event="close_object_nav_menu"
+        class="bac-filter-menu"
+      >
+        <div class="bac-filter-menu-header">
+          <p class="text-xs font-semibold text-[var(--bac-text)]">
+            {nav_menu_title(@nav_kind, @locale, @locale_version)}
+          </p>
+        </div>
+        <ul class="bac-filter-menu-list">
+          <li :for={target <- @targets} class="bac-filter-menu-item">
+            <.link
+              navigate={target.href}
+              class="flex items-center gap-2 w-full text-left text-sm min-w-0"
+            >
+              <.icon name={ObjectTypeIcon.name(target.type)} class="size-4 shrink-0 opacity-80" />
+              <span class="truncate">{target.label}</span>
+            </.link>
+          </li>
+        </ul>
+      </div>
+    </div>
+    """
+  end
+
+  defp nav_kind(%{type: type}) when type in [:trend_log, :trend_log_multiple],
+    do: :referenced_object
+
+  defp nav_kind(_object), do: :trend_log
+
+  defp nav_icon(:trend_log), do: "hero-presentation-chart-line"
+  defp nav_icon(:referenced_object), do: "hero-cube"
+
+  defp nav_button_label(:trend_log, locale, locale_version),
+    do: t(locale, locale_version, "Zum Trendprotokoll")
+
+  defp nav_button_label(:referenced_object, locale, locale_version),
+    do: t(locale, locale_version, "Zum Objekt")
+
+  defp nav_menu_button_label(:trend_log, locale, locale_version),
+    do: t(locale, locale_version, "Trendprotokolle")
+
+  defp nav_menu_button_label(:referenced_object, locale, locale_version),
+    do: t(locale, locale_version, "Referenzierte Objekte")
+
+  defp nav_menu_title(:trend_log, locale, locale_version),
+    do: t(locale, locale_version, "Trendprotokolle")
+
+  defp nav_menu_title(:referenced_object, locale, locale_version),
+    do: t(locale, locale_version, "Referenzierte Objekte")
 end

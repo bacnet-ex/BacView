@@ -362,7 +362,7 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_info(:shortcut_refresh_device, socket) do
-    handle_event("refresh_device", %{}, socket)
+    {:noreply, start_device_reload(socket)}
   end
 
   @impl true
@@ -767,6 +767,31 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
+  def handle_event("resubscribe_selected_subscriptions", _params, socket) do
+    device_id = socket.assigns.device_id
+
+    results =
+      socket.assigns.subscriptions
+      |> selected_subscriptions(socket.assigns.selected_subscription_keys)
+      |> Enum.map(&resubscribe_subscription(device_id, &1))
+
+    failed = Enum.count(results, &match?({:error, _err}, &1))
+    ok = length(results) - failed
+
+    {:noreply,
+     socket
+     |> assign(:selected_subscription_keys, MapSet.new())
+     |> refresh_cov_state()
+     |> put_flash(
+       :info,
+       gt("COV erneut abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
+         ok: ok,
+         failed: failed
+       )
+     )}
+  end
+
+  @impl true
   def handle_event("unsubscribe_selected_subscriptions", _params, socket) do
     device_id = socket.assigns.device_id
 
@@ -978,8 +1003,7 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   def handle_event("refresh_device", _params, socket) do
-    send(self(), {:load_device, true})
-    {:noreply, assign(socket, :loading, true)}
+    {:noreply, start_device_reload(socket)}
   end
 
   @impl true
@@ -1152,8 +1176,11 @@ defmodule BacViewWeb.DeviceLive do
            to: device_tab_path(socket.assigns.device_id, tab, device_tab_opts(socket.assigns))
          )}
 
+      BacViewWeb.Shortcuts.refresh_key?(key) ->
+        {:noreply, start_device_reload(socket)}
+
       true ->
-        BacViewWeb.Shortcuts.handle(params, socket, refresh: :refresh_device)
+        BacViewWeb.Shortcuts.handle(params, socket)
     end
   end
 
@@ -1445,6 +1472,15 @@ defmodule BacViewWeb.DeviceLive do
   defp object_label(%{object_id: %{type: type, instance: instance}}),
     do: "#{type}:#{instance}"
 
+  defp start_device_reload(socket) do
+    send(self(), {:load_device, true})
+
+    socket
+    |> assign(:loading, true)
+    |> assign(:loading_in_progress, true)
+    |> assign(:load_progress, %{stage: :connecting, done: 0, total: nil})
+  end
+
   defp apply_loaded_device(socket, loaded) do
     hierarchy = loaded |> Map.get(:hierarchy, empty_hierarchy()) |> normalize_hierarchy()
     tree_expanded = default_expanded(hierarchy.roots)
@@ -1544,8 +1580,27 @@ defmodule BacViewWeb.DeviceLive do
 
   defp subscription_keys(subscriptions) when is_list(subscriptions) do
     subscriptions
-    |> Enum.map(fn sub -> {sub.object_id.type, sub.object_id.instance, sub.property} end)
+    |> Enum.map(&subscription_key/1)
     |> MapSet.new()
+  end
+
+  defp subscription_key(sub) do
+    {sub.object_id.type, sub.object_id.instance, sub.property}
+  end
+
+  defp selected_subscriptions(subscriptions, selected_keys) when is_list(subscriptions) do
+    Enum.filter(subscriptions, fn sub ->
+      MapSet.member?(selected_keys, subscription_key(sub))
+    end)
+  end
+
+  defp resubscribe_subscription(device_id, sub) do
+    SubscriptionManager.subscribe(device_id, sub.object_id, sub.property,
+      lifetime: sub.lifetime,
+      confirmed: sub.confirmed,
+      process_id: sub.process_id,
+      subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
+    )
   end
 
   defp subscription_key_from_params(params) do
@@ -1985,10 +2040,21 @@ defmodule BacViewWeb.DeviceLive do
             <button
               type="button"
               phx-click="refresh_device"
-              class="bac-btn bac-btn-ghost bac-btn-sm"
+              id="device-refresh-btn"
+              disabled={@loading}
+              class={["bac-btn bac-btn-ghost bac-btn-sm", @loading && "opacity-80"]}
               title={t(@locale, @locale_version, "Aktualisieren")}
+              aria-busy={to_string(@loading)}
             >
-              <.icon name="hero-arrow-path" class="size-4" />
+              <.icon
+                name="hero-arrow-path"
+                class={
+                  if(@loading,
+                    do: "size-4 animate-spin text-[var(--bac-accent)]",
+                    else: "size-4"
+                  )
+                }
+              />
             </button>
           </div>
         </header>
@@ -2048,20 +2114,15 @@ defmodule BacViewWeb.DeviceLive do
           </div>
         </div>
 
+        <DeviceLoadProgress.status_banner
+          :if={@loading}
+          progress={@load_progress}
+          locale={@locale}
+          locale_version={@locale_version}
+        />
+
         <div class="flex flex-1 min-h-0">
           <section class="flex-1 p-5 overflow-auto w-full">
-            <DeviceLoadProgress.load_progress
-              :if={@loading && @load_progress}
-              progress={@load_progress}
-              locale={@locale}
-              locale_version={@locale_version}
-            />
-
-            <div :if={@loading && is_nil(@load_progress)} class="bac-loading py-8">
-              <.icon name="hero-arrow-path" class="size-5 animate-spin" />
-              {t(@locale, @locale_version, "Gerät wird geladen…")}
-            </div>
-
             <ObjectSelectionBar.selection_bar
               :if={
                 !@loading && @tab in ["hierarchy", "objects"] &&

@@ -7,6 +7,7 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
 
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.EventFormatter
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyFormatter
 
@@ -61,21 +62,20 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
   @spec relocalize_property(map(), keyword()) :: map()
   def relocalize_property(prop, opts \\ []) do
     units = Keyword.get(opts, :units)
+    object = Keyword.get(opts, :object)
     value = Map.get(prop, :value)
     bac_type = Map.get(prop, :bac_type)
     display = PropertyDisplay.build(value)
 
-    formatted =
-      if Map.get(prop, :property) == :present_value do
-        PropertyFormatter.format_value(value, units)
-      else
-        display.formatted
-      end
+    formatted = multistate_state_property_formatted(prop, value, object, units, display)
+
+    display = Map.put(display, :formatted, formatted)
 
     prop =
       prop
       |> Map.put(:value_display, display)
       |> Map.put(:value_formatted, formatted)
+      |> maybe_enrich_multistate_state_property(object)
 
     prop =
       case enum_type(bac_type) do
@@ -153,6 +153,48 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
   end
 
   defp refresh_display(prop, _enum_type), do: prop
+
+  defp maybe_enrich_multistate_state_property(%{property: property} = prop, object)
+       when property in [:present_value, :relinquish_default] and is_map(object) do
+    if MultistateState.multistate_object?(object) do
+      prop
+      |> Map.put(:enum_options, MultistateState.state_options(object))
+      |> Map.put(:type, "INTEGER")
+    else
+      prop
+    end
+  end
+
+  defp maybe_enrich_multistate_state_property(prop, _object), do: prop
+
+  defp multistate_state_property_formatted(
+         %{property: :present_value} = prop,
+         value,
+         object,
+         units,
+         _display
+       ) do
+    PropertyFormatter.format_present_value(value, object, prop) ||
+      PropertyFormatter.format_value(value, units)
+  end
+
+  defp multistate_state_property_formatted(
+         %{property: :relinquish_default},
+         value,
+         object,
+         units,
+         display
+       ) do
+    if MultistateState.multistate_object?(object) do
+      MultistateState.format_present_value(value, object) ||
+        PropertyFormatter.format_value(value, units)
+    else
+      display.formatted
+    end
+  end
+
+  defp multistate_state_property_formatted(_prop, _value, _object, _units, display),
+    do: display.formatted
 
   defp option_label(enum_type, name, int_value) do
     "#{label(enum_type, name)} (#{format_constant_value(int_value)})"

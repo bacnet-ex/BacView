@@ -3,6 +3,8 @@ defmodule BacViewWeb.TrendLogChartModal do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.Timezone
+
   attr(:object, :map, required: true)
   attr(:loading, :boolean, default: false)
   attr(:error, :string, default: nil)
@@ -120,6 +122,7 @@ defmodule BacViewWeb.TrendLogChartModal do
             phx-hook="TrendLogChart"
             phx-update="ignore"
             data-locale="de-DE"
+            data-timezone={Timezone.name()}
             class="bac-trend-chart-shell flex-1 min-h-0"
           >
             <div data-chart-empty class="hidden text-sm bac-text-muted py-10 text-center"></div>

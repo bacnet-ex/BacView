@@ -133,10 +133,130 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
                  %ObjectIdentifier{type: :analog_input, instance: 1}
                )
     end
+
+    test "falls back to individual reads when segmentation is not supported" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, rows} =
+               PropertyReader.read_all(__MODULE__.SegmentationClient, :dest, object)
+
+      assert expected_fallback_rows(rows)
+    end
+
+    test "falls back to individual reads when buffer overflow occurs" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, rows} =
+               PropertyReader.read_all(__MODULE__.BufferOverflowClient, :dest, object)
+
+      assert expected_fallback_rows(rows)
+    end
+  end
+
+  defp expected_fallback_rows(rows) do
+    properties = Enum.map(rows, & &1.property)
+
+    assert :present_value in properties
+    assert :description in properties
+    assert :object_name in properties
+    refute :property_list in properties
+
+    assert Enum.find(rows, &(&1.property == :present_value)).value == 42.0
+    assert Enum.find(rows, &(&1.property == :description)).value == "test input"
   end
 
   defmodule UnavailableClient do
     def read_object(_destination, _object, _opts), do: {:error, :timeout}
+  end
+
+  defmodule BufferOverflowClient do
+    @property_list [
+      :object_identifier,
+      :object_name,
+      :object_type,
+      :present_value,
+      :description,
+      :status_flags,
+      :event_state,
+      :out_of_service,
+      :units
+    ]
+
+    def read_object(_destination, _object, _opts), do: {:error, :buffer_overflow}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :buffer_overflow}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "AI-197"}
+
+    def read_property(_destination, _object, :property_list, opts) do
+      case Keyword.get(opts, :array_index) do
+        nil -> {:ok, @property_list}
+        0 -> {:ok, length(@property_list)}
+        idx when is_integer(idx) -> {:ok, Enum.at(@property_list, idx - 1)}
+      end
+    end
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        present_value: 42.0,
+        description: "test input",
+        status_flags: [false, false, false, false],
+        event_state: :normal,
+        out_of_service: false,
+        units: :degrees_celsius
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :property_not_found}
+      end
+    end
+  end
+
+  defmodule SegmentationClient do
+    @property_list [
+      :object_identifier,
+      :object_name,
+      :object_type,
+      :present_value,
+      :description,
+      :status_flags,
+      :event_state,
+      :out_of_service,
+      :units
+    ]
+
+    def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :segmentation_not_supported}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "AI-197"}
+
+    def read_property(_destination, _object, :property_list, opts) do
+      case Keyword.get(opts, :array_index) do
+        nil -> {:ok, @property_list}
+        0 -> {:ok, length(@property_list)}
+        idx when is_integer(idx) -> {:ok, Enum.at(@property_list, idx - 1)}
+      end
+    end
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        present_value: 42.0,
+        description: "test input",
+        status_flags: [false, false, false, false],
+        event_state: :normal,
+        out_of_service: false,
+        units: :degrees_celsius
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :property_not_found}
+      end
+    end
   end
 
   describe "format_property_rows/2" do

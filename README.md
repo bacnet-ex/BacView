@@ -87,6 +87,7 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 | `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
 | `BACVIEW_DESKTOP` | — | Set to `1` at compile time to build the desktop app (see above) |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
+| `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
 
 ## Production release
 

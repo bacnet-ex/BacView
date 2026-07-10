@@ -3,12 +3,15 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   Reads object properties declared on the BACnet object via `ObjectsUtility.get_properties/1`.
   """
 
+  alias BACnet.Protocol.ApplicationTags.Encoding
+  alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.Constants
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.ObjectsUtility
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
+  alias BacView.BACnet.Segmentation
   alias BacView.Text
 
   import BACnet.Protocol.ObjectsUtility, only: [is_object: 1]
@@ -22,16 +25,34 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   @spec read_all(module(), term(), ObjectIdentifier.t()) :: {:ok, [map()]} | {:error, term()}
   def read_all(client, destination, %ObjectIdentifier{} = object) do
-    with {:ok, bacnet_object} <- fetch_bacnet_object(client, destination, object),
-         {:ok, properties} <- property_list(bacnet_object),
-         {:ok, results} <-
-           read_all_properties(
-             client,
-             destination,
-             object,
-             readable_properties(properties, object)
-           ) do
-      {:ok, format_results(properties, results, bacnet_object)}
+    case fetch_bacnet_object(client, destination, object) do
+      {:ok, bacnet_object, :rpm} ->
+        with {:ok, properties} <- property_list(bacnet_object),
+             {:ok, results} <-
+               read_all_properties(
+                 client,
+                 destination,
+                 object,
+                 readable_properties(properties, object),
+                 :rpm
+               ) do
+          {:ok, format_results(properties, results, bacnet_object)}
+        end
+
+      {:ok, bacnet_object, properties, :individual} ->
+        with {:ok, results} <-
+               read_all_properties(
+                 client,
+                 destination,
+                 object,
+                 readable_properties(properties, object),
+                 :individual
+               ) do
+          {:ok, format_results(properties, results, bacnet_object)}
+        end
+
+      {:error, _client} = err ->
+        err
     end
   end
 
@@ -53,11 +74,136 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     opts = Keyword.merge(@read_opts, read_level: :all)
 
     case client.read_object(destination, object, opts) do
-      {:ok, obj} when is_object(obj) -> {:ok, obj}
-      {:error, _client} = err -> err
-      _client -> {:error, :object_unavailable}
+      {:ok, obj} when is_object(obj) ->
+        {:ok, obj, :rpm}
+
+      {:error, _err} = error ->
+        if Segmentation.fallback_error?(error) do
+          fetch_bacnet_object_without_rpm(client, destination, object)
+        else
+          error
+        end
+
+      _client ->
+        {:error, :object_unavailable}
     end
   end
+
+  # Fallback for devices that do not support segmentation: read the property
+  # list and object name individually, then read each property with ReadProperty.
+  defp fetch_bacnet_object_without_rpm(client, destination, object) do
+    with {:ok, object_name} <- read_object_name(client, destination, object),
+         {:ok, bacnet_object} <- build_bacnet_object(object, object_name),
+         properties <- properties_without_rpm(client, destination, object, bacnet_object) do
+      {:ok, bacnet_object, properties, :individual}
+    end
+  end
+
+  defp properties_without_rpm(client, destination, object, bacnet_object) do
+    case read_property_list(client, destination, object) do
+      {:ok, property_list} ->
+        normalize_properties(property_list)
+
+      {:error, _reason} ->
+        if is_object(bacnet_object) do
+          bacnet_object |> ObjectsUtility.get_properties() |> normalize_properties()
+        else
+          []
+        end
+    end
+  end
+
+  defp read_object_name(client, destination, object) do
+    case client.read_property(destination, object, :object_name, @read_opts) do
+      {:ok, name} when is_binary(name) ->
+        {:ok, name}
+
+      {:ok, %Encoding{value: name}} when is_binary(name) ->
+        {:ok, name}
+
+      _read_object_name ->
+        {:ok, default_object_name(object)}
+    end
+  end
+
+  defp default_object_name(%ObjectIdentifier{type: type, instance: instance}),
+    do: "#{type}:#{instance}"
+
+  defp build_bacnet_object(%ObjectIdentifier{} = object, object_name) do
+    case ObjectsUtility.cast_properties_to_object(
+           object,
+           %{object_name: object_name},
+           allow_unknown_properties: true
+         ) do
+      {:ok, bacnet_object} -> {:ok, bacnet_object}
+      {:error, :unsupported_object_type} -> {:ok, nil}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp read_property_list(client, destination, object) do
+    case client.read_property(destination, object, :property_list, @read_opts) do
+      {:ok, property_list} ->
+        {:ok, unwrap_property_list(property_list)}
+
+      {:error, _err} = error ->
+        if Segmentation.fallback_error?(error) do
+          read_property_list_indexed(client, destination, object)
+        else
+          error
+        end
+    end
+  end
+
+  defp read_property_list_indexed(client, destination, object) do
+    indexed_opts = Keyword.merge(@read_opts, array_index: 0)
+
+    case client.read_property(destination, object, :property_list, indexed_opts) do
+      {:ok, 0} ->
+        {:ok, []}
+
+      {:ok, count} when is_integer(count) and count > 0 ->
+        props =
+          1..count
+          |> Task.async_stream(
+            fn idx ->
+              case client.read_property(
+                     destination,
+                     object,
+                     :property_list,
+                     Keyword.merge(@read_opts, array_index: idx)
+                   ) do
+                {:ok, prop} -> unwrap_property_identifier(prop)
+                _read_property_list_index -> nil
+              end
+            end,
+            max_concurrency: 8,
+            timeout: :infinity,
+            ordered: false
+          )
+          |> Enum.reduce([], fn
+            {:ok, prop}, acc when not is_nil(prop) -> [prop | acc]
+            _read_property_list_index, acc -> acc
+          end)
+          |> Enum.reverse()
+
+        {:ok, props}
+
+      {:error, _reason} = err ->
+        err
+
+      _read_property_list_indexed ->
+        {:error, :property_list_not_readable}
+    end
+  end
+
+  defp unwrap_property_list(%BACnetArray{} = array), do: BACnetArray.to_list(array)
+  defp unwrap_property_list(list) when is_list(list), do: list
+  defp unwrap_property_list(%Encoding{value: value}), do: unwrap_property_list(value)
+  defp unwrap_property_list(value), do: [value]
+
+  defp unwrap_property_identifier(%Encoding{value: value}), do: unwrap_property_identifier(value)
+  defp unwrap_property_identifier(value), do: value
 
   defp property_list(bacnet_object) when is_object(bacnet_object) do
     properties =
@@ -96,7 +242,11 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp valid_property?(prop) when is_integer(prop) and prop >= 0, do: true
   defp valid_property?(_prop), do: false
 
-  defp read_all_properties(client, destination, object, properties) do
+  defp read_all_properties(client, destination, object, properties, :individual) do
+    {:ok, read_properties_individually(client, destination, object, properties)}
+  end
+
+  defp read_all_properties(client, destination, object, properties, :rpm) do
     results =
       properties
       |> Enum.chunk_every(@chunk_size)

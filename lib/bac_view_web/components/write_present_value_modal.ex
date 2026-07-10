@@ -3,6 +3,7 @@ defmodule BacViewWeb.WritePresentValueModal do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyFormatter
 
   attr(:object, :map, required: true)
@@ -10,6 +11,16 @@ defmodule BacViewWeb.WritePresentValueModal do
   attr(:writing, :boolean, default: false)
 
   def modal(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :state_options,
+        if(MultistateState.multistate_object?(assigns.object),
+          do: MultistateState.state_options(assigns.object),
+          else: []
+        )
+      )
+
     ~H"""
     <div id="write-present-value-modal" class="bac-modal-backdrop">
       <button
@@ -95,8 +106,22 @@ defmodule BacViewWeb.WritePresentValueModal do
                 <option value="true" selected={@object.present_value == true}>true</option>
                 <option value="false" selected={@object.present_value == false}>false</option>
               </select>
+              <select
+                :if={!boolean_value?(@object) && @state_options != []}
+                id="modal-write-value"
+                name="value"
+                class="bac-input bac-input-sm w-full"
+              >
+                <option
+                  :for={opt <- @state_options}
+                  value={opt.value}
+                  selected={selected_state_option?(@object, opt)}
+                >
+                  {opt.label}
+                </option>
+              </select>
               <input
-                :if={!boolean_value?(@object)}
+                :if={!boolean_value?(@object) && @state_options == []}
                 id="modal-write-value"
                 type="text"
                 name="value"
@@ -150,9 +175,22 @@ defmodule BacViewWeb.WritePresentValueModal do
   defp boolean_value?(object) when is_map(object), do: is_boolean(Map.get(object, :present_value))
   defp boolean_value?(_boolean_value), do: false
 
-  defp input_value(%{present_value: v}) when is_float(v),
-    do: PropertyFormatter.format_float(v)
+  defp selected_state_option?(%{present_value: value}, %{value: option_value}) do
+    normalize_state_value(value) == option_value
+  end
 
-  defp input_value(%{present_value: v}) when is_integer(v), do: Integer.to_string(v)
-  defp input_value(_v), do: ""
+  defp selected_state_option?(_object, _option), do: false
+
+  defp normalize_state_value(value) when is_integer(value), do: value
+
+  defp normalize_state_value(value) when is_float(value), do: trunc(value)
+  defp normalize_state_value(_value), do: nil
+
+  defp input_value(object) when is_map(object) do
+    PropertyFormatter.format_edit_value(
+      Map.get(object, :present_value),
+      object,
+      %{property: :present_value}
+    )
+  end
 end
