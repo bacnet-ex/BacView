@@ -17,9 +17,6 @@ config :bacview,
        Code.ensure_loaded?(Circuits.UART) or
          System.get_env("BACVIEW_ENABLE_MSTP") in ~w(1 true yes)
 
-config :bacview,
-  generators: [timestamp_type: :utc_datetime]
-
 config :bacview, BacViewWeb.Gettext,
   locales: ~w(de en),
   default_locale: "de"
