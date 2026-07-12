@@ -27,6 +27,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacViewWeb.AlarmsPanel
   alias BacViewWeb.CovNotificationChartModal
   alias BacViewWeb.DeviceLoadProgress
+  alias BacViewWeb.DeviceScanRecovery
   alias BacViewWeb.DeviceServiceModals
   alias BacViewWeb.DeviceServicesHandlers
   alias BacViewWeb.DeviceServicesMenu
@@ -85,6 +86,7 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:loading, true)
          |> assign(:loading_in_progress, false)
          |> assign(:load_progress, %{stage: :connecting, done: 0, total: nil})
+         |> assign(:scan_retrying, %{})
          |> assign(:search, "")
          |> assign(:type_filter, [])
          |> assign(:type_filter_open, false)
@@ -459,6 +461,43 @@ defmodule BacViewWeb.DeviceLive do
   @impl true
   def handle_info(:shortcut_refresh_device, socket) do
     {:noreply, start_device_reload(socket)}
+  end
+
+  @impl true
+  def handle_event("retry_scan_object", params, socket) do
+    with {:ok, type_atom} <- parse_type(params["type"]),
+         instance_int <- String.to_integer(params["instance"]),
+         {:ok, skip_mode} <- parse_skip_mode(params["skip_mode"]),
+         object_id <- %ObjectIdentifier{type: type_atom, instance: instance_int} do
+      retry_key = "#{type_atom}:#{instance_int}"
+
+      socket =
+        assign(socket, :scan_retrying, Map.put(socket.assigns.scan_retrying, retry_key, true))
+
+      case DeviceSession.retry_scan_object(socket.assigns.device_id, object_id, skip_mode) do
+        {:ok, _summary} ->
+          {:ok, loaded} = DeviceSession.load(socket.assigns.device_id)
+
+          {:noreply,
+           socket
+           |> assign(:scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
+           |> apply_loaded_device(loaded)
+           |> put_flash(
+             :info,
+             gt("Objekt %{object} erfolgreich nachgelesen.",
+               object: "#{type_atom}:#{instance_int}"
+             )
+           )}
+
+        {:error, reason} ->
+          {:noreply,
+           socket
+           |> assign(:scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
+           |> LiveFlash.put_error(:load_properties, reason)}
+      end
+    else
+      _err -> {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+    end
   end
 
   @impl true
@@ -1681,6 +1720,10 @@ defmodule BacViewWeb.DeviceLive do
     ArgumentError -> :error
   end
 
+  defp parse_skip_mode("value"), do: {:ok, :value}
+  defp parse_skip_mode("all"), do: {:ok, true}
+  defp parse_skip_mode(_mode), do: :error
+
   defp parse_status(status) when is_binary(status) do
     case ObjectTable.normalize_status_flag(status) do
       nil -> :error
@@ -2543,6 +2586,14 @@ defmodule BacViewWeb.DeviceLive do
         <DeviceLoadProgress.status_banner
           :if={@loading}
           progress={@load_progress}
+          locale={@locale}
+          locale_version={@locale_version}
+        />
+
+        <DeviceScanRecovery.recovery_panel
+          :if={!@loading}
+          scan_errors={Map.get(@device, :scan_errors, [])}
+          scan_retrying={@scan_retrying}
           locale={@locale}
           locale_version={@locale_version}
         />

@@ -50,6 +50,60 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
+  @doc """
+  Re-reads a single object from a prior scan failure using relaxed property validation.
+
+  `skip_mode` is `:value` (skip value checks only) or `true` (skip type and value checks).
+  """
+  @spec retry_scan_object(integer(), ObjectIdentifier.t(), :value | true) ::
+          {:ok, map()} | {:error, term()}
+  def retry_scan_object(device_id, %ObjectIdentifier{} = object, skip_mode)
+      when skip_mode in [:value, true] do
+    with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
+      GenServer.call(pid, {:retry_scan_object, object, skip_mode}, 60_000)
+    end
+  end
+
+  @doc false
+  @spec recoverable_validation_error?(term()) :: boolean()
+  def recoverable_validation_error?(reason) do
+    case normalize_scan_error_reason(reason) do
+      {:value_failed_property_validation, _property} -> true
+      {:invalid_property_type, _property} -> true
+      _other -> false
+    end
+  end
+
+  @doc false
+  @spec retry_modes_for_reason(term()) :: [:value | true, ...]
+  def retry_modes_for_reason(reason) do
+    case normalize_scan_error_reason(reason) do
+      {:value_failed_property_validation, _property} -> [:value, true]
+      {:invalid_property_type, _property} -> [true]
+      _other -> []
+    end
+  end
+
+  @doc false
+  @spec scan_read_opts(ObjectIdentifier.t(), :value | true | nil) :: keyword()
+  def scan_read_opts(%ObjectIdentifier{} = device_obj, skip_mode \\ nil) do
+    base = [
+      allow_unknown_properties: true,
+      remote_device_id: device_obj.instance
+    ]
+
+    case skip_mode do
+      nil ->
+        base
+
+      mode when mode in [:value, true] ->
+        Keyword.put(base, :object_opts, skip_property_validation_remote_object: mode)
+
+      _other ->
+        base
+    end
+  end
+
   @spec objects(integer()) :: [map()]
   def objects(device_id) do
     case DeviceSessionSupervisor.session_pid(device_id) do
@@ -158,7 +212,8 @@ defmodule BacView.BACnet.DeviceSession do
        objects: [],
        hierarchy: %{roots: [], empty?: true, structured_view_count: 0},
        status: :idle,
-       load_waiters: []
+       load_waiters: [],
+       scanned: []
      }}
   end
 
@@ -188,6 +243,14 @@ defmodule BacView.BACnet.DeviceSession do
 
   def handle_call(:objects, _from, %{objects: objects} = state) do
     {:reply, objects, state}
+  end
+
+  def handle_call({:retry_scan_object, object, skip_mode}, _from, state)
+      when skip_mode in [:value, true] do
+    case retry_scan_object_impl(state, object, skip_mode) do
+      {:ok, summary, new_state} -> {:reply, {:ok, summary}, new_state}
+      {:error, _reason} = err -> {:reply, err, state}
+    end
   end
 
   @impl true
@@ -303,7 +366,7 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp fetch_device(%{device_id: device_id} = state) do
     with {:ok, device} <- Discovery.get_device(device_id),
-         {:ok, loaded} <- load_device(device) do
+         {:ok, loaded, scanned} <- load_device(device) do
       update_device_meta(device_id, loaded)
 
       new_state = %{
@@ -311,6 +374,7 @@ defmodule BacView.BACnet.DeviceSession do
         | device: loaded,
           objects: loaded.objects,
           hierarchy: loaded.hierarchy,
+          scanned: scanned,
           status: :ready
       }
 
@@ -353,7 +417,8 @@ defmodule BacView.BACnet.DeviceSession do
     with {:ok, device} <-
            read_object_fallback(address, device_obj, allow_unknown_properties: true),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
-         {:ok, scanned} <- scan_object_list(device_id, address, device_obj, object_ids) do
+         {:ok, scanned, scan_errors} <-
+           scan_object_list(device_id, address, device_obj, object_ids) do
       scanned_len = length(scanned)
 
       report_progress(device_id, %{
@@ -379,10 +444,11 @@ defmodule BacView.BACnet.DeviceSession do
           status: :loaded,
           loaded_at: DateTime.utc_now(),
           objects: objects,
-          hierarchy: hierarchy
+          hierarchy: hierarchy,
+          scan_errors: scan_errors
         })
 
-      {:ok, loaded}
+      {:ok, loaded, scanned}
     end
   end
 
@@ -510,13 +576,9 @@ defmodule BacView.BACnet.DeviceSession do
     })
 
     if total == 0 do
-      {:ok, []}
+      {:ok, [], []}
     else
-      scan_opts = [
-        allow_unknown_properties: true,
-        remote_device_id: device_obj.instance,
-        skip_property_validation_remote_object: true
-      ]
+      scan_opts = scan_read_opts(device_obj)
 
       done_counter = :counters.new(1, [])
       error_counter = :counters.new(1, [])
@@ -635,7 +697,7 @@ defmodule BacView.BACnet.DeviceSession do
         error_log: error_log
       })
 
-      {:ok, scanned}
+      {:ok, scanned, recoverable_scan_errors(error_log)}
     end
   end
 
@@ -685,7 +747,10 @@ defmodule BacView.BACnet.DeviceSession do
       :object_identifier
     ]
 
-    read_opts = Keyword.take(opts, [:allow_unknown_properties, :remote_device_id])
+    read_opts =
+      opts
+      |> Keyword.take([:allow_unknown_properties, :remote_device_id])
+      |> maybe_merge_object_opts(opts)
 
     props
     |> Task.async_stream(
@@ -732,13 +797,97 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   defp prepend_scan_error(error_log, object_id, reason) do
+    normalized_reason = normalize_scan_error_reason(reason)
+    recoverable = recoverable_validation_error?(normalized_reason)
+
     [
       %{
         object: format_current_object(object_id),
-        message: ErrorMessage.format_reason(reason)
+        object_id: object_id,
+        message: ErrorMessage.format_reason(reason),
+        reason: normalized_reason,
+        recoverable: recoverable,
+        retry_modes: retry_modes_for_reason(normalized_reason)
       }
       | error_log
     ]
+  end
+
+  defp recoverable_scan_errors(error_log) do
+    Enum.filter(error_log, & &1.recoverable)
+  end
+
+  defp normalize_scan_error_reason({:error, reason}), do: normalize_scan_error_reason(reason)
+  defp normalize_scan_error_reason(reason), do: reason
+
+  defp maybe_merge_object_opts(read_opts, opts) do
+    case Keyword.get(opts, :object_opts) do
+      object_opts when is_list(object_opts) -> Keyword.put(read_opts, :object_opts, object_opts)
+      _other -> read_opts
+    end
+  end
+
+  defp retry_scan_object_impl(
+         %{device: %{address: address, object: device_obj} = device, device_id: device_id} =
+           state,
+         %ObjectIdentifier{} = object,
+         skip_mode
+       ) do
+    opts = scan_read_opts(device_obj, skip_mode)
+
+    with {:ok, obj} <- read_object_fallback(address, object, opts) do
+      scanned = upsert_scanned(state.scanned, {object, obj})
+
+      objects =
+        scanned
+        |> Enum.map(&summarize_object/1)
+        |> Enum.sort_by(fn obj -> {obj.type, obj.instance} end)
+
+      hierarchy = HierarchyBuilder.build(scanned, objects)
+      scan_errors = remove_scan_error(Map.get(device, :scan_errors, []), object)
+
+      device =
+        device
+        |> Map.put(:objects, objects)
+        |> Map.put(:hierarchy, hierarchy)
+        |> Map.put(:object_count, length(objects))
+        |> Map.put(:scan_errors, scan_errors)
+
+      :ets.insert(@objects_table, {device_id, objects})
+      :ets.insert(:bacview_hierarchy, {device_id, hierarchy})
+
+      summary =
+        Enum.find(objects, fn obj ->
+          obj.type == object.type and obj.instance == object.instance
+        end)
+
+      new_state = %{
+        state
+        | device: device,
+          objects: objects,
+          hierarchy: hierarchy,
+          scanned: scanned
+      }
+
+      {:ok, summary, new_state}
+    end
+  end
+
+  defp upsert_scanned(scanned, {object, obj}) do
+    key = {object.type, object.instance}
+
+    scanned
+    |> Enum.reject(fn {%ObjectIdentifier{type: type, instance: instance}, _obj} ->
+      {type, instance} == key
+    end)
+    |> then(&[{object, obj} | &1])
+  end
+
+  defp remove_scan_error(scan_errors, %ObjectIdentifier{type: type, instance: instance}) do
+    Enum.reject(scan_errors, fn
+      %{object_id: %ObjectIdentifier{type: ^type, instance: ^instance}} -> true
+      _other -> false
+    end)
   end
 
   defp bump_object_list_progress(device_id, counter, total) do
@@ -1102,6 +1251,7 @@ defmodule BacView.BACnet.DeviceSession do
     |> Map.put(:objects, objects)
     |> Map.put(:hierarchy, hierarchy)
     |> Map.put(:object_count, length(objects))
+    |> Map.put(:scan_errors, Map.get(device, :scan_errors, []))
   end
 
   defp apply_object_property(obj, :present_value, value, _formatted, now) do

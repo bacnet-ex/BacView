@@ -120,6 +120,19 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(%APDU.Abort{} = abort), do: format_abort(abort)
   def format_reason(%BACnetError{} = error), do: format_bacnet_error(error)
   def format_reason({:error, reason}), do: format_reason(reason)
+
+  def format_reason({:value_failed_property_validation, property}),
+    do:
+      gettext("Eigenschaftswert entspricht nicht der BACnet-Spezifikation (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:invalid_property_type, property}),
+    do:
+      gettext("Eigenschaftswert hat einen ungültigen BACnet-Datentyp (%{property}).",
+        property: label(property)
+      )
+
   def format_reason(:device_not_found), do: gettext("Gerät nicht gefunden.")
   def format_reason(:device_not_loaded), do: gettext("Gerätedaten sind noch nicht geladen.")
 

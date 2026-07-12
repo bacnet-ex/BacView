@@ -21,6 +21,14 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
     refute message =~ "invoke_id"
   end
 
+  test "formats BACnet property validation errors" do
+    assert ErrorMessage.format_reason({:value_failed_property_validation, :present_value}) =~
+             "present value"
+
+    assert ErrorMessage.format_reason({:invalid_property_type, :present_value}) =~
+             "present value"
+  end
+
   test "formats reject reasons for users" do
     reject = %APDU.Reject{invoke_id: 2, reason: :reject_unrecognized_service}
 

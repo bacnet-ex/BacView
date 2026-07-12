@@ -27,6 +27,9 @@ msgstr "%{count} notification classes"
 msgid "%{count} Objekte"
 msgstr "%{count} objects"
 
+msgid "%{count} Objekte konnten nicht gelesen werden"
+msgstr "%{count} objects could not be read"
+
 msgid "%{count} Prioritäten gesetzt"
 msgstr "%{count} priorities set"
 
@@ -131,6 +134,9 @@ msgstr "Subscribe all present values"
 
 msgid "Alle Sonderzeichen"
 msgstr "All special characters"
+
+msgid "Alle Validierung überspringen"
+msgstr "Skip all validation"
 
 msgid "Alle auswählen"
 msgstr "Select all"
@@ -1190,6 +1196,9 @@ msgstr "We can't find the internet"
 
 msgid "Wert"
 msgstr "Value"
+
+msgid "Wertvalidierung überspringen"
+msgstr "Skip value validation"
 
 msgid "Wertänderung"
 msgstr "Value change"
