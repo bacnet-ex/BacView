@@ -12,6 +12,7 @@ defmodule BacView.BACnet.DiscoverySniffer do
 
   alias BACnet.Protocol.Services.IAm
   alias BACnet.Stack.Client, as: StackClient
+  alias BacView.BACnet.Address
   alias BacView.BACnet.Client
   alias BacView.BACnet.IAmCollector
 
@@ -209,8 +210,5 @@ defmodule BacView.BACnet.DiscoverySniffer do
     end
   end
 
-  defp format_address({ip, port}) when is_tuple(ip) and is_integer(port),
-    do: "#{:inet.ntoa(ip)}:#{port}"
-
-  defp format_address(other), do: inspect(other)
+  defp format_address(address), do: Address.format_destination(address)
 end

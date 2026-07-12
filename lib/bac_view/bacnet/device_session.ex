@@ -25,6 +25,7 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.BACnet.Protocol.TrendLogNavigation
   alias BacView.BACnet.Segmentation
+  alias BacView.BACnet.Stack
   alias BacView.MapHelpers
 
   @objects_table :bacview_objects
@@ -52,7 +53,7 @@ defmodule BacView.BACnet.DeviceSession do
 
   @spec objects(integer()) :: [map()]
   def objects(device_id) do
-    case GenServer.whereis(DeviceSessionSupervisor.via(device_id)) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
       nil -> []
       pid -> GenServer.call(pid, :objects)
     end
@@ -105,7 +106,7 @@ defmodule BacView.BACnet.DeviceSession do
 
   @spec hierarchy(integer()) :: map()
   def hierarchy(device_id) do
-    case GenServer.whereis(DeviceSessionSupervisor.via(device_id)) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
       nil -> HierarchyBuilder.build([], [])
       pid -> GenServer.call(pid, :hierarchy)
     end
@@ -119,7 +120,7 @@ defmodule BacView.BACnet.DeviceSession do
           String.t()
         ) :: :ok
   def apply_cov_update(device_id, object_id, property, value, formatted) do
-    case GenServer.whereis(DeviceSessionSupervisor.via(device_id)) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
       nil -> :ok
       pid -> GenServer.cast(pid, {:cov_update, object_id, property, value, formatted})
     end
@@ -128,7 +129,7 @@ defmodule BacView.BACnet.DeviceSession do
   @spec publish_property_update(integer(), ObjectIdentifier.t(), atom() | integer(), term()) ::
           :ok
   def publish_property_update(device_id, %ObjectIdentifier{} = object_id, property, value) do
-    case GenServer.whereis(DeviceSessionSupervisor.via(device_id)) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
       nil ->
         :ok
 
@@ -333,10 +334,16 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   defp load_device(%{id: device_id, address: address, object: device_obj} = discovered) do
-    report_progress(device_id, %{stage: :reading_device, done: 0, total: nil})
-
-    load_device_impl(discovered, device_id, address, device_obj)
+    if Stack.running?() do
+      report_progress(device_id, %{stage: :reading_device, done: 0, total: nil})
+      load_device_impl(discovered, device_id, address, device_obj)
+    else
+      {:error, :stack_not_started}
+    end
   catch
+    :exit, {:noproc, _} ->
+      {:error, :noproc}
+
     :exit, reason ->
       Logger.error("Device #{device_id} load exited: #{inspect(reason)}")
       {:error, {:load_failed, reason}}

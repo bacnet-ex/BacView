@@ -135,6 +135,9 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:stack_not_started),
     do: gettext("BACnet-Stack ist nicht gestartet.")
 
+  def format_reason(:bacnet_unavailable),
+    do: gettext("BACnet-Stack ist nicht gestartet.")
+
   def format_reason(:no_network_interface),
     do: gettext("Keine Netzwerkschnittstelle für BACnet/IP verfügbar.")
 

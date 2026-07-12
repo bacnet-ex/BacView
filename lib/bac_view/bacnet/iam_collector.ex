@@ -7,6 +7,7 @@ defmodule BacView.BACnet.IAmCollector do
   alias BACnet.Protocol.BvlcForwardedNPDU
   alias BACnet.Protocol.Services.IAm
   alias BACnet.Stack.Client, as: StackClient
+  alias BacView.BACnet.Address
   alias BacView.BACnet.Client
 
   @doc """
@@ -133,11 +134,6 @@ defmodule BacView.BACnet.IAmCollector do
     end
   end
 
-  defp normalize_address({ip, port}) when is_tuple(ip) and is_integer(port), do: {ip, port}
-  defp normalize_address({ip, port, _tag}) when is_tuple(ip) and is_integer(port), do: {ip, port}
-  defp normalize_address(other), do: other
-
-  defp format_address({a, b, c, d}), do: "#{:inet.ntoa({a, b, c, d})}"
-  defp format_address({ip, port}) when is_tuple(ip), do: "#{:inet.ntoa(ip)}:#{port}"
-  defp format_address(other), do: inspect(other)
+  defp normalize_address(address), do: Address.normalize_destination(address)
+  defp format_address(address), do: Address.format_destination(address)
 end

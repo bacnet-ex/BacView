@@ -1,8 +1,21 @@
 defmodule BacView.BACnet.DiscoveryTest do
   use ExUnit.Case, async: true
 
+  alias BACnet.Protocol.APDU.UnconfirmedServiceRequest
+  alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Discovery
+  alias BacView.BACnet.IAmCollector
   alias BacView.Settings
+
+  @iam_apdu %UnconfirmedServiceRequest{
+    service: :i_am,
+    parameters: [
+      object_identifier: %ObjectIdentifier{type: :device, instance: 42},
+      unsigned_integer: 1476,
+      enumerated: 3,
+      unsigned_integer: 999
+    ]
+  }
 
   test "normalize_device_name sanitizes BACnet object names" do
     assert Discovery.normalize_device_name("AHU-1") == "AHU-1"
@@ -53,6 +66,123 @@ defmodule BacView.BACnet.DiscoveryTest do
 
       assert Discovery.clear_devices() == :ok
       assert Discovery.list_devices() == []
+    end
+  end
+
+  describe "upsert_iam_device/2" do
+    setup do
+      if :ets.whereis(:bacview_devices) == :undefined do
+        :ets.new(:bacview_devices, [:named_table, :set, :public])
+      end
+
+      on_exit(fn ->
+        if :ets.whereis(:bacview_devices) != :undefined do
+          :ets.delete(:bacview_devices)
+        end
+      end)
+
+      {:ok, iam: elem(IAmCollector.parse_iam(@iam_apdu), 1), address: {{10, 0, 0, 42}, 47_808}}
+    end
+
+    test "creates a discovered device on first I-Am", %{iam: iam, address: address} do
+      assert %{
+               status: :discovered,
+               id: 42,
+               name: nil,
+               loaded_at: nil,
+               address_label: "10.0.0.42:47808"
+             } =
+               Discovery.upsert_iam_device(iam, address)
+
+      assert {:ok, %{status: :discovered}} = Discovery.get_device(42)
+    end
+
+    test "stores MS/TP MAC addresses as integer destinations", %{iam: iam} do
+      assert %{status: :discovered, address: 42, ip: nil, port: nil, address_label: "42"} =
+               Discovery.upsert_iam_device(iam, 42)
+
+      assert {:ok, %{address: 42, address_label: "42"}} = Discovery.get_device(42)
+    end
+
+    test "keeps loaded status when the same MS/TP device sends another I-Am", %{iam: iam} do
+      loaded_at = ~U[2026-01-15 12:00:00Z]
+      mstp_address = 42
+
+      :ets.insert(:bacview_devices, {
+        42,
+        %{
+          id: 42,
+          instance: 42,
+          address: mstp_address,
+          ip: nil,
+          port: nil,
+          address_label: "42",
+          status: :loaded,
+          name: "AHU-1",
+          object_count: 12,
+          loaded_at: loaded_at,
+          discovered_at: loaded_at
+        }
+      })
+
+      assert %{status: :loaded, address: 42, name: "AHU-1"} =
+               Discovery.upsert_iam_device(iam, mstp_address)
+    end
+
+    test "keeps loaded status when the same device sends another I-Am", %{
+      iam: iam,
+      address: address
+    } do
+      loaded_at = ~U[2026-01-15 12:00:00Z]
+
+      :ets.insert(:bacview_devices, {
+        42,
+        %{
+          id: 42,
+          instance: 42,
+          address: address,
+          ip: "10.0.0.42",
+          port: 47_808,
+          status: :loaded,
+          name: "AHU-1",
+          object_count: 12,
+          loaded_at: loaded_at,
+          discovered_at: loaded_at
+        }
+      })
+
+      assert %{status: :loaded, name: "AHU-1", object_count: 12, loaded_at: ^loaded_at} =
+               Discovery.upsert_iam_device(iam, address)
+
+      assert {:ok, %{status: :loaded, name: "AHU-1", object_count: 12, loaded_at: ^loaded_at}} =
+               Discovery.get_device(42)
+    end
+
+    test "resets to discovered when the source address changes", %{iam: iam, address: address} do
+      loaded_at = ~U[2026-01-15 12:00:00Z]
+
+      :ets.insert(:bacview_devices, {
+        42,
+        %{
+          id: 42,
+          instance: 42,
+          address: address,
+          ip: "10.0.0.42",
+          port: 47_808,
+          status: :loaded,
+          name: "AHU-1",
+          object_count: 12,
+          loaded_at: loaded_at,
+          discovered_at: loaded_at
+        }
+      })
+
+      new_address = {{10, 0, 0, 99}, 47_808}
+
+      assert %{status: :discovered, name: nil, object_count: nil, loaded_at: nil} =
+               Discovery.upsert_iam_device(iam, new_address)
+
+      assert {:ok, %{status: :discovered, address: ^new_address}} = Discovery.get_device(42)
     end
   end
 

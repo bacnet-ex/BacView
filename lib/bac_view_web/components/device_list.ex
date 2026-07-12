@@ -3,6 +3,7 @@ defmodule BacViewWeb.DeviceList do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.Address
   alias BacView.BACnet.VendorNames
   alias BacView.NaturalSort
   alias BacViewWeb.DeviceServicesMenu
@@ -167,7 +168,7 @@ defmodule BacViewWeb.DeviceList do
           {VendorNames.label(@vendor_names, @device.vendor_id)}
         </p>
 
-        <p class="bac-mono text-xs bac-text-faint">{@device.ip}:{@device.port}</p>
+        <p class="bac-mono text-xs bac-text-faint">{device_address_label(@device)}</p>
 
         <div class="bac-device-card-meta">
           <span class="bac-badge bac-badge-sm bac-badge-accent">
@@ -235,7 +236,7 @@ defmodule BacViewWeb.DeviceList do
             <td class="text-[var(--bac-text-muted)]">
               {VendorNames.label(@vendor_names, device.vendor_id)}
             </td>
-            <td class="bac-mono text-xs">{device.ip}:{device.port}</td>
+            <td class="bac-mono text-xs">{device_address_label(device)}</td>
             <td class="bac-mono text-xs">{device.instance}</td>
             <td>
               <span class={status_badge_class(device.status)}>
@@ -395,8 +396,7 @@ defmodule BacViewWeb.DeviceList do
     [
       device_name(device),
       VendorNames.label(vendor_names, device.vendor_id),
-      device.ip,
-      to_string(device.port),
+      device_address_label(device),
       to_string(device.instance),
       status_label(device.status, locale, locale_version),
       object_count_label(device.object_count)
@@ -411,7 +411,7 @@ defmodule BacViewWeb.DeviceList do
     do: nullable_string_key(VendorNames.label(vendor_names, device.vendor_id))
 
   defp sort_key(device, "address", _vendor_names),
-    do: {device.ip, device.port}
+    do: Address.destination_sort_key(device.address || {device.ip, device.port})
 
   defp sort_key(device, "instance", _vendor_names), do: device.instance
 
@@ -422,6 +422,8 @@ defmodule BacViewWeb.DeviceList do
 
   defp nullable_string_key(nil), do: {1, NaturalSort.key("")}
   defp nullable_string_key(value), do: {0, NaturalSort.key(value)}
+
+  defp device_address_label(device), do: Address.format_device_address(device)
 
   defp status_sort_key(:loaded), do: 0
   defp status_sort_key(:discovered), do: 1

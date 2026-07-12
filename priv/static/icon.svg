@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 32 32" fill="none">
+  <defs>
+    <linearGradient id="bac-logo-bg" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+      <stop offset="0%" stop-color="#22d3ee" stop-opacity="0.12"/>
+      <stop offset="100%" stop-color="#a78bfa" stop-opacity="0.15"/>
+    </linearGradient>
+  </defs>
+<rect
+    x="0.5"
+    y="0.5"
+    width="31"
+    height="31"
+    rx="8"
+    ry="8"
+    fill="rgba(12, 18, 32, 1)"
+    stroke-width="0"
+/>
+<rect
+    x="0.5"
+    y="0.5"
+    width="31"
+    height="31"
+    rx="8"
+    ry="8"
+    fill="url(#bac-logo-bg)"
+    stroke="#94a3b8"
+    stroke-opacity="0.18"
+    stroke-width="1"
+/>
+  <svg x="8" y="8" width="16" height="16" viewBox="0 0 24 24" fill="none">
+    <path
+      stroke="#22d3ee"
+      stroke-width="1.5"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+      d="M9.348 14.652a3.75 3.75 0 0 1 0-5.304m5.304 0a3.75 3.75 0 0 1 0 5.304m-7.425 2.121a6.75 6.75 0 0 1 0-9.546m9.546 0a6.75 6.75 0 0 1 0 9.546M5.106 18.894c-3.808-3.807-3.808-9.98 0-13.788m13.788 0c3.808 3.807 3.808 9.98 0 13.788M12 12h.008v.008H12V12Zm.375 0a.375.375 0 1 1-.75 0 .375.375 0 0 1 .75 0Z"
+    />
+  </svg>
+</svg>

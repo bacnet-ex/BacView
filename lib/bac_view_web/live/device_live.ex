@@ -4,6 +4,7 @@ defmodule BacViewWeb.DeviceLive do
 
   alias BACnet.Protocol.ObjectIdentifier
 
+  alias BacView.BACnet.Address
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Discovery
@@ -177,10 +178,16 @@ defmodule BacViewWeb.DeviceLive do
 
       Task.start(fn ->
         result =
-          if force? do
-            DeviceSession.reload(device_id)
-          else
-            DeviceSession.load(device_id)
+          try do
+            if force? do
+              DeviceSession.reload(device_id)
+            else
+              DeviceSession.load(device_id)
+            end
+          rescue
+            exception -> {:error, exception}
+          catch
+            :exit, reason -> {:error, reason}
           end
 
         send(parent, {:device_load_done, result})
@@ -2110,7 +2117,7 @@ defmodule BacViewWeb.DeviceLive do
               <h1 class="font-semibold text-base truncate">
                 {@device.name || t(@locale, @locale_version, "Gerät %{id}", id: @device.instance)}
               </h1>
-              <p class="bac-mono text-xs bac-text-faint">{@device.ip}:{@device.port}</p>
+              <p class="bac-mono text-xs bac-text-faint">{Address.format_device_address(@device)}</p>
             </div>
             <.link
               navigate={DeviceUrl.device_object_path(@device_id, @device, device_tab_opts(assigns))}

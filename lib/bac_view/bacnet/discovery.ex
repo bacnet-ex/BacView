@@ -117,6 +117,10 @@ defmodule BacView.BACnet.Discovery do
   @spec normalize_device_name(term()) :: String.t() | nil
   def normalize_device_name(value), do: do_normalize_device_name(value)
 
+  @doc false
+  @spec upsert_iam_device(IAm.t(), term()) :: map() | nil
+  def upsert_iam_device(iam, address), do: store_device(iam, address)
+
   @spec get_device(integer()) :: {:ok, map()} | :error
   def get_device(device_id) do
     case :ets.lookup(@table, device_id) do
@@ -403,26 +407,32 @@ defmodule BacView.BACnet.Discovery do
     collect_timeout(route, timeout) + 10_000
   end
 
-  defp store_device(%IAm{device: %ObjectIdentifier{type: :device, instance: instance}} = iam, {
-         ip,
-         port
-       }) do
-    device = %{
+  defp store_device(
+         %IAm{device: %ObjectIdentifier{type: :device, instance: instance}} = iam,
+         address
+       ) do
+    normalized_address = Address.normalize_destination(address)
+    %{ip: ip, port: port, label: address_label} = Address.destination_meta(normalized_address)
+
+    incoming = %{
       id: instance,
       instance: instance,
-      address: {ip, port},
-      ip: ip |> Tuple.to_list() |> Enum.join("."),
+      address: normalized_address,
+      ip: ip,
       port: port,
+      address_label: address_label,
       max_apdu: iam.max_apdu,
       segmentation: iam.segmentation_supported,
       vendor_id: iam.vendor_id,
       object: iam.device,
-      status: :discovered,
-      object_count: nil,
-      name: nil,
-      loaded_at: nil,
       discovered_at: DateTime.utc_now()
     }
+
+    device =
+      case :ets.lookup(@table, instance) do
+        [{^instance, existing}] -> merge_discovered_device(existing, incoming)
+        [] -> new_discovered_device(incoming)
+      end
 
     :ets.insert(@table, {instance, device})
     GenServer.cast(__MODULE__, {:schedule_name_fetch, instance})
@@ -433,6 +443,35 @@ defmodule BacView.BACnet.Discovery do
     Logger.warning("Discovery ignored I-Am without device object identifier: #{inspect(iam)}")
     nil
   end
+
+  defp new_discovered_device(incoming) do
+    Map.merge(incoming, %{
+      status: :discovered,
+      object_count: nil,
+      name: nil,
+      loaded_at: nil
+    })
+  end
+
+  defp merge_discovered_device(existing, incoming) do
+    if preserve_loaded_status?(existing, incoming) do
+      Map.merge(incoming, %{
+        status: :loaded,
+        name: existing.name,
+        object_count: existing.object_count,
+        loaded_at: existing.loaded_at
+      })
+    else
+      new_discovered_device(incoming)
+    end
+  end
+
+  defp preserve_loaded_status?(%{status: :loaded} = existing, incoming) do
+    existing.id == incoming.id and
+      Address.same_destination?(existing.address, incoming.address)
+  end
+
+  defp preserve_loaded_status?(_existing, _incoming), do: false
 
   defp do_clear_devices() do
     if :ets.whereis(@table) != :undefined do

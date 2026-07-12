@@ -1,6 +1,7 @@
 defmodule BacView.BACnet.Address do
   @moduledoc """
-  Parses BACnet/IP host and port values.
+  Parses BACnet/IP host and port values and formats transport-layer destination
+  addresses for display and comparison.
   """
 
   @bacnet_port 47_808
@@ -65,6 +66,77 @@ defmodule BacView.BACnet.Address do
   @spec format_ip(:inet.ip_address()) :: String.t()
   def format_ip({a, b, c, d}), do: "#{a}.#{b}.#{c}.#{d}"
   def format_ip(ip) when is_tuple(ip), do: ip |> Tuple.to_list() |> Enum.join(".")
+
+  @doc """
+  Normalizes a BACnet destination address from the active transport layer.
+
+  IPv4 uses `{ip_tuple, port}`, MS/TP uses a MAC address integer (`0..255`), and
+  unknown shapes are returned unchanged.
+  """
+  @spec normalize_destination(term()) :: term()
+  def normalize_destination({ip, port}) when is_tuple(ip) and is_integer(port), do: {ip, port}
+
+  def normalize_destination({ip, port, _tag}) when is_tuple(ip) and is_integer(port),
+    do: {ip, port}
+
+  def normalize_destination(mac) when is_integer(mac) and mac in 0..255, do: mac
+  def normalize_destination(other), do: other
+
+  @spec same_destination?(term(), term()) :: boolean()
+  def same_destination?(left, right),
+    do: normalize_destination(left) == normalize_destination(right)
+
+  @doc "Formats any BACnet destination address for display."
+  @spec format_destination(term()) :: String.t()
+  def format_destination({ip, port}) when is_tuple(ip) and is_integer(port),
+    do: "#{format_ip(ip)}:#{port}"
+
+  def format_destination(mac) when is_integer(mac) and mac in 0..255, do: Integer.to_string(mac)
+  def format_destination(other), do: inspect(other)
+
+  @doc """
+  Derives legacy `ip`/`port` fields and a display label from a destination address.
+  """
+  @spec destination_meta(term()) :: %{
+          ip: String.t() | nil,
+          port: pos_integer() | nil,
+          label: String.t()
+        }
+  def destination_meta(address) do
+    normalized = normalize_destination(address)
+
+    case normalized do
+      {ip, port} when is_tuple(ip) and is_integer(port) ->
+        %{ip: format_ip(ip), port: port, label: format_destination(normalized)}
+
+      _other ->
+        %{ip: nil, port: nil, label: format_destination(normalized)}
+    end
+  end
+
+  @spec destination_sort_key(term()) :: term()
+  def destination_sort_key(address) do
+    case normalize_destination(address) do
+      {ip, port} when is_tuple(ip) and is_integer(port) -> {0, ip, port}
+      mac when is_integer(mac) -> {1, mac}
+      other -> {2, inspect(other)}
+    end
+  end
+
+  @doc "Formats a discovered device record's BACnet destination for display."
+  @spec format_device_address(map()) :: String.t()
+  def format_device_address(device) when is_map(device) do
+    cond do
+      is_binary(device[:address_label]) and device[:address_label] != "" ->
+        device[:address_label]
+
+      is_binary(device[:ip]) and is_integer(device[:port]) ->
+        "#{device[:ip]}:#{device[:port]}"
+
+      true ->
+        format_destination(device[:address])
+    end
+  end
 
   @spec default_bbmd_port() :: pos_integer()
   def default_bbmd_port(), do: @bacnet_port

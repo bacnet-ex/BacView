@@ -25,6 +25,52 @@ defmodule BacView.BACnet.AddressTest do
     assert Address.format_ip({10, 0, 0, 1}) == "10.0.0.1"
   end
 
+  describe "transport destination helpers" do
+    test "normalize_destination keeps IPv4 and MS/TP addresses" do
+      assert Address.normalize_destination({{10, 0, 0, 1}, 47_808}) == {{10, 0, 0, 1}, 47_808}
+
+      assert Address.normalize_destination({{10, 0, 0, 1}, 47_808, :tag}) ==
+               {{10, 0, 0, 1}, 47_808}
+
+      assert Address.normalize_destination(42) == 42
+    end
+
+    test "format_destination renders IPv4 and MS/TP addresses" do
+      assert Address.format_destination({{10, 0, 0, 1}, 47_808}) == "10.0.0.1:47808"
+      assert Address.format_destination(42) == "42"
+    end
+
+    test "destination_meta derives display fields" do
+      assert Address.destination_meta({{10, 0, 0, 1}, 47_808}) == %{
+               ip: "10.0.0.1",
+               port: 47_808,
+               label: "10.0.0.1:47808"
+             }
+
+      assert Address.destination_meta(42) == %{ip: nil, port: nil, label: "42"}
+    end
+
+    test "same_destination? compares normalized addresses" do
+      assert Address.same_destination?({{10, 0, 0, 1}, 47_808, :tag}, {{10, 0, 0, 1}, 47_808})
+      refute Address.same_destination?({{10, 0, 0, 1}, 47_808}, {{10, 0, 0, 2}, 47_808})
+      assert Address.same_destination?(42, 42)
+      refute Address.same_destination?(42, 43)
+    end
+
+    test "format_device_address prefers address_label and falls back to legacy fields" do
+      assert Address.format_device_address(%{address_label: "MS/TP 42", address: 42}) ==
+               "MS/TP 42"
+
+      assert Address.format_device_address(%{
+               ip: "10.0.0.1",
+               port: 47_808,
+               address: {{10, 0, 0, 1}, 47_808}
+             }) == "10.0.0.1:47808"
+
+      assert Address.format_device_address(%{address: 42}) == "42"
+    end
+  end
+
   describe "expand_scan_targets/1" do
     test "expands a single octet range" do
       assert {:ok, ips} = Address.expand_scan_targets("192.168.100.[31-35]")

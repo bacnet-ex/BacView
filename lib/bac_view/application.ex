@@ -10,21 +10,24 @@ defmodule BacView.Application do
     maybe_configure_desktop_locale()
     maybe_init_desktop_session_table()
 
+    session_children = [
+      {Registry, keys: :unique, name: BacView.BACnet.DeviceRegistry},
+      BacView.BACnet.DeviceSessionSupervisor
+    ]
+
     bacnet_children =
       if Application.get_env(:bacview, :start_bacnet, true) do
         [
-          {Registry, keys: :unique, name: BacView.BACnet.DeviceRegistry},
           BacView.BACnet.Cache,
           BacView.BACnet.Stack,
           BacView.BACnet.ForeignRegistration,
           BacView.BACnet.Discovery,
           BacView.BACnet.SubscriptionManager,
           BacView.BACnet.NotificationClassRecipient,
-          BacView.BACnet.AlarmEvent,
-          BacView.BACnet.DeviceSessionSupervisor
-        ]
+          BacView.BACnet.AlarmEvent
+        ] ++ session_children
       else
-        []
+        session_children
       end
 
     # credo:disable-for-lines:10 Credo.Check.Refactor.AppendSingleItem
@@ -75,14 +78,19 @@ defmodule BacView.Application do
     end
 
     defp desktop_window_children() do
+      # Get screen size
+      wx_display = :wxDisplay.new()
+      {_size_x, _size_y, size_w, size_h} = :wxDisplay.getClientArea(wx_display)
+      :wxDisplay.destroy(wx_display)
+
       [
         {Desktop.Window,
          [
            app: :bacview,
            id: BacViewWindow,
            title: "BacView",
-           size: {1280, 800},
-           icon: "icon.png",
+           size: {trunc(size_w * 0.9), trunc(size_h * 0.9)},
+           icon: "static/icon.png",
            url: &BacViewWeb.Endpoint.url/0
          ]}
       ]

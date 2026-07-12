@@ -161,7 +161,7 @@ defmodule BacView.MixProject do
       description: "BACnet network explorer for desktop",
       description_long:
         "Discover BACnet devices, browse objects, subscribe to COV updates, and monitor alarms.",
-      icon: "priv/icon.png",
+      icon: "priv/static/icon.png",
       category_gnome: "GNOME;GTK;Network;",
       identifier: "dev.bacview.app"
     ]

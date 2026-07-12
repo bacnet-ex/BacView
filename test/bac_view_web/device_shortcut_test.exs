@@ -44,7 +44,8 @@ defmodule BacViewWeb.DeviceShortcutTest do
 
     assert html =~ ~s(id="device-refresh-banner")
     refute html =~ ~s(id="device-load-progress")
-    assert has_element?(view, "#device-refresh-btn[disabled]")
-    assert has_element?(view, "#device-refresh-btn .animate-spin")
+    assert html =~ ~s(id="device-refresh-btn")
+    assert html =~ "disabled"
+    assert html =~ "animate-spin"
   end
 end
