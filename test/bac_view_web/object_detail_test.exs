@@ -506,6 +506,7 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ ~s(id="object-nav-jump")
     assert html =~ "Zum Trendprotokoll"
     refute html =~ ~s(id="object-nav-menu-toggle")
+    refute html =~ ~s(id="trend-chart-open-header")
   end
 
   test "renders referenced object dropdown for trend log multiple targets" do
@@ -557,6 +558,8 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "AI-1 (analog_input:1)"
     assert html =~ "BI-2 (binary_input:2)"
     refute html =~ ~s(id="object-nav-jump")
+    assert html =~ ~s(id="trend-chart-open-header")
+    assert html =~ "phx-click=\"open_trend_chart_modal\""
   end
 
   test "renders chart button on log buffer without cov or write actions" do
@@ -596,10 +599,102 @@ defmodule BacViewWeb.ObjectDetailTest do
       )
 
     assert html =~ "trend-chart-open"
+    assert html =~ ~s(id="trend-chart-open-header")
     assert html =~ "Diagramm"
     refute html =~ "write-form-log_buffer"
     refute html =~ "phx-value-property=\"log_buffer\""
     refute html =~ "trend-log-chart-modal"
+  end
+
+  test "renders unknown properties in a separate readonly table" do
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      writable: false,
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    unknown_properties = [
+      %{
+        property: 512,
+        property_name: "property 512",
+        type: "INTEGER",
+        value: 42,
+        value_display: %{kind: :scalar, formatted: "42", fields: [], items: []},
+        value_formatted: "42",
+        string_value?: false,
+        raw_binary: nil
+      },
+      %{
+        property: :vendor_prop,
+        property_name: "vendor prop",
+        type: "CHARACTER STRING",
+        value: "x",
+        value_display: %{kind: :scalar, formatted: "x", fields: [], items: []},
+        value_formatted: "x",
+        string_value?: true,
+        raw_binary: "x"
+      }
+    ]
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: unknown_properties,
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(id="object-unknown-properties-panel")
+    assert html =~ ~s(id="object-detail-unknown-properties-table")
+    assert html =~ "Unbekannte Eigenschaften"
+    assert html =~ "2 unbekannte Eigenschaften"
+    assert html =~ "property 512"
+    assert html =~ "vendor prop"
+    refute html =~ ~s(id="object-detail-properties-table")
+    assert html =~ ~s(phx-click="sort_unknown_properties")
+    assert html =~ ~s(id="unknown-property-sort-name")
+    assert html =~ ~s(id="unknown-prop-hex-toggle-vendor_prop")
+    assert html =~ "Als Hex"
+    refute html =~ ~s(id="unknown-prop-hex-toggle-512")
+
+    hex_html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: unknown_properties,
+          unknown_property_hex_keys: MapSet.new([:vendor_prop]),
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert hex_html =~ "78"
+    assert hex_html =~ "Als Text"
+
+    unknown_section =
+      html
+      |> String.split(~s(id="object-unknown-properties-panel"), parts: 2)
+      |> Enum.at(1, "")
+
+    refute unknown_section =~ "Aktionen"
+    refute unknown_section =~ "write-form-"
+    refute unknown_section =~ "subscribe_cov"
   end
 
   defp render_writable_property(prop) do

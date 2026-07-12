@@ -31,4 +31,41 @@ defmodule BacViewWeb.SubscriptionTableTest do
     assert [^sub_a, ^sub_b] =
              SubscriptionTable.sorted_subscriptions([sub_a, sub_b], "property", :asc)
   end
+
+  test "enrich_subscriptions attaches object names and descriptions" do
+    sub = %{
+      device_id: 1,
+      object_id: %ObjectIdentifier{type: :analog_input, instance: 1},
+      property: :present_value
+    }
+
+    objects = [
+      %{
+        type: :analog_input,
+        instance: 1,
+        name: "AI-1",
+        description: "Raumtemperatur EG"
+      }
+    ]
+
+    assert [%{object_name: "AI-1", description: "Raumtemperatur EG"}] =
+             SubscriptionTable.enrich_subscriptions([sub], objects)
+  end
+
+  test "sorted_subscriptions sorts by description" do
+    sub_a = %{
+      object_id: %ObjectIdentifier{type: :analog_input, instance: 1},
+      property: :present_value,
+      description: "Zulu"
+    }
+
+    sub_b = %{
+      object_id: %ObjectIdentifier{type: :analog_input, instance: 2},
+      property: :present_value,
+      description: "Alpha"
+    }
+
+    assert [^sub_b, ^sub_a] =
+             SubscriptionTable.sorted_subscriptions([sub_a, sub_b], "description", :asc)
+  end
 end

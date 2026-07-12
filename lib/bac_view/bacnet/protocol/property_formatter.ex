@@ -196,6 +196,9 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   uppercase hex byte groups. `:broadcast` is rendered as the literal string
   `broadcast`.
   """
+  @spec format_binary_hex(binary()) :: String.t()
+  def format_binary_hex(binary) when is_binary(binary), do: format_hex_address(binary)
+
   @spec format_mac_address(binary() | :broadcast) :: String.t()
   def format_mac_address(:broadcast), do: "broadcast"
 

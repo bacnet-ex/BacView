@@ -42,6 +42,9 @@ msgstr "%{count} active alarms"
 msgid "%{count} ausgewählt"
 msgstr "%{count} selected"
 
+msgid "%{count} unbekannte Eigenschaften"
+msgstr "%{count} unknown properties"
+
 msgid "%{count} übersprungen"
 msgstr "%{count} skipped"
 
@@ -138,6 +141,12 @@ msgstr "Cancel all"
 msgid "Alle sichtbaren Einträge auswählen"
 msgstr "Select all visible entries"
 
+msgid "Als Hex"
+msgstr "As hex"
+
+msgid "Als Text"
+msgstr "As text"
+
 msgid "Ansicht"
 msgstr "View"
 
@@ -155,6 +164,9 @@ msgstr "Split mode"
 
 msgid "Aus allen Meldungsklassen entfernt."
 msgstr "Removed from all notification classes."
+
+msgid "Aus empfangenen COV-Meldungen"
+msgstr "From received COV notifications"
 
 msgid "Ausführen"
 msgstr "Execute"
@@ -266,6 +278,9 @@ msgstr "COV increment"
 
 msgid "COV-Lifetime (Sek.)"
 msgstr "COV lifetime (sec.)"
+
+msgid "COV-Verlauf"
+msgstr "COV history"
 
 msgid "CSV"
 msgstr "CSV"
@@ -1073,6 +1088,9 @@ msgstr "UTC"
 
 msgid "Unbekannt"
 msgstr "Unknown"
+
+msgid "Unbekannte Eigenschaften"
+msgstr "Unknown properties"
 
 msgid "Unbekannter Transport."
 msgstr "Unknown transport."

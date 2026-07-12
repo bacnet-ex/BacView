@@ -14,14 +14,18 @@ defmodule BacViewWeb.DeviceLive do
   alias BacView.BACnet.NotificationClassRecipient
   alias BacView.BACnet.SubscriptionManager
 
+  alias BacView.BACnet.Protocol.CovNotificationChart
+  alias BacView.BACnet.Protocol.ErrorMessage
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyWriter
   alias BacView.BACnet.Protocol.StatusFlagsParser
-  alias BacView.MapHelpers
+  alias BacView.BACnet.Protocol.TrendLogChart
+  alias BacView.BACnet.Protocol.TrendLogExport
 
   alias BacViewWeb.ActiveAlarmsAssigns
   alias BacViewWeb.ActiveAlarmsPopup
   alias BacViewWeb.AlarmsPanel
+  alias BacViewWeb.CovNotificationChartModal
   alias BacViewWeb.DeviceLoadProgress
   alias BacViewWeb.DeviceServiceModals
   alias BacViewWeb.DeviceServicesHandlers
@@ -128,6 +132,16 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:selected_object_keys, MapSet.new())
          |> assign(:selected_subscription_keys, MapSet.new())
          |> assign(:selectable_object_keys, MapSet.new())
+         |> assign(:cov_chart_modal_open, false)
+         |> assign(:cov_chart_loading, false)
+         |> assign(:cov_chart_error, nil)
+         |> assign(:cov_chart_start, "")
+         |> assign(:cov_chart_end, "")
+         |> assign(:cov_chart_data, nil)
+         |> assign(:cov_chart_has_data, false)
+         |> assign(:cov_chart_record_count, 0)
+         |> assign(:cov_chart_subscription, nil)
+         |> assign(:cov_chart_object, nil)
          |> assign(:write_modal, nil)
          |> assign(:write_priority, PropertyWriter.default_priority())
          |> assign(:writing_present_value, false)
@@ -244,7 +258,7 @@ defmodule BacViewWeb.DeviceLive do
           objects =
             Enum.map(socket.assigns.objects, fn obj ->
               if obj.type == update.type and obj.instance == update.instance do
-                MapHelpers.update(obj, %{
+                Map.merge(obj, %{
                   present_value: PropertyFormatter.coerce_present_value(update.value, obj),
                   present_value_formatted:
                     PropertyFormatter.format_present_value(update.value, obj),
@@ -266,7 +280,7 @@ defmodule BacViewWeb.DeviceLive do
           objects =
             Enum.map(socket.assigns.objects, fn obj ->
               if obj.type == update.type and obj.instance == update.instance do
-                MapHelpers.update(obj, %{
+                Map.merge(obj, %{
                   status_flags: StatusFlagsParser.normalize(update.value),
                   updated_at: update.at
                 })
@@ -293,7 +307,75 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_info({:cov_notification, _entry}, socket) do
-    {:noreply, refresh_cov_notifications(socket)}
+    socket = refresh_cov_notifications(socket)
+
+    socket =
+      if socket.assigns.cov_chart_modal_open do
+        send(self(), :load_cov_chart)
+        assign(socket, :cov_chart_loading, true)
+      else
+        socket
+      end
+
+    {:noreply, socket}
+  end
+
+  @impl true
+  def handle_info(:load_cov_chart, socket) do
+    if socket.assigns.cov_chart_modal_open and socket.assigns.cov_chart_subscription do
+      parent = self()
+
+      payload = %{
+        device_id: socket.assigns.device_id,
+        subscription: socket.assigns.cov_chart_subscription,
+        notifications: socket.assigns.cov_notifications,
+        objects: socket.assigns.objects,
+        start_value: socket.assigns.cov_chart_start,
+        end_value: socket.assigns.cov_chart_end
+      }
+
+      Task.start(fn ->
+        result = load_cov_chart_data(payload)
+        send(parent, {:cov_chart_loaded, result})
+      end)
+
+      {:noreply, assign(socket, :cov_chart_loading, true)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:cov_chart_loaded, result}, socket) do
+    socket = assign(socket, :cov_chart_loading, false)
+
+    case result do
+      {:ok,
+       %{
+         data: data,
+         records: records,
+         start_dt: start_dt,
+         end_dt: end_dt
+       }} ->
+        {:noreply,
+         socket
+         |> assign(:cov_chart_data, data)
+         |> assign(:cov_chart_start, TrendLogChart.to_form_value(start_dt))
+         |> assign(:cov_chart_end, TrendLogChart.to_form_value(end_dt))
+         |> assign(:cov_chart_has_data, chart_has_data?(data))
+         |> assign(:cov_chart_record_count, length(records))
+         |> assign(:cov_chart_error, nil)
+         |> push_event("trend-chart:update", chart_event_payload(data))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:cov_chart_data, nil)
+         |> assign(:cov_chart_has_data, false)
+         |> assign(:cov_chart_record_count, 0)
+         |> assign(:cov_chart_error, ErrorMessage.format_reason(reason))
+         |> push_event("trend-chart:update", %{series: [], scales: [], empty_label: nil})}
+    end
   end
 
   @impl true
@@ -699,6 +781,74 @@ defmodule BacViewWeb.DeviceLive do
     else
       _err -> {:noreply, socket}
     end
+  end
+
+  @impl true
+  def handle_event("open_cov_chart_modal", params, socket) do
+    with {:ok, type_atom} <- parse_type(params["type"]),
+         instance_int <- String.to_integer(params["instance"]),
+         {:ok, property} <- parse_property(params["property"] || "present_value") do
+      object_id = %ObjectIdentifier{type: type_atom, instance: instance_int}
+
+      subscription =
+        Enum.find(socket.assigns.subscriptions, fn sub ->
+          sub.object_id.type == type_atom and sub.object_id.instance == instance_int and
+            sub.property == property
+        end) || %{object_id: object_id, property: property}
+
+      socket =
+        socket
+        |> assign(:cov_chart_modal_open, true)
+        |> assign(:cov_chart_loading, true)
+        |> assign(:cov_chart_error, nil)
+        |> assign(:cov_chart_start, "")
+        |> assign(:cov_chart_end, "")
+        |> assign(:cov_chart_data, nil)
+        |> assign(:cov_chart_has_data, false)
+        |> assign(:cov_chart_record_count, 0)
+        |> assign(:cov_chart_subscription, subscription)
+        |> assign(:cov_chart_object, find_chart_object(socket.assigns.objects, object_id))
+
+      send(self(), :load_cov_chart)
+      {:noreply, socket}
+    else
+      _err -> {:noreply, socket}
+    end
+  end
+
+  def handle_event("close_cov_chart_modal", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:cov_chart_modal_open, false)
+     |> assign(:cov_chart_loading, false)
+     |> assign(:cov_chart_subscription, nil)
+     |> assign(:cov_chart_object, nil)
+     |> push_event("trend-chart:update", %{series: [], scales: [], empty_label: nil})}
+  end
+
+  def handle_event("cov_chart_change_range", params, socket) do
+    {:noreply,
+     socket
+     |> assign(:cov_chart_start, Map.get(params, "start", socket.assigns.cov_chart_start))
+     |> assign(:cov_chart_end, Map.get(params, "end", socket.assigns.cov_chart_end))}
+  end
+
+  def handle_event("cov_chart_load", params, socket) do
+    socket =
+      socket
+      |> assign(:cov_chart_start, Map.get(params, "start", socket.assigns.cov_chart_start))
+      |> assign(:cov_chart_end, Map.get(params, "end", socket.assigns.cov_chart_end))
+
+    send(self(), :load_cov_chart)
+    {:noreply, assign(socket, :cov_chart_loading, true)}
+  end
+
+  def handle_event("cov_chart_export_csv", _params, socket) do
+    {:noreply, cov_chart_download(socket, :csv)}
+  end
+
+  def handle_event("cov_chart_export_json", _params, socket) do
+    {:noreply, cov_chart_download(socket, :json)}
   end
 
   @impl true
@@ -1548,6 +1698,173 @@ defmodule BacViewWeb.DeviceLive do
     ArgumentError -> {:ok, prop}
   end
 
+  defp load_cov_chart_data(%{
+         device_id: device_id,
+         subscription: subscription,
+         notifications: notifications,
+         objects: objects,
+         start_value: start_value,
+         end_value: end_value
+       }) do
+    with {:ok, filtered, start_dt, end_dt} <-
+           select_cov_chart_notifications(notifications, subscription, start_value, end_value) do
+      object = find_chart_object(objects, subscription.object_id)
+
+      data =
+        CovNotificationChart.build(filtered, subscription,
+          device_id: device_id,
+          object: object,
+          start_dt: start_dt,
+          end_dt: end_dt
+        )
+
+      {:ok, %{data: data, records: filtered, start_dt: start_dt, end_dt: end_dt}}
+    end
+  end
+
+  defp select_cov_chart_notifications(notifications, subscription, start_value, end_value) do
+    scoped =
+      CovNotificationChart.notifications_for(
+        notifications,
+        subscription.object_id,
+        subscription.property
+      )
+
+    if blank_chart_range?(start_value) and blank_chart_range?(end_value) do
+      {start_dt, end_dt} = CovNotificationChart.range_from_notifications(scoped)
+      {:ok, scoped, start_dt, end_dt}
+    else
+      with {:ok, start_dt} <- parse_chart_range(start_value, :start),
+           {:ok, end_dt} <- parse_chart_range(end_value, :end),
+           :ok <- validate_chart_range(start_dt, end_dt) do
+        filtered =
+          CovNotificationChart.filter_notifications_by_range(scoped, start_dt, end_dt)
+
+        {:ok, filtered, start_dt, end_dt}
+      end
+    end
+  end
+
+  defp find_chart_object(objects, %{type: type, instance: instance}) when is_list(objects) do
+    Enum.find(objects, &(&1.type == type and &1.instance == instance))
+  end
+
+  defp find_chart_object(_objects, _object_id), do: nil
+
+  defp blank_chart_range?(value) when is_binary(value), do: String.trim(value) == ""
+  defp blank_chart_range?(_value), do: true
+
+  defp parse_chart_range(value, _fallback) when is_binary(value) do
+    case TrendLogChart.parse_form_value(value) do
+      {:ok, dt} -> {:ok, dt}
+      :error -> {:error, :invalid_datetime_range}
+    end
+  end
+
+  defp parse_chart_range(_value, _fallback), do: {:error, :invalid_datetime_range}
+
+  defp parse_chart_datetime(value) when is_binary(value) do
+    case TrendLogChart.parse_form_value(value) do
+      {:ok, dt} -> dt
+      :error -> nil
+    end
+  end
+
+  defp parse_chart_datetime(_value), do: nil
+
+  defp validate_chart_range(start_dt, end_dt) do
+    if NaiveDateTime.compare(start_dt, end_dt) == :gt do
+      {:error, :invalid_datetime_range}
+    else
+      :ok
+    end
+  end
+
+  defp chart_has_data?(%{series: series}) when is_list(series) do
+    Enum.any?(series, fn %{points: points} -> points != [] end)
+  end
+
+  defp chart_has_data?(_data), do: false
+
+  defp cov_chart_download(socket, format) do
+    case socket.assigns.cov_chart_data do
+      data when is_map(data) ->
+        subscription = socket.assigns.cov_chart_subscription
+        start_dt = parse_chart_datetime(socket.assigns.cov_chart_start)
+        end_dt = parse_chart_datetime(socket.assigns.cov_chart_end)
+
+        {content, mime, ext} =
+          case format do
+            :json ->
+              {TrendLogExport.to_json(data,
+                 object: %{
+                   type: subscription.object_id.type,
+                   instance: subscription.object_id.instance,
+                   property: subscription.property
+                 },
+                 start_dt: start_dt,
+                 end_dt: end_dt
+               ), "application/json", "json"}
+
+            _format ->
+              {TrendLogExport.to_csv(data), "text/csv", "csv"}
+          end
+
+        filename =
+          CovNotificationChart.filename(
+            subscription.object_id.type,
+            subscription.object_id.instance,
+            subscription.property,
+            start_dt,
+            end_dt,
+            ext
+          )
+
+        push_event(socket, "download_file", %{
+          content: content,
+          filename: filename,
+          mime: mime
+        })
+
+      _socket ->
+        socket
+    end
+  end
+
+  defp chart_event_payload(%{series: series} = data) when is_list(series) do
+    payload_series =
+      Enum.map(series, fn %{
+                            id: id,
+                            label: label,
+                            unit_label: unit_label,
+                            scale_id: scale_id,
+                            points: points
+                          } ->
+        %{
+          id: id,
+          label: label,
+          unit_label: unit_label,
+          scale_id: scale_id,
+          points: Enum.map(points, fn %{t: t, v: v} -> %{t: t, v: v} end)
+        }
+      end)
+
+    if chart_has_data?(data) do
+      Map.put(data, :series, payload_series)
+    else
+      %{
+        series: [],
+        scales: Map.get(data, :scales, []),
+        markers: Map.get(data, :markers, []),
+        range: Map.get(data, :range, %{}),
+        empty_label: "Keine plottbaren COV-Meldungen im gewählten Zeitraum."
+      }
+    end
+  end
+
+  defp chart_event_payload(_data),
+    do: %{series: [], scales: [], empty_label: "Keine Daten geladen."}
+
   defp default_expanded(roots) do
     roots
     |> Enum.map(&BacView.BACnet.HierarchyNode.id/1)
@@ -1856,7 +2173,7 @@ defmodule BacViewWeb.DeviceLive do
           coerced = PropertyFormatter.coerce_present_value(value, obj)
 
           obj
-          |> MapHelpers.update(%{
+          |> Map.merge(%{
             present_value: coerced,
             present_value_formatted: PropertyFormatter.format_present_value(coerced, obj),
             updated_at: DateTime.utc_now()
@@ -1881,7 +2198,7 @@ defmodule BacViewWeb.DeviceLive do
         objects =
           Enum.map(socket.assigns.objects, fn obj ->
             if obj.type == type and obj.instance == instance do
-              MapHelpers.update(obj, %{
+              Map.merge(obj, %{
                 status_flags: normalized,
                 updated_at: DateTime.utc_now()
               })
@@ -2231,7 +2548,7 @@ defmodule BacViewWeb.DeviceLive do
         />
 
         <div class="flex flex-1 min-h-0">
-          <section class="flex-1 p-5 overflow-auto w-full">
+          <section class="flex-1 min-w-0 p-5 overflow-auto w-full">
             <ObjectSelectionBar.selection_bar
               :if={
                 !@loading && @tab in ["hierarchy", "objects"] &&
@@ -2306,6 +2623,7 @@ defmodule BacViewWeb.DeviceLive do
               cov_view={@cov_view}
               cov_view_paths={cov_view_paths(@device_id, device_tab_opts(assigns))}
               subscriptions={@subscriptions}
+              objects={@objects}
               cov_notifications={@cov_notifications}
               selected_keys={@selected_subscription_keys}
               sort_by={@subscriptions_sort_by}
@@ -2365,6 +2683,20 @@ defmodule BacViewWeb.DeviceLive do
         object={@write_modal}
         write_priority={@write_priority}
         writing={@writing_present_value}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
+      <CovNotificationChartModal.modal
+        :if={@cov_chart_modal_open && @cov_chart_subscription}
+        subscription={@cov_chart_subscription}
+        object={@cov_chart_object}
+        loading={@cov_chart_loading}
+        error={@cov_chart_error}
+        start_value={@cov_chart_start}
+        end_value={@cov_chart_end}
+        has_data={@cov_chart_has_data}
+        record_count={@cov_chart_record_count}
         locale={@locale}
         locale_version={@locale_version}
       />

@@ -22,6 +22,16 @@ defmodule BacViewWeb.PropertyTableTest do
              PropertyTable.sorted_properties(properties, "name", :desc)
   end
 
+  test "sorted_unknown_properties sorts by type" do
+    properties = [
+      %{property: :a, property_name: "alpha", type: "REAL", value_formatted: "1"},
+      %{property: 512, property_name: "property 512", type: "INTEGER", value_formatted: "42"}
+    ]
+
+    assert [%{type: "INTEGER"}, %{type: "REAL"}] =
+             PropertyTable.sorted_unknown_properties(properties, "type", :asc)
+  end
+
   test "toggle_sort cycles asc and desc" do
     assert PropertyTable.toggle_sort(nil, :asc, "value") == {"value", :asc}
     assert PropertyTable.toggle_sort("value", :asc, "value") == {"value", :desc}

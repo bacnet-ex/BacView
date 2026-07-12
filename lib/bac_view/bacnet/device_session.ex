@@ -26,7 +26,6 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.Protocol.TrendLogNavigation
   alias BacView.BACnet.Segmentation
   alias BacView.BACnet.Stack
-  alias BacView.MapHelpers
 
   @objects_table :bacview_objects
   @properties_table :bacview_properties
@@ -59,7 +58,8 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
-  @spec read_properties(integer(), ObjectIdentifier.t()) :: {:ok, [map()]} | {:error, term()}
+  @spec read_properties(integer(), ObjectIdentifier.t()) ::
+          {:ok, BacView.BACnet.Protocol.PropertyReader.read_result()} | {:error, term()}
   def read_properties(device_id, %ObjectIdentifier{} = object) do
     with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
       GenServer.call(pid, {:read_properties, object}, 60_000)
@@ -204,7 +204,7 @@ defmodule BacView.BACnet.DeviceSession do
     {result, state} =
       if device do
         case safe_read_properties(device.address, object) do
-          {:ok, props} ->
+          {:ok, %{properties: props} = result} ->
             :ets.insert(@properties_table, {property_key(device_id, object), props})
 
             state =
@@ -212,7 +212,7 @@ defmodule BacView.BACnet.DeviceSession do
               |> Map.update!(:objects, &sync_object_fields_from_properties(&1, object, props))
               |> sync_objects_cache()
 
-            {{:ok, props}, state}
+            {{:ok, result}, state}
 
           {:error, _load} = err ->
             {err, state}
@@ -341,7 +341,7 @@ defmodule BacView.BACnet.DeviceSession do
       {:error, :stack_not_started}
     end
   catch
-    :exit, {:noproc, _} ->
+    :exit, {:noproc, _pid} ->
       {:error, :noproc}
 
     :exit, reason ->
@@ -947,7 +947,7 @@ defmodule BacView.BACnet.DeviceSession do
   defp maybe_put_present_value(obj, %{value: value} = prop) do
     coerced = PropertyFormatter.coerce_present_value(value, obj, prop)
 
-    MapHelpers.update(obj, %{
+    Map.merge(obj, %{
       present_value: coerced,
       present_value_formatted: PropertyFormatter.format_present_value(value, obj, prop)
     })
@@ -972,7 +972,7 @@ defmodule BacView.BACnet.DeviceSession do
       flags ->
         case StatusFlagsParser.normalize(flags) do
           nil -> obj
-          normalized -> MapHelpers.update(obj, %{status_flags: normalized})
+          normalized -> Map.merge(obj, %{status_flags: normalized})
         end
     end
   end
@@ -985,7 +985,7 @@ defmodule BacView.BACnet.DeviceSession do
       priority_array ->
         obj_with_pa = Map.put(obj, :priority_array, priority_array)
 
-        MapHelpers.update(obj_with_pa, PropertyWriter.active_priority_info(obj_with_pa))
+        Map.merge(obj_with_pa, PropertyWriter.active_priority_info(obj_with_pa))
     end
   end
 
@@ -1107,7 +1107,7 @@ defmodule BacView.BACnet.DeviceSession do
   defp apply_object_property(obj, :present_value, value, _formatted, now) do
     coerced = PropertyFormatter.coerce_present_value(value, obj)
 
-    MapHelpers.update(obj, %{
+    Map.merge(obj, %{
       present_value: coerced,
       present_value_formatted: PropertyFormatter.format_present_value(coerced, obj),
       updated_at: now
@@ -1120,7 +1120,7 @@ defmodule BacView.BACnet.DeviceSession do
         obj
 
       flags ->
-        MapHelpers.update(obj, %{
+        Map.merge(obj, %{
           status_flags: flags,
           updated_at: now
         })
@@ -1139,7 +1139,7 @@ defmodule BacView.BACnet.DeviceSession do
 
     formatted = Map.get(display, :formatted)
 
-    MapHelpers.update(prop, %{
+    Map.merge(prop, %{
       value: coerced,
       value_display: display,
       value_formatted: formatted,
@@ -1155,7 +1155,7 @@ defmodule BacView.BACnet.DeviceSession do
       flags ->
         display = PropertyDisplay.build(flags)
 
-        MapHelpers.update(prop, %{
+        Map.merge(prop, %{
           value: flags,
           value_display: display,
           value_formatted: display.formatted,
@@ -1165,7 +1165,7 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   defp refresh_cached_property(prop, _property, value, formatted, _obj, now) do
-    MapHelpers.update(prop, %{
+    Map.merge(prop, %{
       value: value,
       value_formatted: formatted,
       updated_at: now

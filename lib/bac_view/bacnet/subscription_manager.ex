@@ -23,7 +23,6 @@ defmodule BacView.BACnet.SubscriptionManager do
   alias BacView.BACnet.NotificationLogLimit
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Subscription
-  alias BacView.MapHelpers
 
   @table :bacview_subscriptions
   @notification_log :bacview_cov_notification_log
@@ -428,7 +427,7 @@ defmodule BacView.BACnet.SubscriptionManager do
       updated_sub =
         case :ets.lookup(@table, key) do
           [{^key, sub}] ->
-            MapHelpers.update(sub, %{
+            Map.merge(sub, %{
               last_cov_at: received_now,
               last_value: value,
               last_value_formatted: formatted,

@@ -514,14 +514,19 @@ select.bac-input {
 
 /* ─── Tables ─── */
 .bac-table-wrap {
-  overflow-x: auto;
+  overflow-x: clip;
   border: 1px solid var(--bac-border);
   border-radius: var(--bac-radius);
   background: var(--bac-surface);
 }
 
+.bac-table-wrap--scroll {
+  overflow-x: auto;
+}
+
 .bac-table {
   width: 100%;
+  table-layout: fixed;
   border-collapse: collapse;
   font-size: 0.8125rem;
 }
@@ -583,7 +588,7 @@ body.bac-col-resizing * {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--bac-text-faint);
-  white-space: nowrap;
+  white-space: normal;
 }
 
 .bac-table td {
@@ -591,6 +596,8 @@ body.bac-col-resizing * {
   border-top: 1px solid var(--bac-border);
   color: var(--bac-text-muted);
   vertical-align: middle;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .bac-table tbody tr {

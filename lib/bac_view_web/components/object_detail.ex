@@ -33,8 +33,12 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:objects_sort_dir, :atom, default: :asc)
   attr(:object, :map, default: nil)
   attr(:properties, :list, default: [])
+  attr(:unknown_properties, :list, default: [])
   attr(:properties_sort_by, :string, default: nil)
   attr(:properties_sort_dir, :atom, default: :asc)
+  attr(:unknown_properties_sort_by, :string, default: nil)
+  attr(:unknown_properties_sort_dir, :atom, default: :asc)
+  attr(:unknown_property_hex_keys, :any, default: MapSet.new())
   attr(:loading, :boolean, default: false)
   attr(:properties_loading, :boolean, default: false)
   attr(:subscribed_keys, :any, default: MapSet.new())
@@ -49,13 +53,21 @@ defmodule BacViewWeb.ObjectDetail do
 
   def object_detail(assigns) do
     assigns =
-      assign(
-        assigns,
+      assigns
+      |> assign(
         :sorted_properties,
         PropertyTable.sorted_properties(
           assigns.properties,
           assigns.properties_sort_by,
           assigns.properties_sort_dir
+        )
+      )
+      |> assign(
+        :sorted_unknown_properties,
+        PropertyTable.sorted_unknown_properties(
+          assigns.unknown_properties,
+          assigns.unknown_properties_sort_by,
+          assigns.unknown_properties_sort_dir
         )
       )
 
@@ -100,6 +112,16 @@ defmodule BacViewWeb.ObjectDetail do
             <.icon name="hero-signal" class="size-3" />
             {t(@locale, @locale_version, "Live")}
           </span>
+          <button
+            :if={header_trend_chart?(@object)}
+            type="button"
+            id="trend-chart-open-header"
+            phx-click="open_trend_chart_modal"
+            class="bac-btn bac-btn-ghost bac-btn-sm"
+          >
+            <.icon name="hero-chart-bar" class="size-4" />
+            {t(@locale, @locale_version, "Diagramm")}
+          </button>
           <.object_nav_controls
             :if={@object_nav_targets != []}
             object={@object}
@@ -176,7 +198,7 @@ defmodule BacViewWeb.ObjectDetail do
         </p>
       </div>
 
-      <div class="flex-1 overflow-auto p-5 space-y-5">
+      <div class="flex-1 min-w-0 overflow-auto p-5 space-y-5">
         <div :if={@loading} class="bac-loading py-16">
           <.icon name="hero-arrow-path" class="size-5 animate-spin" />
           {t(@locale, @locale_version, "Objekt wird geladen…")}
@@ -235,7 +257,7 @@ defmodule BacViewWeb.ObjectDetail do
         <section
           :if={!@loading && @object}
           id="object-properties-panel"
-          class="bac-panel"
+          class="bac-panel w-full min-w-0"
           aria-busy={to_string(@properties_loading)}
         >
           <div :if={@properties_loading} class="bac-reading-bar" aria-hidden="true"></div>
@@ -290,6 +312,12 @@ defmodule BacViewWeb.ObjectDetail do
             ]}
           >
             <table class="bac-table" id="object-detail-properties-table">
+              <colgroup>
+                <col class="w-[22%]" />
+                <col class="w-[40%]" />
+                <col class="w-[18%]" />
+                <col class="w-[20%]" />
+              </colgroup>
               <thead>
                 <tr>
                   <th>
@@ -337,7 +365,7 @@ defmodule BacViewWeb.ObjectDetail do
               <tbody id="object-properties">
                 <tr :for={prop <- @sorted_properties} id={"prop-#{prop.property}"}>
                   <td class="bac-mono align-top">{prop.property_name}</td>
-                  <td class="align-top min-w-0 max-w-md">
+                  <td class="align-top min-w-0">
                     <div :if={!property_writable_in_ui?(prop)}>
                       <PropertyValue.property_value
                         display={prop.value_display}
@@ -496,10 +524,141 @@ defmodule BacViewWeb.ObjectDetail do
             </table>
           </div>
         </section>
+
+        <section
+          :if={!@loading && @object && @unknown_properties != []}
+          id="object-unknown-properties-panel"
+          class="bac-panel w-full min-w-0"
+          aria-busy={to_string(@properties_loading)}
+        >
+          <div class="bac-panel-header">
+            <div class="min-w-0">
+              <p class="bac-section-title">
+                {t(@locale, @locale_version, "Unbekannte Eigenschaften")}
+              </p>
+              <p class="text-xs bac-text-faint">
+                {t(@locale, @locale_version, "%{count} unbekannte Eigenschaften",
+                  count: length(@unknown_properties)
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div
+            class={[
+              "bac-table-wrap border-0 rounded-none",
+              @properties_loading && "bac-table-reading"
+            ]}
+          >
+            <table class="bac-table" id="object-detail-unknown-properties-table">
+              <colgroup>
+                <col class="w-[28%]" />
+                <col class="w-[52%]" />
+                <col class="w-[20%]" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th>
+                    <SortHeader.sort_header
+                      event="sort_unknown_properties"
+                      id_prefix="unknown-property-sort"
+                      column="name"
+                      label={t(@locale, @locale_version, "Name")}
+                      sort_by={@unknown_properties_sort_by}
+                      sort_dir={@unknown_properties_sort_dir}
+                    />
+                  </th>
+                  <th>
+                    <SortHeader.sort_header
+                      event="sort_unknown_properties"
+                      id_prefix="unknown-property-sort"
+                      column="value"
+                      label={t(@locale, @locale_version, "Wert")}
+                      sort_by={@unknown_properties_sort_by}
+                      sort_dir={@unknown_properties_sort_dir}
+                    />
+                  </th>
+                  <th>
+                    <SortHeader.sort_header
+                      event="sort_unknown_properties"
+                      id_prefix="unknown-property-sort"
+                      column="type"
+                      label={t(@locale, @locale_version, "Typ")}
+                      sort_by={@unknown_properties_sort_by}
+                      sort_dir={@unknown_properties_sort_dir}
+                    />
+                  </th>
+                </tr>
+              </thead>
+              <tbody id="object-unknown-properties">
+                <tr :for={prop <- @sorted_unknown_properties} id={"unknown-prop-#{prop.property}"}>
+                  <td class="bac-mono align-top">{prop.property_name}</td>
+                  <td class="align-top min-w-0">
+                    <.unknown_property_value
+                      prop={prop}
+                      hex_keys={@unknown_property_hex_keys}
+                      locale={@locale}
+                      locale_version={@locale_version}
+                    />
+                  </td>
+                  <td class="bac-text-faint align-top">{prop.type}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
       </div>
     </div>
     """
   end
+
+  attr(:prop, :map, required: true)
+  attr(:hex_keys, :any, required: true)
+  attr(:locale, :string, required: true)
+  attr(:locale_version, :integer, required: true)
+
+  defp unknown_property_value(assigns) do
+    assigns =
+      assign(assigns, :hex_mode?, MapSet.member?(assigns.hex_keys, assigns.prop.property))
+
+    ~H"""
+    <div :if={@prop[:string_value?]} class="space-y-2">
+      <span class="bac-mono text-sm text-[var(--bac-text)] break-all">
+        {unknown_property_display_text(@prop, @hex_mode?)}
+      </span>
+      <button
+        type="button"
+        id={"unknown-prop-hex-toggle-#{@prop.property}"}
+        phx-click="toggle_unknown_property_hex"
+        phx-value-property={property_param(@prop.property)}
+        class="bac-btn bac-btn-ghost bac-btn-xs"
+      >
+        {unknown_property_hex_toggle_label(@hex_mode?, @locale, @locale_version)}
+      </button>
+    </div>
+    <PropertyValue.property_value
+      :if={!@prop[:string_value?]}
+      display={@prop.value_display}
+      writable={false}
+      property={@prop.property}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+    """
+  end
+
+  defp unknown_property_display_text(%{raw_binary: binary, value_formatted: formatted}, false)
+       when is_binary(binary),
+       do: formatted
+
+  defp unknown_property_display_text(%{raw_binary: binary}, true) when is_binary(binary),
+    do: PropertyFormatter.format_binary_hex(binary)
+
+  defp unknown_property_hex_toggle_label(true, locale, locale_version),
+    do: t(locale, locale_version, "Als Text")
+
+  defp unknown_property_hex_toggle_label(false, locale, locale_version),
+    do: t(locale, locale_version, "Als Hex")
 
   defp subscribed?(keys, object, property) when is_map(object) do
     MapSet.member?(keys, {object.type, object.instance, normalize_property(property)})
@@ -521,6 +680,9 @@ defmodule BacViewWeb.ObjectDetail do
 
   defp log_buffer_chart?(%{property: :log_buffer}, _object), do: true
   defp log_buffer_chart?(_object, _log_buffer_chart2), do: false
+
+  defp header_trend_chart?(%{type: type}), do: TrendLogReader.trend_log_type?(type)
+  defp header_trend_chart?(_object), do: false
 
   defp cov_subscribable?(:log_buffer), do: false
 

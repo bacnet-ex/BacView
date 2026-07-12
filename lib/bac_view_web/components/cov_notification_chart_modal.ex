@@ -1,11 +1,12 @@
-defmodule BacViewWeb.TrendLogChartModal do
+defmodule BacViewWeb.CovNotificationChartModal do
   @moduledoc false
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
   alias BacView.Timezone
 
-  attr(:object, :map, required: true)
+  attr(:subscription, :map, required: true)
+  attr(:object, :map, default: nil)
   attr(:loading, :boolean, default: false)
   attr(:error, :string, default: nil)
   attr(:start_value, :string, default: "")
@@ -15,11 +16,11 @@ defmodule BacViewWeb.TrendLogChartModal do
 
   def modal(assigns) do
     ~H"""
-    <div id="trend-log-chart-modal" class="bac-modal-backdrop">
+    <div id="cov-notification-chart-modal" class="bac-modal-backdrop">
       <button
         type="button"
         class="bac-modal-overlay"
-        phx-click="close_trend_chart_modal"
+        phx-click="close_cov_chart_modal"
         aria-label={t(@locale, @locale_version, "Schliessen")}
       />
       <div class="bac-modal bac-modal-chart" role="dialog" aria-modal="true">
@@ -27,23 +28,24 @@ defmodule BacViewWeb.TrendLogChartModal do
           <div class="flex items-start justify-between gap-3">
             <div class="min-w-0">
               <p class="text-xs bac-text-faint uppercase tracking-wide">
-                {t(@locale, @locale_version, "Trendprotokoll")}
+                {t(@locale, @locale_version, "COV-Verlauf")}
               </p>
               <h2 class="font-semibold text-base truncate mt-0.5">
-                {@object.name || "#{@object.type}:#{@object.instance}"}
+                {chart_title(@object, @subscription)}
               </h2>
               <p :if={object_description(@object)} class="text-sm bac-text-muted truncate mt-0.5">
                 {object_description(@object)}
               </p>
               <p class="bac-mono text-xs bac-text-faint mt-0.5">
-                {t(@locale, @locale_version, "Log-Puffer via ReadRange")}
+                {@subscription.object_id.type}:{@subscription.object_id.instance} · {@subscription.property}
+                · {t(@locale, @locale_version, "Aus empfangenen COV-Meldungen")}
               </p>
             </div>
             <div class="flex items-center gap-2 shrink-0">
               <button
                 type="button"
-                id="trend-chart-export-csv"
-                phx-click="trend_chart_export_csv"
+                id="cov-chart-export-csv"
+                phx-click="cov_chart_export_csv"
                 disabled={@loading || not @has_data}
                 class="bac-btn bac-btn-ghost bac-btn-sm"
               >
@@ -52,8 +54,8 @@ defmodule BacViewWeb.TrendLogChartModal do
               </button>
               <button
                 type="button"
-                id="trend-chart-export-json"
-                phx-click="trend_chart_export_json"
+                id="cov-chart-export-json"
+                phx-click="cov_chart_export_json"
                 disabled={@loading || not @has_data}
                 class="bac-btn bac-btn-ghost bac-btn-sm"
               >
@@ -62,7 +64,7 @@ defmodule BacViewWeb.TrendLogChartModal do
               </button>
               <button
                 type="button"
-                phx-click="close_trend_chart_modal"
+                phx-click="close_cov_chart_modal"
                 class="bac-btn bac-btn-ghost bac-btn-icon"
                 aria-label={t(@locale, @locale_version, "Schliessen")}
               >
@@ -72,17 +74,17 @@ defmodule BacViewWeb.TrendLogChartModal do
           </div>
 
           <form
-            id="trend-chart-range-form"
-            phx-change="trend_chart_change_range"
-            phx-submit="trend_chart_load"
+            id="cov-chart-range-form"
+            phx-change="cov_chart_change_range"
+            phx-submit="cov_chart_load"
             class="flex flex-wrap items-end gap-3"
           >
             <div class="min-w-[12rem] flex-1">
-              <label for="trend-chart-start" class="block text-xs bac-text-faint mb-1">
+              <label for="cov-chart-start" class="block text-xs bac-text-faint mb-1">
                 {t(@locale, @locale_version, "Von")}
               </label>
               <input
-                id="trend-chart-start"
+                id="cov-chart-start"
                 name="start"
                 type="datetime-local"
                 value={@start_value}
@@ -90,11 +92,11 @@ defmodule BacViewWeb.TrendLogChartModal do
               />
             </div>
             <div class="min-w-[12rem] flex-1">
-              <label for="trend-chart-end" class="block text-xs bac-text-faint mb-1">
+              <label for="cov-chart-end" class="block text-xs bac-text-faint mb-1">
                 {t(@locale, @locale_version, "Bis")}
               </label>
               <input
-                id="trend-chart-end"
+                id="cov-chart-end"
                 name="end"
                 type="datetime-local"
                 value={@end_value}
@@ -103,7 +105,7 @@ defmodule BacViewWeb.TrendLogChartModal do
             </div>
             <button
               type="submit"
-              id="trend-chart-load"
+              id="cov-chart-load"
               disabled={@loading}
               class="bac-btn bac-btn-primary bac-btn-sm"
             >
@@ -112,16 +114,16 @@ defmodule BacViewWeb.TrendLogChartModal do
             </button>
           </form>
 
-          <p :if={@error} class="text-sm text-[var(--bac-rose)]" id="trend-chart-error">
+          <p :if={@error} class="text-sm text-[var(--bac-rose)]" id="cov-chart-error">
             {@error}
           </p>
 
-          <p :if={@has_data && !@loading} class="text-xs bac-text-faint" id="trend-chart-meta">
+          <p :if={@has_data && !@loading} class="text-xs bac-text-faint" id="cov-chart-meta">
             {t(@locale, @locale_version, "%{count} Datensätze", count: @record_count)}
           </p>
 
           <div
-            id="trend-log-chart-hook"
+            id="cov-notification-chart-hook"
             phx-hook="TrendLogChart"
             phx-update="ignore"
             data-locale="de-DE"
@@ -137,6 +139,19 @@ defmodule BacViewWeb.TrendLogChartModal do
       </div>
     </div>
     """
+  end
+
+  defp chart_title(object, %{object_id: %{type: type, instance: instance}}) do
+    case object do
+      %{name: name} when is_binary(name) ->
+        case String.trim(name) do
+          "" -> "#{type}:#{instance}"
+          trimmed -> trimmed
+        end
+
+      _object ->
+        "#{type}:#{instance}"
+    end
   end
 
   defp object_description(%{description: description}) when is_binary(description) do

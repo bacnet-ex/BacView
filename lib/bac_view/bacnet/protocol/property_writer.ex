@@ -9,8 +9,6 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
 
-  alias BacView.MapHelpers
-
   @priority_fields for p <- 1..16, do: String.to_atom("priority_#{p}")
 
   @default_priority 8
@@ -27,7 +25,7 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
       |> maybe_commandable_present_value(object)
       |> then(fn enriched ->
         if Map.get(enriched, :writable, false) do
-          MapHelpers.update(enriched, %{writable: true})
+          Map.merge(enriched, %{writable: true})
         else
           enriched
         end
@@ -326,8 +324,17 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   defp parse_typed_value(s, %{type: "INTEGER"}),
     do: parse_integer(s)
 
+  defp parse_typed_value(s, %{type: "CHARACTER STRING"}),
+    do: {:ok, s}
+
+  defp parse_typed_value(s, %{bac_type: :string}),
+    do: {:ok, s}
+
   defp parse_typed_value(s, %{type: "ENUMERATED", value: value}) when is_atom(value),
     do: parse_enum(s, value)
+
+  defp parse_typed_value(s, %{value: value}) when is_binary(value),
+    do: {:ok, s}
 
   defp parse_typed_value(s, %{value: value}) when is_boolean(value),
     do: parse_boolean(s)

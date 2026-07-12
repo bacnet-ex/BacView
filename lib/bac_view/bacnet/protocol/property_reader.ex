@@ -23,7 +23,13 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   @trend_log_types [:trend_log, :trend_log_multiple]
 
-  @spec read_all(module(), term(), ObjectIdentifier.t()) :: {:ok, [map()]} | {:error, term()}
+  @type read_result :: %{
+          properties: [map()],
+          unknown_properties: [map()]
+        }
+
+  @spec read_all(module(), term(), ObjectIdentifier.t()) ::
+          {:ok, read_result()} | {:error, term()}
   def read_all(client, destination, %ObjectIdentifier{} = object) do
     case fetch_bacnet_object(client, destination, object) do
       {:ok, bacnet_object, :rpm} ->
@@ -36,7 +42,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
                  readable_properties(properties, object),
                  :rpm
                ) do
-          {:ok, format_results(properties, results, bacnet_object)}
+          {:ok, build_read_result(properties, results, bacnet_object)}
         end
 
       {:ok, bacnet_object, properties, :individual} ->
@@ -48,7 +54,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
                  readable_properties(properties, object),
                  :individual
                ) do
-          {:ok, format_results(properties, results, bacnet_object)}
+          {:ok, build_read_result(properties, results, bacnet_object)}
         end
 
       {:error, _client} = err ->
@@ -325,6 +331,46 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       %{}
     end
   end
+
+  defp build_read_result(properties, results, bacnet_object)
+       when is_list(properties) and is_map(results) do
+    %{
+      properties: format_results(properties, results, bacnet_object),
+      unknown_properties: format_unknown_properties(bacnet_object)
+    }
+  end
+
+  @doc false
+  @spec format_unknown_properties(term()) :: [map()]
+  def format_unknown_properties(bacnet_object) when is_object(bacnet_object) do
+    bacnet_object
+    |> Map.get(:_unknown_properties, %{})
+    |> Enum.map(fn {property, value} ->
+      display = PropertyDisplay.build(value)
+      raw_binary = unknown_property_raw_binary(value)
+
+      Text.sanitize_property_row(%{
+        property: property,
+        property_name: property_name(property),
+        value: value,
+        value_display: display,
+        value_formatted: display.formatted,
+        type: PropertyFormatter.property_type(value),
+        string_value?: not is_nil(raw_binary),
+        raw_binary: raw_binary
+      })
+    end)
+    |> Enum.sort_by(& &1.property_name)
+  end
+
+  def format_unknown_properties(_bacnet_object), do: []
+
+  defp unknown_property_raw_binary(value) when is_binary(value), do: value
+
+  defp unknown_property_raw_binary(%Encoding{value: inner}) when is_binary(inner),
+    do: unknown_property_raw_binary(inner)
+
+  defp unknown_property_raw_binary(_value), do: nil
 
   defp format_results(properties, results, bacnet_object)
        when is_list(properties) and is_map(results) do

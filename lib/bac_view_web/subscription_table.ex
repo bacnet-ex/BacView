@@ -3,7 +3,7 @@ defmodule BacViewWeb.SubscriptionTable do
 
   alias BacViewWeb.TableSort
 
-  @sort_columns ~w(object property last_cov value remaining)
+  @sort_columns ~w(object description property last_cov value remaining)
 
   @spec sort_columns() :: [String.t()]
   def sort_columns(), do: @sort_columns
@@ -23,6 +23,27 @@ defmodule BacViewWeb.SubscriptionTable do
   def toggle_sort(sort_by, sort_dir, column),
     do: TableSort.toggle_sort(sort_by, sort_dir, column)
 
+  @spec enrich_subscriptions([map()], [map()]) :: [map()]
+  def enrich_subscriptions(subscriptions, objects) when is_list(subscriptions) do
+    object_meta = object_meta_map(objects)
+
+    Enum.map(subscriptions, fn sub ->
+      key = {sub.object_id.type, sub.object_id.instance}
+
+      case Map.get(object_meta, key) do
+        %{name: name, description: description} ->
+          sub
+          |> Map.put(:object_name, name)
+          |> Map.put(:description, description)
+
+        nil ->
+          sub
+          |> Map.put(:object_name, nil)
+          |> Map.put(:description, nil)
+      end
+    end)
+  end
+
   @spec sorted_subscriptions([map()], String.t() | nil, :asc | :desc) :: [map()]
   def sorted_subscriptions(subscriptions, sort_by, sort_dir) do
     TableSort.sort(subscriptions, sort_by, sort_dir, @sort_columns, &sort_key/2)
@@ -30,6 +51,9 @@ defmodule BacViewWeb.SubscriptionTable do
 
   defp sort_key(sub, "object"),
     do: {sub.object_id.type, sub.object_id.instance}
+
+  defp sort_key(sub, "description"),
+    do: TableSort.nullable_string_key(Map.get(sub, :description))
 
   defp sort_key(sub, "property"), do: property_sort_key(sub.property)
 
@@ -53,4 +77,30 @@ defmodule BacViewWeb.SubscriptionTable do
   defp remaining_sort_key(%{expires_at: expires_at}) do
     {2, max(0, DateTime.diff(expires_at, DateTime.utc_now(), :second))}
   end
+
+  defp object_meta_map(objects) when is_list(objects) do
+    Map.new(objects, fn obj ->
+      {{obj.type, obj.instance}, %{name: object_name(obj), description: object_description(obj)}}
+    end)
+  end
+
+  defp object_meta_map(_objects), do: %{}
+
+  defp object_name(%{name: name}) when is_binary(name) do
+    case String.trim(name) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp object_name(_object), do: nil
+
+  defp object_description(%{description: description}) when is_binary(description) do
+    case String.trim(description) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp object_description(_object), do: nil
 end

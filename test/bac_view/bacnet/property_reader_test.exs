@@ -97,7 +97,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0, description: "test"})
       expected = PropertyReader.normalize_properties(ObjectsUtility.get_properties(object))
 
-      assert {:ok, rows} =
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
                PropertyReader.read_all(
                  ObjectPropertiesClient,
                  :dest,
@@ -112,7 +112,9 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     test "does not crash when RPM returns object identifiers" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
 
-      assert {:ok, rows} = PropertyReader.read_all(MockClient, :dest, object)
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(MockClient, :dest, object)
+
       assert is_list(rows)
       assert Enum.all?(rows, &is_map/1)
       {:ok, loaded} = AnalogInput.create(197, "AI-197", %{present_value: 42.0})
@@ -137,7 +139,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     test "falls back to individual reads when segmentation is not supported" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
 
-      assert {:ok, rows} =
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
                PropertyReader.read_all(__MODULE__.SegmentationClient, :dest, object)
 
       assert expected_fallback_rows(rows)
@@ -146,7 +148,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     test "falls back to individual reads when buffer overflow occurs" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
 
-      assert {:ok, rows} =
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
                PropertyReader.read_all(__MODULE__.BufferOverflowClient, :dest, object)
 
       assert expected_fallback_rows(rows)
@@ -278,7 +280,48 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert row.property_name == "property 512"
       assert row.value == 42
     end
+  end
 
+  describe "format_unknown_properties/1" do
+    test "formats numeric and atom identifiers from _unknown_properties" do
+      {:ok, object} =
+        AnalogInput.create(
+          1,
+          "AI-1",
+          Map.merge(%{present_value: 1.0, vendor_prop: "x"}, %{512 => 42}),
+          allow_unknown_properties: true,
+          remote_object: 1555
+        )
+
+      rows = PropertyReader.format_unknown_properties(object)
+
+      assert length(rows) == 2
+
+      assert %{property: 512, property_name: "property 512", value: 42} =
+               Enum.find(rows, &(&1.property == 512))
+
+      assert %{
+               property: :vendor_prop,
+               property_name: "vendor prop",
+               value: "x",
+               string_value?: true,
+               raw_binary: "x"
+             } =
+               Enum.find(rows, &(&1.property == :vendor_prop))
+
+      refute Enum.find(rows, &(&1.property == 512)).string_value?
+
+      assert Enum.all?(rows, &Map.has_key?(&1, :value_display))
+      assert Enum.all?(rows, &Map.has_key?(&1, :type))
+    end
+
+    test "returns empty list when no unknown properties are present" do
+      {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0})
+      assert PropertyReader.format_unknown_properties(object) == []
+    end
+  end
+
+  describe "format_property_rows/2 writable and enrichment" do
     test "uses bac_type for boolean properties with nil value" do
       {:ok, object} = AnalogInput.create(1, "AI-1", %{})
 

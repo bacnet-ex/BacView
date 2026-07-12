@@ -181,6 +181,11 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
       assert PropertyFormatter.format_mac_address(<<1, 2, 3, 4, 5>>) == "01:02:03:04:05"
     end
 
+    test "format_binary_hex renders uppercase byte groups" do
+      assert PropertyFormatter.format_binary_hex("AB") == "41:42"
+      assert PropertyFormatter.format_binary_hex(<<0>>) == "00"
+    end
+
     test "formats recipient device and broadcast addresses" do
       device_recipient = %Recipient{
         type: :device,

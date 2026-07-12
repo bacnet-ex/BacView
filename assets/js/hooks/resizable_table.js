@@ -24,20 +24,34 @@ function saveWidths(key, widths) {
   localStorage.setItem(`${STORAGE_PREFIX}${key}`, JSON.stringify(widths))
 }
 
-function setColumnWidth(th, width) {
+function columnElements(table, index) {
+  const ths = [...table.querySelectorAll("thead th")]
+  const cols = [...table.querySelectorAll("colgroup col")]
+
+  return {th: ths[index], col: cols[index]}
+}
+
+function setColumnWidth(table, index, width) {
   const px = `${width}px`
-  th.style.width = px
-  th.style.minWidth = px
-  th.style.maxWidth = px
+  const {th, col} = columnElements(table, index)
+
+  if (th) {
+    th.style.width = px
+    th.style.minWidth = px
+    th.style.maxWidth = px
+  }
+
+  if (col) {
+    col.style.width = px
+    col.style.minWidth = px
+    col.style.maxWidth = px
+  }
 }
 
 function applyWidths(table, widths) {
-  const ths = [...table.querySelectorAll("thead th")]
-
-  ths.forEach((th, index) => {
-    const width = widths[index]
+  widths.forEach((width, index) => {
     if (typeof width === "number" && width >= MIN_COL_WIDTH) {
-      setColumnWidth(th, width)
+      setColumnWidth(table, index, width)
     }
   })
 }
@@ -46,7 +60,7 @@ function getCurrentWidths(table) {
   return [...table.querySelectorAll("thead th")].map((th) => th.offsetWidth)
 }
 
-function startDrag(event, table, th, storageKey) {
+function startDrag(event, table, th, columnIndex, storageKey) {
   const pointerId = event.pointerId ?? "mouse"
   const startX = event.clientX
   const startWidth = th.offsetWidth
@@ -58,7 +72,7 @@ function startDrag(event, table, th, storageKey) {
 
     const delta = moveEvent.clientX - startX
     const newWidth = Math.max(MIN_COL_WIDTH, startWidth + delta)
-    setColumnWidth(th, newWidth)
+    setColumnWidth(table, columnIndex, newWidth)
   }
 
   const onEnd = (endEvent) => {
@@ -76,7 +90,7 @@ function startDrag(event, table, th, storageKey) {
   document.addEventListener("pointercancel", onEnd)
 }
 
-function ensureResizeHandle(table, th, storageKey) {
+function ensureResizeHandle(table, th, columnIndex, storageKey) {
   if (th.querySelector(".bac-col-resize-handle")) return
 
   th.classList.add("bac-table-col-header")
@@ -94,7 +108,7 @@ function ensureResizeHandle(table, th, storageKey) {
     if (handle.setPointerCapture && event.pointerId != null) {
       handle.setPointerCapture(event.pointerId)
     }
-    startDrag(event, table, th, storageKey)
+    startDrag(event, table, th, columnIndex, storageKey)
   })
 
   handle.addEventListener("click", (event) => {
@@ -124,7 +138,7 @@ export function setupResizableTable(table) {
     applyWidths(table, saved)
   }
 
-  ths.forEach((th) => ensureResizeHandle(table, th, storageKey))
+  ths.forEach((th, index) => ensureResizeHandle(table, th, index, storageKey))
 }
 
 export function initAllResizableTables(root = document) {

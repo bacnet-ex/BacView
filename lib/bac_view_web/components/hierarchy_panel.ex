@@ -36,7 +36,7 @@ defmodule BacViewWeb.HierarchyPanel do
 
   def hierarchy_panel(assigns) do
     ~H"""
-    <div class="space-y-5">
+    <div class="space-y-5 min-w-0 w-full">
       <.name_hierarchy_banner
         :if={@hierarchy_source == :name && !@empty_hierarchy?}
         hierarchy_split={@hierarchy_split}
@@ -169,7 +169,7 @@ defmodule BacViewWeb.HierarchyPanel do
 
   defp explorer_panel(assigns) do
     ~H"""
-    <div class="space-y-4" id="hierarchy-explorer">
+    <div class="space-y-4 min-w-0 w-full" id="hierarchy-explorer">
       <div class="flex items-center gap-3">
         <input
           id="hierarchy-explorer-search"
@@ -220,6 +220,12 @@ defmodule BacViewWeb.HierarchyPanel do
 
       <div :if={@entries != []} class="bac-table-wrap">
         <table class="bac-table" id="hierarchy-explorer-table">
+          <colgroup>
+            <col class="w-10" />
+            <col />
+            <col class="w-36" />
+            <col class="w-32" />
+          </colgroup>
           <thead>
             <tr>
               <th class="w-10">

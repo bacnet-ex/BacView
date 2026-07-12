@@ -27,7 +27,6 @@ defmodule BacViewWeb.ObjectLive do
   alias BacView.BACnet.Protocol.TrendLogReader
   alias BacView.BACnet.Protocol.WeeklyScheduleEditor
 
-  alias BacView.MapHelpers
   alias BacView.Text
 
   alias BacViewWeb.ActiveAlarmsAssigns
@@ -70,6 +69,7 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:object_id, object_id)
            |> assign(:object, nil)
            |> assign(:properties, [])
+           |> assign(:unknown_properties, [])
            |> assign(:loading, true)
            |> assign(:properties_loading, true)
            |> assign(:subscribed_keys, MapSet.new())
@@ -90,6 +90,9 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:objects_sort_dir, :asc)
            |> assign(:properties_sort_by, nil)
            |> assign(:properties_sort_dir, :asc)
+           |> assign(:unknown_properties_sort_by, nil)
+           |> assign(:unknown_properties_sort_dir, :asc)
+           |> assign(:unknown_property_hex_keys, MapSet.new())
            |> assign(:trend_chart_modal_open, false)
            |> assign(:trend_chart_loading, false)
            |> assign(:trend_chart_error, nil)
@@ -193,10 +196,13 @@ defmodule BacViewWeb.ObjectLive do
 
     object = refresh_object_from_properties(object, props_result)
 
-    {properties, properties_loading} =
+    {properties, unknown_properties, properties_loading} =
       case props_result do
-        {:ok, properties} -> {PropertyWriter.enrich_properties(properties, object), false}
-        {:error, _load_object} -> {[], false}
+        {:ok, %{properties: properties, unknown_properties: unknown}} ->
+          {PropertyWriter.enrich_properties(properties, object), unknown, false}
+
+        {:error, _load_object} ->
+          {[], [], false}
       end
 
     page_title =
@@ -224,6 +230,8 @@ defmodule BacViewWeb.ObjectLive do
       |> assign(:loading, false)
       |> assign(:object, Text.sanitize_object(object))
       |> assign(:properties, properties)
+      |> assign(:unknown_properties, unknown_properties)
+      |> assign(:unknown_property_hex_keys, MapSet.new())
       |> assign(:properties_loading, properties_loading)
       |> assign(:page_title, page_title)
       |> assign(:device_objects, device_objects)
@@ -370,7 +378,7 @@ defmodule BacViewWeb.ObjectLive do
             socket
             |> assign(
               :object,
-              MapHelpers.update(object, %{
+              Map.merge(object, %{
                 present_value: coerced,
                 present_value_formatted:
                   PropertyFormatter.format_present_value(coerced, object, present_prop),
@@ -385,7 +393,7 @@ defmodule BacViewWeb.ObjectLive do
             socket
             |> assign(
               :object,
-              MapHelpers.update(object, %{status_flags: flags, updated_at: update.at})
+              Map.merge(object, %{status_flags: flags, updated_at: update.at})
             )
             |> update_property_row(:status_flags, flags, update.at)
             |> sync_device_object_flags(object, flags, update.at)
@@ -424,7 +432,7 @@ defmodule BacViewWeb.ObjectLive do
   def handle_info({:properties_refreshed, result}, socket) do
     socket =
       case result do
-        {:ok, properties} ->
+        {:ok, %{properties: properties, unknown_properties: unknown}} ->
           object =
             refresh_object_from_properties(socket.assigns.object, {:ok, properties})
 
@@ -433,6 +441,8 @@ defmodule BacViewWeb.ObjectLive do
           socket
           |> assign(:object, Text.sanitize_object(object))
           |> assign(:properties, enriched)
+          |> assign(:unknown_properties, unknown)
+          |> assign(:unknown_property_hex_keys, MapSet.new())
           |> assign(:properties_loading, false)
           |> assign(:writing_property, nil)
           |> assign_object_nav_targets(object, enriched, socket.assigns.device_objects)
@@ -984,6 +994,42 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   @impl true
+  def handle_event("toggle_unknown_property_hex", %{"property" => property_name}, socket) do
+    {:ok, property} = parse_property(property_name)
+    keys = socket.assigns.unknown_property_hex_keys
+
+    new_keys =
+      if MapSet.member?(keys, property) do
+        MapSet.delete(keys, property)
+      else
+        MapSet.put(keys, property)
+      end
+
+    {:noreply, assign(socket, :unknown_property_hex_keys, new_keys)}
+  end
+
+  @impl true
+  def handle_event("sort_unknown_properties", %{"column" => column}, socket) do
+    case BacViewWeb.PropertyTable.normalize_unknown_sort_column(column) do
+      nil ->
+        {:noreply, socket}
+
+      column ->
+        {sort_by, sort_dir} =
+          BacViewWeb.PropertyTable.toggle_sort(
+            socket.assigns.unknown_properties_sort_by,
+            socket.assigns.unknown_properties_sort_dir,
+            column
+          )
+
+        {:noreply,
+         socket
+         |> assign(:unknown_properties_sort_by, sort_by)
+         |> assign(:unknown_properties_sort_dir, sort_dir)}
+    end
+  end
+
+  @impl true
   def handle_event("subscribe_cov", params, socket) do
     with {:ok, type_atom} <- parse_type(params["type"]),
          instance_int <- String.to_integer(params["instance"]),
@@ -1330,7 +1376,7 @@ defmodule BacViewWeb.ObjectLive do
             socket
             |> assign(
               :object,
-              MapHelpers.update(socket.assigns.object, %{
+              Map.merge(socket.assigns.object, %{
                 status_flags: normalized,
                 updated_at: DateTime.utc_now()
               })
@@ -1408,7 +1454,13 @@ defmodule BacViewWeb.ObjectLive do
     Enum.find(properties, &(&1.property == property))
   end
 
-  defp refresh_object_from_properties(object, {:ok, properties}) when is_map(object) do
+  defp refresh_object_from_properties(object, {:ok, %{properties: properties}})
+       when is_map(object) do
+    DeviceSession.refresh_object_from_properties(object, properties)
+  end
+
+  defp refresh_object_from_properties(object, {:ok, properties})
+       when is_map(object) and is_list(properties) do
     DeviceSession.refresh_object_from_properties(object, properties)
   end
 
@@ -1690,7 +1742,7 @@ defmodule BacViewWeb.ObjectLive do
     display = Map.put(display, :formatted, formatted)
 
     refreshed =
-      MapHelpers.update(prop, %{
+      Map.merge(prop, %{
         value: value,
         value_display: display,
         value_formatted: formatted,
@@ -1857,6 +1909,7 @@ defmodule BacViewWeb.ObjectLive do
           device={@device}
           object={@object}
           properties={@properties}
+          unknown_properties={@unknown_properties}
           loading={@loading}
           properties_loading={@properties_loading}
           subscribed_keys={@subscribed_keys}
@@ -1877,6 +1930,9 @@ defmodule BacViewWeb.ObjectLive do
           object_nav_menu_open={@object_nav_menu_open}
           properties_sort_by={@properties_sort_by}
           properties_sort_dir={@properties_sort_dir}
+          unknown_properties_sort_by={@unknown_properties_sort_by}
+          unknown_properties_sort_dir={@unknown_properties_sort_dir}
+          unknown_property_hex_keys={@unknown_property_hex_keys}
           file_metadata={@file_metadata}
           file_content={@file_content}
           file_transfer_busy={@file_transfer_busy}

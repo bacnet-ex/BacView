@@ -3,6 +3,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.Protocol.CovNotificationChart
   alias BacViewWeb.CovNotificationTable
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.SortHeader
@@ -13,6 +14,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   attr(:cov_view, :string, required: true)
   attr(:cov_view_paths, :map, required: true)
   attr(:subscriptions, :list, required: true)
+  attr(:objects, :list, default: [])
   attr(:cov_notifications, :list, required: true)
   attr(:selected_keys, :any, default: MapSet.new())
   attr(:sort_by, :string, default: nil)
@@ -22,7 +24,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
 
   def subscriptions_panel(assigns) do
     ~H"""
-    <div class="space-y-5">
+    <div class="space-y-5 min-w-0 w-full">
       <div class="bac-tabs">
         <.link
           patch={@cov_view_paths["subscriptions"]}
@@ -56,6 +58,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
         device_id={@device_id}
         list_opts={@list_opts}
         subscriptions={@subscriptions}
+        objects={@objects}
         selected_keys={@selected_keys}
         sort_by={@sort_by}
         sort_dir={@sort_dir}
@@ -80,6 +83,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   attr(:device_id, :integer, required: true)
   attr(:list_opts, :list, default: [])
   attr(:subscriptions, :list, required: true)
+  attr(:objects, :list, default: [])
   attr(:selected_keys, :any, default: MapSet.new())
   attr(:sort_by, :string, default: nil)
   attr(:sort_dir, :atom, default: :asc)
@@ -91,15 +95,13 @@ defmodule BacViewWeb.SubscriptionsPanel do
       assign(
         assigns,
         :sorted_subscriptions,
-        SubscriptionTable.sorted_subscriptions(
-          assigns.subscriptions,
-          assigns.sort_by,
-          assigns.sort_dir
-        )
+        assigns.subscriptions
+        |> SubscriptionTable.enrich_subscriptions(assigns.objects)
+        |> SubscriptionTable.sorted_subscriptions(assigns.sort_by, assigns.sort_dir)
       )
 
     ~H"""
-    <div class="space-y-4" id="cov-panel-subscriptions">
+    <div class="space-y-4 min-w-0 w-full" id="cov-panel-subscriptions">
       <div :if={@subscriptions != []} class="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -118,15 +120,25 @@ defmodule BacViewWeb.SubscriptionsPanel do
 
       <div :if={@subscriptions != []} class="bac-table-wrap">
         <table class="bac-table" id="cov-subscriptions-table">
+          <colgroup>
+            <col class="w-8" />
+            <col class="w-[12%]" />
+            <col class="w-[16%]" />
+            <col class="w-[10%]" />
+            <col class="w-[12%]" />
+            <col class="w-[18%]" />
+            <col class="w-[10%]" />
+            <col class="w-[10%]" />
+          </colgroup>
           <thead>
             <tr>
-              <th class="w-10">
+              <th class="w-8 px-2">
                 <input
                   id="subscription-select-all"
                   type="checkbox"
                   checked={all_selected?(@selected_keys, @subscriptions)}
                   phx-click="toggle_select_all_subscriptions"
-                  class="bac-checkbox"
+                  class="bac-checkbox shrink-0"
                   aria-label={t(@locale, @locale_version, "Alle Abonnements auswählen")}
                 />
               </th>
@@ -136,6 +148,16 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   id_prefix="subscription-sort"
                   column="object"
                   label={t(@locale, @locale_version, "Objekt")}
+                  sort_by={@sort_by}
+                  sort_dir={@sort_dir}
+                />
+              </th>
+              <th>
+                <SortHeader.sort_header
+                  event="sort_subscriptions"
+                  id_prefix="subscription-sort"
+                  column="description"
+                  label={t(@locale, @locale_version, "Beschreibung")}
                   sort_by={@sort_by}
                   sort_dir={@sort_dir}
                 />
@@ -194,36 +216,65 @@ defmodule BacViewWeb.SubscriptionsPanel do
                 phx-value-type={sub.object_id.type}
                 phx-value-instance={sub.object_id.instance}
                 phx-value-property={sub.property}
-                class="cursor-pointer"
+                class="w-8 px-2 cursor-pointer"
               >
                 <input
                   type="checkbox"
                   checked={selected?(@selected_keys, sub)}
-                  class="bac-checkbox pointer-events-none"
+                  class="bac-checkbox shrink-0 pointer-events-none"
                   aria-label={t(@locale, @locale_version, "Abonnement auswählen")}
                 />
               </td>
               <td
-                class="bac-mono bac-row-clickable"
+                class="bac-row-clickable min-w-0"
                 phx-click={JS.navigate(object_path(@device_id, sub.object_id, @list_opts))}
               >
-                {sub.object_id.type}:{sub.object_id.instance}
+                <span class="bac-mono">{sub.object_id.type}:{sub.object_id.instance}</span>
+                <p
+                  :if={sub.object_name}
+                  class="text-xs text-[var(--bac-text-muted)] truncate mt-0.5"
+                  title={sub.object_name}
+                >
+                  {sub.object_name}
+                </p>
+              </td>
+              <td
+                class="text-[var(--bac-text-muted)] max-w-xs truncate bac-row-clickable"
+                phx-click={JS.navigate(object_path(@device_id, sub.object_id, @list_opts))}
+                title={sub.description}
+              >
+                {sub.description || "—"}
               </td>
               <td class="bac-mono">{sub.property}</td>
               <td class="bac-text-faint">{format_time(sub.last_cov_at)}</td>
               <td class="bac-mono text-[var(--bac-emerald)]">{sub.last_value_formatted || "—"}</td>
               <td class="bac-text-faint">{remaining_label(sub)}</td>
               <td>
-                <button
-                  type="button"
-                  phx-click="unsubscribe_cov"
-                  phx-value-type={sub.object_id.type}
-                  phx-value-instance={sub.object_id.instance}
-                  phx-value-property={sub.property}
-                  class="bac-btn bac-btn-ghost bac-btn-xs text-[var(--bac-rose)]"
-                >
-                  {t(@locale, @locale_version, "Kündigen")}
-                </button>
+                <div class="flex flex-wrap items-center gap-1">
+                  <button
+                    :if={CovNotificationChart.trendable_subscription?(@device_id, sub)}
+                    type="button"
+                    id={"cov-chart-open-#{sub.object_id.type}-#{sub.object_id.instance}-#{sub.property}"}
+                    phx-click="open_cov_chart_modal"
+                    phx-value-type={sub.object_id.type}
+                    phx-value-instance={sub.object_id.instance}
+                    phx-value-property={sub.property}
+                    class="bac-btn bac-btn-ghost bac-btn-xs"
+                  >
+                    <.icon name="hero-chart-bar" class="size-3.5" />
+                    {t(@locale, @locale_version, "Diagramm")}
+                  </button>
+                  <button
+                    type="button"
+                    phx-click="unsubscribe_cov"
+                    phx-value-type={sub.object_id.type}
+                    phx-value-instance={sub.object_id.instance}
+                    phx-value-property={sub.property}
+                    class="bac-btn bac-btn-ghost bac-btn-xs text-[var(--bac-rose)]"
+                  >
+                    {t(@locale, @locale_version, "Kündigen")}
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -254,13 +305,21 @@ defmodule BacViewWeb.SubscriptionsPanel do
       )
 
     ~H"""
-    <div class="space-y-4" id="cov-panel-notifications">
+    <div class="space-y-4 min-w-0 w-full" id="cov-panel-notifications">
       <p :if={@notifications == []} class="text-sm bac-text-muted py-12 text-center">
         {t(@locale, @locale_version, "Noch keine COV-Meldungen empfangen.")}
       </p>
 
       <div :if={@notifications != []} class="bac-table-wrap">
         <table class="bac-table" id="cov-notifications-table">
+          <colgroup>
+            <col class="w-[16%]" />
+            <col class="w-[18%]" />
+            <col class="w-[14%]" />
+            <col class="w-[28%]" />
+            <col class="w-[12%]" />
+            <col class="w-[12%]" />
+          </colgroup>
           <thead>
             <tr>
               <th>

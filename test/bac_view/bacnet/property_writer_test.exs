@@ -18,6 +18,21 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
         assert PropertyWriter.parse_input(alias, %{type: "REAL"}) == {:ok, nil}
       end
     end
+
+    test "parses character string properties" do
+      assert PropertyWriter.parse_input("Room sensor", %{type: "CHARACTER STRING"}) ==
+               {:ok, "Room sensor"}
+
+      assert PropertyWriter.parse_input("not-a-number", %{type: "CHARACTER STRING"}) ==
+               {:ok, "not-a-number"}
+    end
+
+    test "infers character string from current value or bac_type" do
+      assert PropertyWriter.parse_input("updated", %{value: "original"}) == {:ok, "updated"}
+
+      assert PropertyWriter.parse_input("new text", %{bac_type: :string, value: nil}) ==
+               {:ok, "new text"}
+    end
   end
 
   describe "write_opts/3" do
@@ -133,6 +148,19 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
 
       assert PropertyWriter.parse_write_params(%{"value" => "bogus"}, prop) ==
                {:error, :invalid_enum}
+    end
+
+    test "parses character string properties from text input" do
+      prop = %{
+        property: :description,
+        bac_type: :string,
+        type: "CHARACTER STRING",
+        value: "Original description",
+        value_display: %{kind: :scalar, formatted: "Original description"}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "Updated description"}, prop) ==
+               {:ok, "Updated description"}
     end
 
     test "parses boolean struct properties from checkbox params" do

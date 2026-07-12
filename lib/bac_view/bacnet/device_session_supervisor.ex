@@ -21,9 +21,7 @@ defmodule BacView.BACnet.DeviceSessionSupervisor do
 
   @spec ensure_session(integer()) :: {:ok, pid()} | {:error, term()}
   def ensure_session(device_id) do
-    unless available?() do
-      {:error, :bacnet_unavailable}
-    else
+    if available?() do
       case session_pid(device_id) do
         nil ->
           spec = {BacView.BACnet.DeviceSession, device_id}
@@ -37,6 +35,8 @@ defmodule BacView.BACnet.DeviceSessionSupervisor do
         pid ->
           {:ok, pid}
       end
+    else
+      {:error, :bacnet_unavailable}
     end
   end
 
