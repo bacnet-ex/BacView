@@ -25,14 +25,7 @@ bacview-*.tar
 # Runtime BACnet stack settings (UI-persisted)
 /priv/runtime_settings.json
 
-# Built assets
-/priv/static/assets/
-/priv/static/cache_manifest.json
-/priv/static/*-*.*
-/priv/static/*.gz
-
 # Editors
-/.dexter/
 /.elixir_ls/
 /.expert/
 /.lexical/

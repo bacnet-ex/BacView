@@ -1,8 +1,6 @@
 defmodule BacView.Application do
   @moduledoc false
 
-  require Logger
-
   use Application
 
   @impl true
@@ -10,6 +8,7 @@ defmodule BacView.Application do
     load_all_bacstack_modules()
     configure_bacstack_logging()
     maybe_configure_desktop_locale()
+    maybe_init_desktop_session_table()
 
     session_children = [
       {Registry, keys: :unique, name: BacView.BACnet.DeviceRegistry},
@@ -63,42 +62,42 @@ defmodule BacView.Application do
 
   if Application.compile_env(:bacview, :desktop_mode) do
     defp maybe_configure_desktop_locale() do
+      Desktop.identify_default_locale(BacViewWeb.Gettext)
+
       detected =
-        System.get_env("BACVIEW_DESKTOP_LOCALE") ||
-          Application.get_env(:gettext, :default_locale) ||
-            Application.get_env(:bacview, BacViewWeb.Gettext)[:default_locale] ||
-            "de"
+        Application.get_env(:gettext, :default_locale) ||
+          Application.get_env(:bacview, BacViewWeb.Gettext)[:default_locale] ||
+          "de"
 
       Application.put_env(:bacview, BacViewWeb.Gettext, default_locale: detected)
       Gettext.put_locale(BacViewWeb.Gettext, detected)
     end
 
+    defp maybe_init_desktop_session_table() do
+      :ets.new(:bacview_session, [:named_table, :public, read_concurrency: true])
+    end
+
     defp desktop_window_children() do
-      pubsub = System.get_env("ELIXIRKIT_PUBSUB")
+      # Get screen size
+      wx_display = :wxDisplay.new()
+      {_size_x, _size_y, size_w, size_h} = :wxDisplay.getClientArea(wx_display)
+      :wxDisplay.destroy(wx_display)
 
       [
-        {ElixirKit.PubSub, connect: pubsub || :ignore, on_exit: fn -> System.stop() end},
-        {Task,
-         fn ->
-           if pubsub do
-             case BacViewWeb.Endpoint.server_info(:http) do
-               {:ok, {ip, port}} ->
-                 ElixirKit.PubSub.broadcast(
-                   "messages",
-                   "ready:" <>
-                     "http://" <> List.to_string(:inet.ntoa(ip)) <> ":" <> Integer.to_string(port)
-                 )
-
-               {:error, reason} ->
-                 Logger.error("Unable to determine server address, reason: " <> inspect(reason))
-                 System.stop(1)
-             end
-           end
-         end}
+        {Desktop.Window,
+         [
+           app: :bacview,
+           id: BacViewWindow,
+           title: "BacView",
+           size: {trunc(size_w * 0.9), trunc(size_h * 0.9)},
+           icon: "static/icon.png",
+           url: &BacViewWeb.Endpoint.url/0
+         ]}
       ]
     end
   else
     defp maybe_configure_desktop_locale(), do: :ok
+    defp maybe_init_desktop_session_table(), do: :ok
     defp desktop_window_children(), do: []
   end
 

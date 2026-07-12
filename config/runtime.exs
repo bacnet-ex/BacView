@@ -8,11 +8,9 @@ config :bacview, :timezone, timezone
 config :bacstack, :default_timezone, timezone
 
 if Application.get_env(:bacview, :desktop_mode) do
-  {:ok, [[home]]} = :init.get_argument(:home)
-
   config :bacview,
          :runtime_settings_path,
-         Path.join([List.to_string(home), ".config", "bacview", "runtime_settings.json"])
+         Path.join([Desktop.OS.home(), ".config", "bacview", "runtime_settings.json"])
 end
 
 # config/runtime.exs is executed for all environments, including

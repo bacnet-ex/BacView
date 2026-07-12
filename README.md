@@ -41,19 +41,20 @@ Copy `.env.example` to `.env` and adjust as needed (optional in dev).
 
 ## Desktop app -experimental- (optional)
 
-BacView can also run as a native desktop app via [ElixirKit](https://hex.pm/packages/elixirkit) and [Tauri](https://v2.tauri.app/).
+BacView can also run as a native desktop app via [elixir-desktop](https://github.com/elixir-desktop/desktop). The web workflow above stays the default.
 
 Desktop mode is selected at **compile time** with `BACVIEW_DESKTOP=1`. Run `mix clean` when switching between web and desktop builds.
 
-**Requirements:** Some system packages are required for Tauri.
+**Requirements:** Erlang/OTP with wxWidgets support (see the [desktop getting started guide](https://github.com/elixir-desktop/desktop/blob/main/guides/getting_started.md)). Build installers on native Linux or Windows (msys2 for Windows).
 
 For recent Debian-based installations:
 ```bash
 sudo apt install inotify-tools libtool automake libgmp-dev make \
      libwxgtk-webview3.2-dev libssl-dev libncurses-dev curl git \
-     libwxgtk3.2-dev libgtk-3-dev libwebkit2gtk-4.1-dev librsvg2-dev \
-     pkg-config -y
+     libwxgtk3.2-dev libgtk-3-dev pkg-config -y
 ```
+
+For adsf/mise builds: Erlang build must be installed after installing the packages above.
 
 Starting the desktop application:
 
@@ -65,7 +66,7 @@ BACVIEW_DESKTOP=1 mix desktop.server
 Package a distributable installer (`.run` on Linux, `.exe` on Windows):
 
 ```bash
-mix do desktop.setup + desktop.installer
+mix desktop_installer
 ```
 
 Desktop notes:
@@ -86,7 +87,6 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 | `BACVIEW_BACSTACK_DEBUG` | — | Enable verbose bacstack debug logs (`1` / `true`) |
 | `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
 | `BACVIEW_DESKTOP` | — | Set to `1` at compile time to build the desktop app (see above) |
-| `BACVIEW_DESKTOP_LOCALE` | - | The locale to use on startup (automatically set by the desktop app) |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 | `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
 

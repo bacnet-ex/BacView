@@ -10,17 +10,12 @@ import Config
 desktop_mode? = System.get_env("BACVIEW_DESKTOP") in ~w(1 true yes)
 windows? = match?({:win32, _}, :os.type())
 
-mstp_enabled =
-  case System.get_env("BACVIEW_ENABLE_MSTP") do
-    nil ->
-      Code.ensure_loaded?(Circuits.UART) or not windows?
-
-    str ->
-      str in ~w(1 true yes)
-  end
-
 config :bacview, :desktop_mode, desktop_mode?
-config :bacview, :mstp_enabled, mstp_enabled
+
+config :bacview,
+       :mstp_enabled,
+       Code.ensure_loaded?(Circuits.UART) or
+         System.get_env("BACVIEW_ENABLE_MSTP") in ~w(1 true yes)
 
 config :bacview, BacViewWeb.Gettext,
   locales: ~w(de en),
