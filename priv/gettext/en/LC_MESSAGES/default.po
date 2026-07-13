@@ -771,6 +771,12 @@ msgstr "Network number"
 msgid "Netzwerkscan abgeschlossen."
 msgstr "Network scan completed."
 
+msgid "Netzwerkschnittstelle nicht gefunden."
+msgstr "Network interface not found."
+
+msgid "Netzwerkschnittstellen konnten nicht ermittelt werden."
+msgstr "Unable to enumerate network interfaces."
+
 msgid "Netzwerkverbindung zum Gerät nicht verfügbar."
 msgstr "Network connection to the device is unavailable."
 

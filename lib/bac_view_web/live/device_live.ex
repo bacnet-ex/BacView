@@ -11,6 +11,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacView.BACnet.HierarchyBuilder
   alias BacView.BACnet.HierarchySplit
   alias BacView.BACnet.NameHierarchyBuilder
+  alias BacView.BACnet.NameHierarchyCache
   alias BacView.BACnet.NotificationClassRecipient
   alias BacView.BACnet.SubscriptionManager
 
@@ -180,7 +181,7 @@ defmodule BacViewWeb.DeviceLive do
        DeviceUrl.normalize_hierarchy_view(Map.get(params, "hierarchy_view"))
      )
      |> assign(:hierarchy_path, DeviceUrl.normalize_hierarchy_path(Map.get(params, "h_path")))
-     |> assign(:hierarchy_split, DeviceUrl.normalize_hierarchy_split(Map.get(params, "h_split")))
+     |> assign(:hierarchy_split, resolve_hierarchy_split(socket, params))
      |> apply_active_hierarchy()}
   end
 
@@ -731,6 +732,8 @@ defmodule BacViewWeb.DeviceLive do
          )}
 
       split ->
+        NameHierarchyCache.put(socket.assigns.device_id, split, socket.assigns.objects)
+
         path =
           DeviceUrl.device_path(
             socket.assigns.device_id,
@@ -747,6 +750,8 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("clear_name_hierarchy", _params, socket) do
+    NameHierarchyCache.clear(socket.assigns.device_id)
+
     path =
       DeviceUrl.device_path(
         socket.assigns.device_id,
@@ -1945,12 +1950,21 @@ defmodule BacViewWeb.DeviceLive do
 
   defp apply_loaded_device(socket, loaded) do
     sv_hierarchy = loaded |> Map.get(:hierarchy, empty_hierarchy()) |> normalize_hierarchy()
+    objects = normalize_objects(loaded.objects)
+
+    hierarchy_split =
+      NameHierarchyCache.resolve(
+        socket.assigns.device_id,
+        socket.assigns.hierarchy_split,
+        objects
+      )
 
     socket
     |> assign(:device, loaded)
-    |> assign(:objects, normalize_objects(loaded.objects))
-    |> assign(:selectable_object_keys, selectable_object_keys(loaded.objects))
+    |> assign(:objects, objects)
+    |> assign(:selectable_object_keys, selectable_object_keys(objects))
     |> assign(:sv_hierarchy, sv_hierarchy)
+    |> assign(:hierarchy_split, hierarchy_split)
     |> assign(:loading, false)
     |> assign(:load_progress, nil)
     |> apply_active_hierarchy()
@@ -2425,6 +2439,16 @@ defmodule BacViewWeb.DeviceLive do
       h_split: HierarchySplit.encode(assigns.hierarchy_split),
       device_id: assigns.device_id
     ]
+  end
+
+  defp resolve_hierarchy_split(socket, params) do
+    url_split = DeviceUrl.normalize_hierarchy_split(Map.get(params, "h_split"))
+
+    NameHierarchyCache.resolve(
+      socket.assigns.device_id,
+      url_split,
+      Map.get(socket.assigns, :objects, [])
+    )
   end
 
   defp normalize_hierarchy(hierarchy) when is_map(hierarchy) do

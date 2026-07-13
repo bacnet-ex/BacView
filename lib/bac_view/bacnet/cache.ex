@@ -10,6 +10,7 @@ defmodule BacView.BACnet.Cache do
     :bacview_properties,
     :bacview_subscriptions,
     :bacview_hierarchy,
+    :bacview_name_hierarchy,
     :bacview_events
   ]
 

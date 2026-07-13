@@ -8,6 +8,7 @@ defmodule BacView.BACnet.Stack do
 
   @client BacView.BACnet.ClientStack
   @transport BacView.BACnet.TransportLayer
+  @boot_call_timeout 5000
 
   def start_link(opts \\ []) do
     Supervisor.start_link(__MODULE__, opts, name: __MODULE__)
@@ -29,17 +30,14 @@ defmodule BacView.BACnet.Stack do
 
   @spec running?() :: boolean()
   def running?() do
-    case Process.whereis(Boot) do
-      nil -> false
-      pid -> GenServer.call(pid, :running?)
-    end
+    Process.whereis(@client) != nil
   end
 
   @spec last_error() :: term() | nil
   def last_error() do
     case Process.whereis(Boot) do
       nil -> nil
-      pid -> GenServer.call(pid, :last_error)
+      pid -> boot_call(pid, :last_error)
     end
   end
 
@@ -54,5 +52,12 @@ defmodule BacView.BACnet.Stack do
   @impl true
   def init(_opts) do
     Supervisor.init([Boot], strategy: :one_for_one)
+  end
+
+  defp boot_call(pid, request) do
+    GenServer.call(pid, request, @boot_call_timeout)
+  catch
+    :exit, :timeout -> nil
+    :exit, {:timeout, _boot_call} -> nil
   end
 end

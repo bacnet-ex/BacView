@@ -203,8 +203,39 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
 
   def format_reason(reason) when is_binary(reason), do: reason
 
+  def format_reason({%{__exception__: true} = exception, _stacktrace}),
+    do: format_exception_message(exception)
+
+  def format_reason(%{__exception__: true} = exception),
+    do: format_exception_message(exception)
+
   def format_reason(_reason),
     do: gettext("Ein unerwarteter Fehler ist aufgetreten.")
+
+  defp format_exception_message(%RuntimeError{message: message}),
+    do: format_runtime_error_message(message)
+
+  defp format_exception_message(exception), do: Exception.message(exception)
+
+  defp format_runtime_error_message("Unable to find ethernet interface " <> rest) do
+    case Regex.run(~r/\(with broadcast flag\) called (.+)$/, rest) do
+      [_match, interface] ->
+        gettext("Netzwerkschnittstelle nicht gefunden: %{interface}", interface: interface)
+
+      _no_match ->
+        gettext("Netzwerkschnittstelle nicht gefunden.")
+    end
+  end
+
+  defp format_runtime_error_message("Unable to discover local IPv4 address"),
+    do: format_reason(:no_network_interface)
+
+  defp format_runtime_error_message(
+         "Unable to enumerate ethernet interfaces, error: " <> _detail
+       ),
+       do: gettext("Netzwerkschnittstellen konnten nicht ermittelt werden.")
+
+  defp format_runtime_error_message(message) when is_binary(message), do: message
 
   defp format_unknown_atom(reason),
     do: gettext("Systemfehler: %{reason}", reason: label(reason))
