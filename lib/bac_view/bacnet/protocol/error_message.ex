@@ -22,6 +22,7 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
           | :load_device
           | :fetch_events
           | :export_events
+          | :export_ede
           | :notification_class_recipient
           | :bbmd_register
           | :stack_restart
@@ -41,64 +42,95 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
     detail = format_reason(reason)
 
     case action do
-      :cov_subscribe ->
-        gettext("COV-Abonnement fehlgeschlagen: %{detail}", detail: detail)
+      a when a in [:cov_subscribe, :cov_unsubscribe, :load_properties, :refresh_properties] ->
+        property_action_message(a, detail)
 
-      :cov_unsubscribe ->
-        gettext("COV-Abonnement kündigen fehlgeschlagen: %{detail}", detail: detail)
+      a
+      when a in [
+             :write_property,
+             :read_back_property,
+             :load_device,
+             :fetch_events,
+             :export_events,
+             :export_ede
+           ] ->
+        data_action_message(a, detail)
 
-      :load_properties ->
-        gettext("Eigenschaften laden fehlgeschlagen: %{detail}", detail: detail)
-
-      :refresh_properties ->
-        gettext("Eigenschaften aktualisieren fehlgeschlagen: %{detail}", detail: detail)
-
-      :write_property ->
-        gettext("Schreiben fehlgeschlagen: %{detail}", detail: detail)
-
-      :read_back_property ->
-        gettext("Schreiben OK, aber Rücklesen fehlgeschlagen: %{detail}", detail: detail)
-
-      :load_device ->
-        gettext("Gerät laden fehlgeschlagen: %{detail}", detail: detail)
-
-      :fetch_events ->
-        gettext("Ereignisse abrufen fehlgeschlagen: %{detail}", detail: detail)
-
-      :export_events ->
-        gettext("Ereignis-Export fehlgeschlagen: %{detail}", detail: detail)
-
-      :notification_class_recipient ->
-        gettext("Meldungsklassen-Empfängerliste fehlgeschlagen: %{detail}", detail: detail)
-
-      :bbmd_register ->
-        gettext("BBMD-Registrierung fehlgeschlagen: %{detail}", detail: detail)
-
-      :stack_restart ->
-        gettext("Stack-Neustart fehlgeschlagen: %{detail}", detail: detail)
-
-      :network_scan ->
-        gettext("Scan fehlgeschlagen: %{detail}", detail: detail)
-
-      :device_communication_control ->
-        gettext("Gerätekommunikation fehlgeschlagen: %{detail}", detail: detail)
-
-      :reinitialize_device ->
-        gettext("Neuinitialisierung fehlgeschlagen: %{detail}", detail: detail)
-
-      :time_synchronization ->
-        gettext("Zeitsynchronisation fehlgeschlagen: %{detail}", detail: detail)
-
-      :atomic_read_file ->
-        gettext("Datei lesen fehlgeschlagen: %{detail}", detail: detail)
-
-      :atomic_write_file ->
-        gettext("Datei schreiben fehlgeschlagen: %{detail}", detail: detail)
+      a
+      when a in [
+             :notification_class_recipient,
+             :bbmd_register,
+             :stack_restart,
+             :network_scan,
+             :device_communication_control,
+             :reinitialize_device,
+             :time_synchronization,
+             :atomic_read_file,
+             :atomic_write_file
+           ] ->
+        service_action_message(a, detail)
 
       :generic ->
         detail
     end
   end
+
+  defp property_action_message(:cov_subscribe, detail),
+    do: gettext("COV-Abonnement fehlgeschlagen: %{detail}", detail: detail)
+
+  defp property_action_message(:cov_unsubscribe, detail),
+    do: gettext("COV-Abonnement kündigen fehlgeschlagen: %{detail}", detail: detail)
+
+  defp property_action_message(:load_properties, detail),
+    do: gettext("Eigenschaften laden fehlgeschlagen: %{detail}", detail: detail)
+
+  defp property_action_message(:refresh_properties, detail),
+    do: gettext("Eigenschaften aktualisieren fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:write_property, detail),
+    do: gettext("Schreiben fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:read_back_property, detail),
+    do: gettext("Schreiben OK, aber Rücklesen fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:load_device, detail),
+    do: gettext("Gerät laden fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:fetch_events, detail),
+    do: gettext("Ereignisse abrufen fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:export_events, detail),
+    do: gettext("Ereignis-Export fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:export_ede, detail),
+    do: gettext("EDE-Export fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:notification_class_recipient, detail),
+    do: gettext("Meldungsklassen-Empfängerliste fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:bbmd_register, detail),
+    do: gettext("BBMD-Registrierung fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:stack_restart, detail),
+    do: gettext("Stack-Neustart fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:network_scan, detail),
+    do: gettext("Scan fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:device_communication_control, detail),
+    do: gettext("Gerätekommunikation fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:reinitialize_device, detail),
+    do: gettext("Neuinitialisierung fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:time_synchronization, detail),
+    do: gettext("Zeitsynchronisation fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:atomic_read_file, detail),
+    do: gettext("Datei lesen fehlgeschlagen: %{detail}", detail: detail)
+
+  defp service_action_message(:atomic_write_file, detail),
+    do: gettext("Datei schreiben fehlgeschlagen: %{detail}", detail: detail)
 
   @doc """
   Returns a developer-oriented representation for console or server logs.
@@ -174,6 +206,18 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
 
   def format_reason({{:shutdown, {:failed_to_start_child, _module, reason}}, _child}),
     do: format_reason(reason)
+
+  def format_reason(:invalid_project_name),
+    do: gettext("Projektname fehlt oder ist ungültig.")
+
+  def format_reason(:invalid_version),
+    do: gettext("Version muss semantisch sein (z. B. 1.0.0).")
+
+  def format_reason(:no_objects),
+    do: gettext("Keine exportierbaren Objekte geladen.")
+
+  def format_reason(:no_object_types_selected),
+    do: gettext("Mindestens ein Objekttyp muss ausgewählt sein.")
 
   def format_reason(:eacces),
     do: gettext("Zugriff auf den seriellen Port verweigert (Berechtigung fehlt).")

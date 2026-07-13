@@ -46,6 +46,7 @@ defmodule BacView.MixProject do
   defp base_deps() do
     [
       {:bacstack, github: "bacnet-ex/bacstack", env: Mix.env()},
+      {:bacnet_ede, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},

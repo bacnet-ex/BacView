@@ -7,7 +7,7 @@ defmodule BacViewWeb.LocaleAttrs do
   defmacro __using__(_opts) do
     quote do
       attr(:locale, :string, default: "de")
-      attr(:locale_version, :integer, default: 0)
+      attr(:locale_version, :integer, default: 1)
     end
   end
 end

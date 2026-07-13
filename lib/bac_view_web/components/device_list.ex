@@ -45,7 +45,7 @@ defmodule BacViewWeb.DeviceList do
           type="search"
           name="search"
           value={@search}
-          placeholder={t(@locale, @locale_version, "Geräte filtern… (-Begriff zum Ausschließen)")}
+          placeholder={t(@locale, @locale_version, "Geräte filtern… (-Begriff zum Ausschliessen)")}
           phx-keyup="search_devices"
           phx-debounce="200"
           class="bac-input bac-input-sm flex-1 max-w-md"

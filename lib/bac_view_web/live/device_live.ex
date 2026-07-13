@@ -8,6 +8,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Discovery
+  alias BacView.BACnet.EdeExport
   alias BacView.BACnet.HierarchyBuilder
   alias BacView.BACnet.HierarchySplit
   alias BacView.BACnet.NameHierarchyBuilder
@@ -33,6 +34,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacViewWeb.DeviceServicesHandlers
   alias BacViewWeb.DeviceServicesMenu
   alias BacViewWeb.DeviceUrl
+  alias BacViewWeb.EdeExportModal
   alias BacViewWeb.HierarchyExplorer
   alias BacViewWeb.HierarchyPanel
   alias BacViewWeb.LiveFlash
@@ -149,6 +151,9 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:write_priority, PropertyWriter.default_priority())
          |> assign(:writing_present_value, false)
          |> assign(:show_shortcuts, false)
+         |> assign(:ede_export_modal_open, false)
+         |> assign(:ede_export_available_types, [])
+         |> assign(:ede_export_form, ede_export_form())
          |> DeviceServicesHandlers.init_assigns()
          |> ActiveAlarmsAssigns.init()
          |> refresh_alarm_state()
@@ -1335,6 +1340,85 @@ defmodule BacViewWeb.DeviceLive do
     end
   end
 
+  @impl true
+  def handle_event("open_ede_export_modal", _params, socket) do
+    available = EdeExport.available_object_types(socket.assigns.objects)
+
+    {:noreply,
+     socket
+     |> assign(:ede_export_modal_open, true)
+     |> assign(:ede_export_available_types, available)
+     |> assign(:ede_export_form, ede_export_form(socket.assigns.device, available))}
+  end
+
+  def handle_event("close_ede_export_modal", _params, socket) do
+    {:noreply, close_ede_export_modal(socket)}
+  end
+
+  def handle_event("validate_ede_export", %{"ede_export" => params}, socket) do
+    {:noreply,
+     assign(
+       socket,
+       :ede_export_form,
+       ede_export_form_from_params(params, socket.assigns.ede_export_available_types)
+     )}
+  end
+
+  def handle_event("ede_export_select_all_types", _params, socket) do
+    available = socket.assigns.ede_export_available_types
+    types = Enum.map(available, & &1.type)
+
+    {:noreply,
+     assign(
+       socket,
+       :ede_export_form,
+       ede_export_form_with_types(socket.assigns.ede_export_form, types, available)
+     )}
+  end
+
+  def handle_event("ede_export_select_default_types", _params, socket) do
+    available = socket.assigns.ede_export_available_types
+    types = EdeExport.default_selected_object_types(available)
+
+    {:noreply,
+     assign(
+       socket,
+       :ede_export_form,
+       ede_export_form_with_types(socket.assigns.ede_export_form, types, available)
+     )}
+  end
+
+  def handle_event("export_ede", %{"ede_export" => params}, socket) do
+    available = socket.assigns.ede_export_available_types
+    form = ede_export_form_from_params(params, available)
+    socket = assign(socket, :ede_export_form, form)
+
+    opts = [
+      project_name: String.trim(params["project_name"] || ""),
+      version: String.trim(params["version"] || ""),
+      author: String.trim(params["author"] || ""),
+      include_state_texts: params["include_state_texts"] in ["true", "on", "1"],
+      object_types: parse_form_object_types(params["object_types"], available)
+    ]
+
+    case EdeExport.export(socket.assigns.device_id, opts) do
+      {:ok, %{files: files}} ->
+        socket =
+          Enum.reduce(files, socket, fn file, sock ->
+            push_event(sock, "download_file", %{
+              content: file.content,
+              filename: file.filename,
+              mime: file.mime
+            })
+          end)
+
+        {:noreply, close_ede_export_modal(socket)}
+
+      {:error, reason} ->
+        {:noreply, LiveFlash.put_error(socket, :export_ede, reason)}
+    end
+  end
+
   @shortcut_tabs %{
     1 => "hierarchy",
     2 => "objects",
@@ -1939,6 +2023,124 @@ defmodule BacViewWeb.DeviceLive do
   defp object_label(%{object_id: %{type: type, instance: instance}}),
     do: "#{type}:#{instance}"
 
+  defp close_ede_export_modal(socket) do
+    socket
+    |> assign(:ede_export_modal_open, false)
+    |> assign(:ede_export_available_types, [])
+    |> assign(:ede_export_form, ede_export_form(socket.assigns[:device]))
+  end
+
+  defp ede_export_form(device \\ nil, available_types \\ []) do
+    project_name =
+      case device do
+        %{name: name} when is_binary(name) ->
+          case String.trim(name) do
+            "" -> ede_default_project_name(device)
+            trimmed -> trimmed
+          end
+
+        _other ->
+          ede_default_project_name(device)
+      end
+
+    object_types = EdeExport.default_selected_object_types(available_types)
+
+    ede_export_form_from_params(
+      %{
+        "project_name" => project_name,
+        "version" => "1.0.0",
+        "author" => "BacView",
+        "include_state_texts" => "false",
+        "object_types" => Enum.map(object_types, &to_string/1)
+      },
+      available_types
+    )
+  end
+
+  defp ede_default_project_name(%{instance: instance}) when is_integer(instance),
+    do: "Device #{instance}"
+
+  defp ede_default_project_name(_device), do: "Device"
+
+  defp ede_export_form_from_params(params, available_types) when is_map(params) do
+    object_types =
+      params
+      |> Map.get("object_types")
+      |> parse_form_object_types(available_types)
+      |> Enum.map(&to_string/1)
+
+    to_form(
+      %{
+        "project_name" => params["project_name"] || "",
+        "version" => params["version"] || "",
+        "author" => params["author"] || "",
+        "include_state_texts" => params["include_state_texts"] in ["true", "on", "1"],
+        "object_types" => object_types
+      },
+      as: :ede_export
+    )
+  end
+
+  defp ede_export_form_with_types(form, types, available_types) do
+    params =
+      case form do
+        %{params: p} when is_map(p) and map_size(p) > 0 -> p
+        %{source: source} when is_map(source) -> stringify_form_source(source)
+        _other -> %{}
+      end
+
+    ede_export_form_from_params(
+      Map.put(params, "object_types", Enum.map(types, &to_string/1)),
+      available_types
+    )
+  end
+
+  defp stringify_form_source(source) do
+    Map.new(source, fn
+      {k, v} when is_atom(k) -> {Atom.to_string(k), v}
+      {k, v} -> {k, v}
+    end)
+  end
+
+  defp parse_form_object_types(nil, _available), do: []
+  defp parse_form_object_types([], _available), do: []
+
+  defp parse_form_object_types(types, available) when is_list(types) do
+    allowed =
+      available
+      |> Enum.map(& &1.type)
+      |> MapSet.new()
+
+    types
+    |> Enum.map(&parse_form_object_type/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.filter(&MapSet.member?(allowed, &1))
+    |> Enum.uniq()
+  end
+
+  defp parse_form_object_types(type, available), do: parse_form_object_types([type], available)
+
+  defp parse_form_object_type(type) when is_atom(type), do: type
+  defp parse_form_object_type(type) when is_integer(type), do: type
+
+  defp parse_form_object_type(type) when is_binary(type) do
+    trimmed = String.trim(type)
+
+    case Integer.parse(trimmed) do
+      {int, ""} ->
+        int
+
+      _other ->
+        try do
+          String.to_existing_atom(trimmed)
+        rescue
+          ArgumentError -> nil
+        end
+    end
+  end
+
+  defp parse_form_object_type(_type), do: nil
+
   defp start_device_reload(socket) do
     send(self(), {:load_device, true})
 
@@ -2524,6 +2726,19 @@ defmodule BacViewWeb.DeviceLive do
             />
             <button
               type="button"
+              phx-click="open_ede_export_modal"
+              id="export-ede-btn"
+              disabled={@loading || @objects == []}
+              class="bac-btn bac-btn-ghost bac-btn-sm hidden sm:inline-flex"
+              title={t(@locale, @locale_version, "EDE exportieren")}
+            >
+              <.icon name="hero-arrow-down-tray" class="size-4" />
+              <span class="hidden lg:inline">
+                {t(@locale, @locale_version, "EDE exportieren")}
+              </span>
+            </button>
+            <button
+              type="button"
               phx-click="subscribe_all_pv"
               disabled={@bulk_subscribing || @loading}
               class="bac-btn bac-btn-primary bac-btn-sm hidden md:inline-flex"
@@ -2758,6 +2973,14 @@ defmodule BacViewWeb.DeviceLive do
         object={@write_modal}
         write_priority={@write_priority}
         writing={@writing_present_value}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
+      <EdeExportModal.modal
+        :if={@ede_export_modal_open}
+        form={@ede_export_form}
+        available_types={@ede_export_available_types}
         locale={@locale}
         locale_version={@locale_version}
       />

@@ -105,7 +105,7 @@ msgstr "Refresh"
 msgid "Aktualisiert"
 msgstr "Updated"
 
-msgid "Aktuellen Ordner durchsuchen… (-Begriff zum Ausschließen)"
+msgid "Aktuellen Ordner durchsuchen… (-Begriff zum Ausschliessen)"
 msgstr "Search current folder… (-term to exclude)"
 
 msgid "Aktueller Wert"
@@ -185,6 +185,9 @@ msgstr "Out of range"
 
 msgid "Auswahl aufheben"
 msgstr "Clear selection"
+
+msgid "Autor"
+msgstr "Author"
 
 msgid "BACnet Netzwerk-Explorer"
 msgstr "BACnet Network Explorer"
@@ -396,6 +399,12 @@ msgstr "Colon (:)"
 msgid "Dunkel"
 msgstr "Dark"
 
+msgid "EDE exportieren"
+msgstr "Export EDE"
+
+msgid "EDE-Export"
+msgstr "EDE export"
+
 msgid "Eigenschaft"
 msgstr "Property"
 
@@ -474,6 +483,9 @@ msgstr "Resubscribe"
 msgid "Erweitert"
 msgstr "Advanced"
 
+msgid "Exportieren"
+msgstr "Export"
+
 msgid "Fehlerprotokoll (%{count})"
 msgstr "Error log (%{count})"
 
@@ -510,7 +522,7 @@ msgstr "Device not found."
 msgid "Gerät wird neu initialisiert."
 msgstr "Device is being reinitialized."
 
-msgid "Geräte filtern… (-Begriff zum Ausschließen)"
+msgid "Geräte filtern… (-Begriff zum Ausschliessen)"
 msgstr "Filter devices… (-term to exclude)"
 
 msgid "Geräte-ID"
@@ -588,7 +600,7 @@ msgstr "Hierarchy from object names"
 msgid "Hierarchie aus Objektnamen erstellen"
 msgstr "Build hierarchy from object names"
 
-msgid "Hierarchie durchsuchen… (-Begriff zum Ausschließen)"
+msgid "Hierarchie durchsuchen… (-Begriff zum Ausschliessen)"
 msgstr "Search hierarchy… (-term to exclude)"
 
 msgid "Hierarchie erstellen"
@@ -642,6 +654,9 @@ msgstr "No notification classes found on this device."
 msgid "Keine Netzwerkschnittstelle für BACnet/IP verfügbar."
 msgstr "No network interface available for BACnet/IP."
 
+msgid "Keine Objekttypen verfügbar."
+msgstr "No object types available."
+
 msgid "Keine Strukturansichten gefunden. Das Gerät verwendet eine flache Objektliste."
 msgstr "No structured views found. The device uses a flat object list."
 
@@ -665,6 +680,9 @@ msgstr "No active alarms. Objects with in-alarm or fault status appear here."
 
 msgid "Keine aktiven COV-Abonnements."
 msgstr "No active COV subscriptions."
+
+msgid "Keine exportierbaren Objekte geladen."
+msgstr "No exportable objects loaded."
 
 msgid "Keine seriellen Ports gefunden."
 msgstr "No serial ports found."
@@ -737,6 +755,9 @@ msgstr "Message"
 
 msgid "Meldungen"
 msgstr "Notifications"
+
+msgid "Mindestens ein Objekttyp muss ausgewählt sein."
+msgstr "At least one object type must be selected."
 
 msgid "Minimum %{min} ms"
 msgstr "Minimum %{min} ms"
@@ -861,7 +882,7 @@ msgstr "Object details"
 msgid "Objekte"
 msgstr "Objects"
 
-msgid "Objekte suchen… (-Begriff zum Ausschließen)"
+msgid "Objekte suchen… (-Begriff zum Ausschliessen)"
 msgstr "Search objects… (-term to exclude)"
 
 msgid "Objekteigenschaften öffnen"
@@ -917,6 +938,12 @@ msgstr "Priority"
 
 msgid "Priorität zurücksetzen fehlgeschlagen."
 msgstr "Failed to reset priority."
+
+msgid "Projektname"
+msgstr "Project name"
+
+msgid "Projektname fehlt oder ist ungültig."
+msgstr "Project name is missing or invalid."
 
 msgid "Puffer bereit"
 msgstr "Buffer ready"
@@ -990,6 +1017,9 @@ msgstr "Write access denied."
 msgid "Schrägstrich (/)"
 msgstr "Slash (/)"
 
+msgid "Semantische Version (MAJOR.MINOR.PATCH), z. B. 1.0.0"
+msgstr "Semantic version (MAJOR.MINOR.PATCH), e.g. 1.0.0"
+
 msgid "Serieller Port ist belegt."
 msgstr "Serial port is busy."
 
@@ -1020,8 +1050,14 @@ msgstr "Stack settings saved."
 msgid "Stack-Einstellungen konnten nicht gespeichert werden."
 msgstr "Stack settings could not be saved."
 
+msgid "Standard"
+msgstr "Default"
+
 msgid "Starten Sie einen Netzwerkscan in der Seitenleiste, um BACnet-Geräte zu entdecken."
 msgstr "Start a network scan in the sidebar to discover BACnet devices."
+
+msgid "State Texts mit exportieren"
+msgstr "Include state texts"
 
 msgid "Status"
 msgstr "Status"
@@ -1181,6 +1217,12 @@ msgstr "Connection aborted (%{reason})"
 
 msgid "Verbleibend"
 msgstr "Remaining"
+
+msgid "Version"
+msgstr "Version"
+
+msgid "Version muss semantisch sein (z. B. 1.0.0)."
+msgstr "Version must be semantic (e.g. 1.0.0)."
 
 msgid "Verwenden Sie „Herunterladen“, um die Datei zu speichern."
 msgstr "Use “Download” to save the file."

@@ -27,7 +27,7 @@ defmodule BacViewWeb.DeviceTree do
           type="search"
           name="tree_search"
           value={@search}
-          placeholder={t(@locale, @locale_version, "Hierarchie durchsuchen… (-Begriff zum Ausschließen)")}
+          placeholder={t(@locale, @locale_version, "Hierarchie durchsuchen… (-Begriff zum Ausschliessen)")}
           phx-keyup="search_tree"
           phx-debounce="200"
           class="bac-input bac-input-sm max-w-md"

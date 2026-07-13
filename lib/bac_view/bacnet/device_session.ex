@@ -112,6 +112,20 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
+  @doc """
+  Returns the raw scanned object list for a device session.
+
+  Each entry is `{ObjectIdentifier.t(), map() | struct()}` from the last successful
+  load. Returns `[]` when no session is running.
+  """
+  @spec scanned(integer()) :: [{ObjectIdentifier.t(), map() | struct()}]
+  def scanned(device_id) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
+      nil -> []
+      pid -> GenServer.call(pid, :scanned)
+    end
+  end
+
   @spec read_properties(integer(), ObjectIdentifier.t()) ::
           {:ok, BacView.BACnet.Protocol.PropertyReader.read_result()} | {:error, term()}
   def read_properties(device_id, %ObjectIdentifier{} = object) do
@@ -243,6 +257,10 @@ defmodule BacView.BACnet.DeviceSession do
 
   def handle_call(:objects, _from, %{objects: objects} = state) do
     {:reply, objects, state}
+  end
+
+  def handle_call(:scanned, _from, %{scanned: scanned} = state) do
+    {:reply, scanned, state}
   end
 
   def handle_call({:retry_scan_object, object, skip_mode}, _from, state)
@@ -722,35 +740,24 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
-  # Fallback that reads a curated set of properties individually (no RPM).
-  # This allows scanning devices that do not support segmentation.
-  # The resulting plain map is sufficient for summarize_object/1 and hierarchy
-  # building (for Structured View subordinate lists etc.).
+  # Fallback for devices that do not support segmentation: read the property list
+  # (indexed when the full array is too large), then read each listed property
+  # individually. The resulting plain map is sufficient for summarize_object/1 and
+  # hierarchy building (for Structured View subordinate lists etc.).
   defp read_properties_for_scan(address, %ObjectIdentifier{} = object_id, opts) do
-    props = [
-      :object_name,
-      :present_value,
-      :description,
-      :units,
-      :status_flags,
-      :event_state,
-      :event_timestamps,
-      :priority_array,
-      :number_of_states,
-      :state_text,
-      :resolution,
-      :out_of_service,
-      :subordinate_list,
-      :subordinate_annotations,
-      :node_type,
-      :node_subtype,
-      :object_identifier
-    ]
-
     read_opts =
       opts
       |> Keyword.take([:allow_unknown_properties, :remote_device_id])
       |> maybe_merge_object_opts(opts)
+
+    props =
+      case read_property_list_for_scan(address, object_id, read_opts) do
+        {:ok, property_list} ->
+          scan_readable_properties(property_list, object_id)
+
+        {:error, _reason} ->
+          scan_fallback_properties()
+      end
 
     props
     |> Task.async_stream(
@@ -769,6 +776,114 @@ defmodule BacView.BACnet.DeviceSession do
       _address, acc -> acc
     end)
     |> then(&{:ok, &1})
+  end
+
+  defp read_property_list_for_scan(address, object_id, read_opts) do
+    case Client.read_property(address, object_id, :property_list, read_opts) do
+      {:ok, property_list} ->
+        {:ok, PropertyReader.normalize_properties(unwrap_property_list(property_list))}
+
+      {:error, _address} = err ->
+        if Segmentation.fallback_error?(err) do
+          read_property_list_indexed_for_scan(address, object_id, read_opts)
+        else
+          err
+        end
+    end
+  end
+
+  defp read_property_list_indexed_for_scan(address, object_id, read_opts) do
+    case Client.read_property(
+           address,
+           object_id,
+           :property_list,
+           Keyword.put(read_opts, :array_index, 0)
+         ) do
+      {:ok, 0} ->
+        {:ok, []}
+
+      {:ok, count} when is_integer(count) and count > 0 ->
+        props =
+          1..count
+          |> Task.async_stream(
+            fn idx ->
+              case Client.read_property(
+                     address,
+                     object_id,
+                     :property_list,
+                     Keyword.merge(read_opts, array_index: idx)
+                   ) do
+                {:ok, prop} ->
+                  prop
+
+                {:error, reason} ->
+                  Logger.warning("Failed to read property_list index #{idx}: #{inspect(reason)}")
+                  nil
+              end
+            end,
+            max_concurrency: 8,
+            timeout: :infinity,
+            ordered: false
+          )
+          |> Enum.reduce([], fn
+            {:ok, prop}, acc when not is_nil(prop) ->
+              [prop | acc]
+
+            {:exit, reason}, acc ->
+              Logger.warning("property_list index read exited: #{inspect(reason)}")
+              acc
+
+            other, acc ->
+              Logger.warning("Unexpected property_list stream result: #{inspect(other)}")
+              acc
+          end)
+          |> Enum.reverse()
+          |> PropertyReader.normalize_properties()
+
+        {:ok, props}
+
+      {:error, _address} = err ->
+        err
+
+      _other ->
+        {:error, :property_list_not_readable}
+    end
+  end
+
+  defp unwrap_property_list(%BACnetArray{} = array), do: BACnetArray.to_list(array)
+  defp unwrap_property_list(list) when is_list(list), do: list
+  defp unwrap_property_list(%Encoding{value: value}), do: unwrap_property_list(value)
+  defp unwrap_property_list(value), do: [value]
+
+  defp scan_readable_properties(properties, %ObjectIdentifier{type: type})
+       when type in [:trend_log, :trend_log_multiple] do
+    Enum.reject(properties, &(&1 in [:property_list, :log_buffer]))
+  end
+
+  defp scan_readable_properties(properties, _object_id) do
+    Enum.reject(properties, &(&1 == :property_list))
+  end
+
+  defp scan_fallback_properties() do
+    [
+      :object_name,
+      :present_value,
+      :description,
+      :units,
+      :status_flags,
+      :event_state,
+      :event_timestamps,
+      :priority_array,
+      :number_of_states,
+      :state_text,
+      :resolution,
+      :out_of_service,
+      :subordinate_list,
+      :subordinate_annotations,
+      :node_type,
+      :node_subtype,
+      :object_identifier
+    ]
   end
 
   defp bump_scan_progress(

@@ -1554,7 +1554,7 @@ defmodule BacViewWeb.ObjectLive do
 
   defp format_editor_error({:fixed_bacnet_array_size, expected, actual}),
     do:
-      gt("Feste Array-Größe: %{expected} Elemente erforderlich (aktuell: %{actual}).",
+      gt("Feste Array-Grösse: %{expected} Elemente erforderlich (aktuell: %{actual}).",
         expected: expected,
         actual: actual
       )

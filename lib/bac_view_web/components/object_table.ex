@@ -59,7 +59,7 @@ defmodule BacViewWeb.ObjectTable do
         type="search"
         name="search"
         value={@search}
-        placeholder={t(@locale, @locale_version, "Objekte suchen… (-Begriff zum Ausschließen)")}
+        placeholder={t(@locale, @locale_version, "Objekte suchen… (-Begriff zum Ausschliessen)")}
         phx-keyup="search_objects"
         phx-debounce="200"
         class="bac-input bac-input-sm max-w-md"

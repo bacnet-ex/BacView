@@ -40,7 +40,7 @@ defmodule BacView.BACnet.Protocol.ObjectTypes do
     global_group: {"Globale Gruppe", "Global Group"},
     group: {"Gruppe", "Group"},
     integer_value: {"Ganzzahlwert", "Integer Value"},
-    large_analog_value: {"Großer Analogwert", "Large Analog Value"},
+    large_analog_value: {"Grosser Analogwert", "Large Analog Value"},
     life_safety_point: {"Lebensrettungspunkt", "Life Safety Point"},
     life_safety_zone: {"Lebensrettungszone", "Life Safety Zone"},
     lift: {"Aufzug", "Lift"},
