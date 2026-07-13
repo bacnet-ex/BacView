@@ -34,7 +34,6 @@ defmodule BacView.Application do
     children =
       [
         BacViewWeb.Telemetry,
-        {DNSCluster, query: Application.get_env(:bacview, :dns_cluster_query) || :ignore},
         {Phoenix.PubSub, name: BacView.PubSub},
         BacView.Settings
       ] ++
