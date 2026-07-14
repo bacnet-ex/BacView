@@ -370,7 +370,14 @@ defmodule BacViewWeb.ObjectLive do
          |> assign(:trend_chart_data, nil)
          |> assign(:trend_chart_has_data, false)
          |> assign(:trend_chart_record_count, 0)
-         |> assign(:trend_chart_error, ErrorMessage.format_reason(reason))
+         |> assign(
+           :trend_chart_error,
+           BacViewWeb.ErrorMessageText.format(
+             reason,
+             socket.assigns.locale,
+             socket.assigns.locale_version
+           )
+         )
          |> push_event("trend-chart:update", %{series: [], scales: [], empty_label: nil})}
     end
   end
@@ -2256,7 +2263,7 @@ defmodule BacViewWeb.ObjectLive do
 
   defp trend_chart_event_payload(data) do
     BacViewWeb.ChartEventPayload.build(data,
-      empty_label: "Keine plottbaren Datensätze im gewählten Zeitraum."
+      empty_label: gt("Keine plottbaren Datensätze im gewählten Zeitraum.")
     )
   end
 

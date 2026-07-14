@@ -21,14 +21,32 @@ msgstr "%{count} entries"
 msgid "%{count} Felder"
 msgstr "%{count} fields"
 
+msgid "%{count} Geräte"
+msgstr "%{count} devices"
+
 msgid "%{count} Meldungsklassen"
 msgstr "%{count} notification classes"
+
+msgid "%{count} Meldungsklassen eingetragen."
+msgstr "%{count} notification classes enrolled."
+
+msgid "%{count} Meldungsklassen noch eingetragen."
+msgstr "%{count} notification classes still enrolled."
 
 msgid "%{count} Objekte"
 msgstr "%{count} objects"
 
+msgid "%{count} Objekte erfolgreich nachgelesen."
+msgstr "%{count} objects re-read successfully."
+
+msgid "%{count} Objekte in der Geräteliste gefunden"
+msgstr "%{count} objects found in device list"
+
 msgid "%{count} Objekte konnten nicht gelesen werden"
 msgstr "%{count} objects could not be read"
+
+msgid "%{count} Objekte verarbeiten"
+msgstr "Processing %{count} objects"
 
 msgid "%{count} Prioritäten gesetzt"
 msgstr "%{count} priorities set"
@@ -54,11 +72,17 @@ msgstr "%{count} skipped"
 msgid "%{done} / %{total}"
 msgstr "%{done} / %{total}"
 
+msgid "%{sec}s"
+msgstr "%{sec}s"
+
 msgid "%{shown} von %{total} Geräten"
 msgstr "%{shown} of %{total} devices"
 
 msgid "%{size} Bytes"
 msgstr "%{size} bytes"
+
+msgid "%{succeeded} Objekte nachgelesen, %{failed} fehlgeschlagen."
+msgstr "%{succeeded} objects re-read, %{failed} failed."
 
 msgid "0 Geräte"
 msgstr "0 devices"
@@ -114,6 +138,9 @@ msgstr "Refresh"
 msgid "Aktualisiert"
 msgstr "Updated"
 
+msgid "Aktuell: %{object}"
+msgstr "Current: %{object}"
+
 msgid "Aktuellen Ordner durchsuchen… (-Begriff zum Ausschliessen)"
 msgstr "Search current folder… (-term to exclude)"
 
@@ -132,6 +159,9 @@ msgstr "All"
 msgid "Alle Abonnements auswählen"
 msgstr "Select all subscriptions"
 
+msgid "Alle COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen."
+msgstr "All COV cancelled: %{ok} succeeded, %{failed} failed."
+
 msgid "Alle Objekte anzeigen"
 msgstr "Show all objects"
 
@@ -147,11 +177,14 @@ msgstr "All special characters"
 msgid "Alle Validierung überspringen"
 msgstr "Skip all validation"
 
+msgid "Alle Validierung überspringen kann fehlerhafte Datentypen akzeptieren und sollte nur bei Bedarf verwendet werden."
+msgstr "Skipping all validation may accept incorrect data types and should only be used when necessary."
+
 msgid "Alle auswählen"
 msgstr "Select all"
 
 msgid "Alle kündigen"
-msgstr "Cancel all"
+msgstr "Unsubscribe all COV"
 
 msgid "Alle sichtbaren Einträge auswählen"
 msgstr "Select all visible entries"
@@ -170,9 +203,6 @@ msgstr "As text"
 
 msgid "Ansicht"
 msgstr "View"
-
-msgid "Attempting to reconnect"
-msgstr "Attempting to reconnect"
 
 msgid "Aufklappen"
 msgstr "Expand"
@@ -206,6 +236,9 @@ msgstr "Author"
 
 msgid "BACnet Netzwerk-Explorer"
 msgstr "BACnet Network Explorer"
+
+msgid "BACnet-Objekte scannen…"
+msgstr "Scanning BACnet objects…"
 
 msgid "BACnet-Stack ist nicht gestartet."
 msgstr "BACnet stack is not running."
@@ -288,14 +321,23 @@ msgstr "Subscribe COV (selection)"
 msgid "COV abonnieren erfolgreich."
 msgstr "COV subscription successful."
 
+msgid "COV abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen."
+msgstr "COV subscribed: %{ok} succeeded, %{failed} failed."
+
 msgid "COV bestätigt"
 msgstr "COV confirmed"
 
+msgid "COV erneut abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen."
+msgstr "COV resubscribed: %{ok} succeeded, %{failed} failed."
+
+msgid "COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen."
+msgstr "COV cancelled: %{ok} succeeded, %{failed} failed."
+
 msgid "COV kündigen"
-msgstr "Cancel COV"
+msgstr "Unsubscribe COV"
 
 msgid "COV kündigen (Auswahl)"
-msgstr "Cancel COV (selection)"
+msgstr "Unsubscribe COV (selection)"
 
 msgid "COV-Abonnement fehlgeschlagen: %{detail}"
 msgstr "COV subscription failed: %{detail}"
@@ -363,8 +405,14 @@ msgstr "File cannot be written."
 msgid "Datei lesen"
 msgstr "Read file"
 
+msgid "Datei lesen fehlgeschlagen: %{detail}"
+msgstr "Failed to read file: %{detail}"
+
 msgid "Datei schreiben"
 msgstr "Write file"
+
+msgid "Datei schreiben fehlgeschlagen: %{detail}"
+msgstr "Failed to write file: %{detail}"
 
 msgid "Dateiübertragung"
 msgstr "File transfer"
@@ -432,6 +480,9 @@ msgstr "Export EDE"
 msgid "EDE-Export"
 msgstr "EDE export"
 
+msgid "EDE-Export fehlgeschlagen: %{detail}"
+msgstr "EDE export failed: %{detail}"
+
 msgid "Eigenschaft"
 msgstr "Property"
 
@@ -462,8 +513,17 @@ msgstr "Loading properties…"
 msgid "Eigenschaften werden gelesen…"
 msgstr "Reading properties…"
 
+msgid "Eigenschaftenlesen fehlgeschlagen: %{detail}"
+msgstr "Failed to read properties: %{detail}"
+
 msgid "Eigenschaftsfehler"
 msgstr "Property error"
+
+msgid "Eigenschaftswert entspricht nicht der BACnet-Spezifikation (%{property})."
+msgstr "Property value does not match the BACnet specification (%{property})."
+
+msgid "Eigenschaftswert hat einen ungültigen BACnet-Datentyp (%{property})."
+msgstr "Property value has an invalid BACnet data type (%{property})."
 
 msgid "Ein Parameter liegt ausserhalb des erlaubten Bereichs."
 msgstr "A parameter is outside the allowed range."
@@ -473,6 +533,9 @@ msgstr "An unexpected error occurred."
 
 msgid "Einheit"
 msgstr "Unit"
+
+msgid "Einige Objekte haben ungültige BACnet-Werte. Sie können sie mit reduzierter Validierung erneut lesen."
+msgstr "Some objects have invalid BACnet values. You can re-read them with reduced validation."
 
 msgid "Eintrag in die Empfängerliste fehlgeschlagen."
 msgstr "Failed to enroll in recipient list."
@@ -495,6 +558,9 @@ msgstr "Discovered"
 msgid "Ereignis"
 msgstr "Event"
 
+msgid "Ereignis-Export fehlgeschlagen: %{detail}"
+msgstr "Event export failed: %{detail}"
+
 msgid "Ereignisinformation"
 msgstr "Event information"
 
@@ -516,6 +582,15 @@ msgstr "Resubscribe (selection)"
 msgid "Erweitert"
 msgstr "Advanced"
 
+msgid "Erweitert: 7 Tageseinträge als JSON. Die Anzahl der Elemente muss 7 bleiben."
+msgstr "Advanced: 7 day entries as JSON. The number of elements must remain 7."
+
+msgid "Erweitert: Struktur als JSON bearbeiten. Feldnamen müssen unverändert bleiben."
+msgstr "Advanced: edit structure as JSON. Field names must remain unchanged."
+
+msgid "Erzeugt zusätzlich eine StateTexts-CSV und verknüpft Binär-/Multistate-Objekte."
+msgstr "Also creates a StateTexts CSV and links binary/multistate objects."
+
 msgid "Exportieren"
 msgstr "Export"
 
@@ -524,6 +599,9 @@ msgstr "Error log (%{count})"
 
 msgid "Felder"
 msgstr "Fields"
+
+msgid "Feste Array-Grösse: %{expected} Elemente erforderlich (aktuell: %{actual})."
+msgstr "Fixed array size: %{expected} elements required (currently: %{actual})."
 
 msgid "Foreign Device Registrierung gestartet."
 msgstr "Foreign Device registration started."
@@ -551,6 +629,9 @@ msgstr "Reinitialize device"
 
 msgid "Gerät nicht gefunden."
 msgstr "Device not found."
+
+msgid "Gerät wird geladen…"
+msgstr "Loading device…"
 
 msgid "Gerät wird neu initialisiert."
 msgstr "Device is being reinitialized."
@@ -588,6 +669,9 @@ msgstr "Device error (code %{code})"
 msgid "Gerätefehler: %{code}"
 msgstr "Device error: %{code}"
 
+msgid "Gerätekommunikation fehlgeschlagen: %{detail}"
+msgstr "Device communication control failed: %{detail}"
+
 msgid "Gerätekommunikation steuern"
 msgstr "Device communication control"
 
@@ -602,6 +686,9 @@ msgstr "Clear device list"
 
 msgid "Geräteobjekt"
 msgstr "Device object"
+
+msgid "Geräteobjekt lesen…"
+msgstr "Reading device object…"
 
 msgid "Geräteobjekt öffnen"
 msgstr "Open device object"
@@ -626,6 +713,9 @@ msgstr "Download"
 
 msgid "Hierarchie"
 msgstr "Hierarchy"
+
+msgid "Hierarchie aufbauen…"
+msgstr "Building hierarchy…"
 
 msgid "Hierarchie aus Objektnamen"
 msgstr "Hierarchy from object names"
@@ -720,8 +810,14 @@ msgstr "No active alarms. Objects with in-alarm or fault status appear here."
 msgid "Keine aktiven COV-Abonnements."
 msgstr "No active COV subscriptions."
 
+msgid "Keine bearbeitbaren Felder für diesen Wert. Wechseln Sie zu JSON."
+msgstr "No editable fields for this value. Switch to JSON."
+
 msgid "Keine exportierbaren Objekte geladen."
 msgstr "No exportable objects loaded."
+
+msgid "Keine plottbaren Datensätze im gewählten Zeitraum."
+msgstr "No plottable records in the selected time range."
 
 msgid "Keine seriellen Ports gefunden."
 msgstr "No serial ports found."
@@ -798,6 +894,9 @@ msgstr "Message"
 msgid "Meldungen"
 msgstr "Notifications"
 
+msgid "Meldungsklassen-Empfängerliste fehlgeschlagen: %{detail}"
+msgstr "Notification class recipient list failed: %{detail}"
+
 msgid "Mindestens ein Objekttyp muss ausgewählt sein."
 msgstr "At least one object type must be selected."
 
@@ -837,6 +936,9 @@ msgstr "Network scan completed."
 msgid "Netzwerkschnittstelle nicht gefunden."
 msgstr "Network interface not found."
 
+msgid "Netzwerkschnittstelle nicht gefunden: %{interface}"
+msgstr "Network interface not found: %{interface}"
+
 msgid "Netzwerkschnittstellen konnten nicht ermittelt werden."
 msgstr "Unable to enumerate network interfaces."
 
@@ -851,6 +953,12 @@ msgstr "New value"
 
 msgid "Neuer Wert (JSON)"
 msgstr "New value (JSON)"
+
+msgid "Neues Ereignis: %{object}"
+msgstr "New event: %{object}"
+
+msgid "Neuinitialisierung fehlgeschlagen: %{detail}"
+msgstr "Reinitialize device failed: %{detail}"
 
 msgid "Neustart-Typ"
 msgstr "Restart type"
@@ -885,6 +993,9 @@ msgstr "Show only %{type}"
 msgid "Nur I-Am-Antworten mit dieser BACnet-Hersteller-ID übernehmen."
 msgstr "Only accept I-Am responses with this BACnet vendor ID."
 
+msgid "Nur Objekttypen, die auf dem Gerät vorhanden sind. Standard: alle ausser Datei und Strukturansicht."
+msgstr "Only object types present on the device. Default: all except file and structured view."
+
 msgid "Nur bei Modus „Zeichenpositionen“. Beispiel: 10, 5, 8 teilt nach 10, dann 5 und danach 8 Zeichen."
 msgstr "Only for “Character positions” mode. Example: 10, 5, 8 splits after 10, then 5, then 8 characters."
 
@@ -899,6 +1010,9 @@ msgstr "High limit"
 
 msgid "Objekt"
 msgstr "Object"
+
+msgid "Objekt %{object} erfolgreich nachgelesen."
+msgstr "Object %{object} re-read successfully."
 
 msgid "Objekt auswählen"
 msgstr "Select object"
@@ -918,6 +1032,9 @@ msgstr "Loading object…"
 msgid "Objekt-ID"
 msgstr "Object ID"
 
+msgid "Objekt-IDs lesen: %{done} / %{total}"
+msgstr "Reading object IDs: %{done} / %{total}"
+
 msgid "Objektdetails"
 msgstr "Object details"
 
@@ -927,6 +1044,9 @@ msgstr "Objects"
 msgid "Objekte suchen… (-Begriff zum Ausschliessen)"
 msgstr "Search objects… (-term to exclude)"
 
+msgid "Objekte werden mit reduzierter Validierung nachgelesen…"
+msgstr "Re-reading objects with reduced validation…"
+
 msgid "Objekteigenschaften öffnen"
 msgstr "Open object properties"
 
@@ -935,6 +1055,9 @@ msgstr "Object error"
 
 msgid "Objektliste"
 msgstr "Object list"
+
+msgid "Objektliste abrufen…"
+msgstr "Fetching object list…"
 
 msgid "Objekttypen"
 msgstr "Object types"
@@ -980,6 +1103,9 @@ msgstr "Present_Value"
 
 msgid "Priorität"
 msgstr "Priority"
+
+msgid "Priorität %{priority} zurückgesetzt (null)."
+msgstr "Priority %{priority} reset (null)."
 
 msgid "Priorität zurücksetzen fehlgeschlagen."
 msgstr "Failed to reset priority."
@@ -1074,9 +1200,6 @@ msgstr "Serial port not found."
 msgid "Sicherheitsfehler"
 msgstr "Security error"
 
-msgid "Something went wrong!"
-msgstr "Something went wrong!"
-
 msgid "Sonderzeichen „%{char}“"
 msgstr "Special character “%{char}”"
 
@@ -1086,6 +1209,9 @@ msgstr "Save"
 msgid "Sprache wechseln"
 msgstr "Switch language"
 
+msgid "Stack neu gestartet, aber BBMD-Registrierung fehlgeschlagen: %{detail}"
+msgstr "Stack restarted, but BBMD registration failed: %{detail}"
+
 msgid "Stack-Einstellungen"
 msgstr "Stack settings"
 
@@ -1094,6 +1220,9 @@ msgstr "Stack settings saved."
 
 msgid "Stack-Einstellungen konnten nicht gespeichert werden."
 msgstr "Stack settings could not be saved."
+
+msgid "Stack-Neustart fehlgeschlagen: %{detail}"
+msgstr "Stack restart failed: %{detail}"
 
 msgid "Standard"
 msgstr "Default"
@@ -1122,6 +1251,9 @@ msgstr "Focus search"
 msgid "System"
 msgstr "System"
 
+msgid "Systemfehler: %{reason}"
+msgstr "System error: %{reason}"
+
 msgid "TTL (Sek.)"
 msgstr "TTL (sec.)"
 
@@ -1146,11 +1278,17 @@ msgstr "Text"
 msgid "Timeout (ms)"
 msgstr "Timeout (ms)"
 
+msgid "Timeout muss mindestens %{min} ms betragen."
+msgstr "Timeout must be at least %{min} ms."
+
 msgid "Timer-Änderung"
 msgstr "Timer change"
 
 msgid "Transport"
 msgstr "Transport"
+
+msgid "Transport %{transport} ist nicht verfügbar."
+msgstr "Transport %{transport} is not available."
 
 msgid "Transport & lokales Gerät"
 msgstr "Transport & local device"
@@ -1179,11 +1317,17 @@ msgstr "UDP port"
 msgid "UTC"
 msgstr "UTC"
 
+msgid "Unbegrenzt"
+msgstr "Unlimited"
+
 msgid "Unbekannt"
 msgstr "Unknown"
 
 msgid "Unbekannte Eigenschaften"
 msgstr "Unknown properties"
+
+msgid "Unbekannte JSON-Felder: %{keys}"
+msgstr "Unknown JSON fields: %{keys}"
 
 msgid "Unbekannter Transport."
 msgstr "Unknown transport."
@@ -1233,6 +1377,9 @@ msgstr "Invalid JSON value."
 msgid "Ungültiger Wert für den geplanten Datentyp."
 msgstr "Invalid value for the scheduled data type."
 
+msgid "Ungültiger Wert: %{reason}"
+msgstr "Invalid value: %{reason}"
+
 msgid "Ungültiger Zeitraum. Bitte Start- und Endzeit prüfen."
 msgstr "Invalid time range. Please check start and end time."
 
@@ -1260,6 +1407,15 @@ msgstr "Switch alarm sub-tabs"
 msgid "Verbindung abgebrochen (%{reason})"
 msgstr "Connection aborted (%{reason})"
 
+msgid "Verbindung wird wiederhergestellt…"
+msgstr "Attempting to reconnect"
+
+msgid "Verbindung zum Gerät…"
+msgstr "Connecting to device…"
+
+msgid "Verbindung zum Server nicht möglich"
+msgstr "Unable to connect to server"
+
 msgid "Verbleibend"
 msgstr "Remaining"
 
@@ -1283,9 +1439,6 @@ msgstr "Warm start"
 
 msgid "Warte auf BACnet-Antwort…"
 msgstr "Waiting for BACnet response…"
-
-msgid "We can't find the internet"
-msgstr "We can't find the internet"
 
 msgid "Wert"
 msgstr "Value"
@@ -1338,6 +1491,9 @@ msgstr "Time mode"
 msgid "Zeitsynchronisation"
 msgstr "Time synchronization"
 
+msgid "Zeitsynchronisation fehlgeschlagen: %{detail}"
+msgstr "Time synchronization failed: %{detail}"
+
 msgid "Zeitsynchronisation gesendet."
 msgstr "Time synchronization sent."
 
@@ -1346,6 +1502,9 @@ msgstr "Device communication timed out."
 
 msgid "Ziel-IP (optional)"
 msgstr "Target IP (optional)"
+
+msgid "Zu viele Ziel-IP-Adressen (max. %{max})."
+msgstr "Too many target IP addresses (max. %{max})."
 
 msgid "Zugriff auf den seriellen Port verweigert (Berechtigung fehlt)."
 msgstr "Access to the serial port denied (permission missing)."
@@ -1398,8 +1557,14 @@ msgstr "expected number"
 msgid "erwartet true/false"
 msgstr "expected true/false"
 
+msgid "true oder false"
+msgstr "true or false"
+
 msgid "unbegrenzt"
 msgstr "indefinite"
+
+msgid "z. B. 21.5"
+msgstr "e.g. 21.5"
 
 msgid "Änderungen aktivieren"
 msgstr "Activate changes"

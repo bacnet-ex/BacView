@@ -1424,9 +1424,6 @@ body.bac-col-resizing * {
 }
 
 .bac-alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
   padding: 0.875rem 1rem;
   border-radius: var(--bac-radius-sm);
   border: 1px solid var(--bac-border);
@@ -1435,6 +1432,57 @@ body.bac-col-resizing * {
   font-size: 0.875rem;
   cursor: pointer;
   animation: bac-slide-in 0.3s ease;
+}
+
+.bac-alert:not(:has(.bac-alert-header)) {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.75rem;
+}
+
+.bac-alert-header {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 0.75rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.bac-alert-icon {
+  flex-shrink: 0;
+}
+
+.bac-alert-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  font-weight: 600;
+  color: var(--bac-text);
+}
+
+.bac-alert-message {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  color: var(--bac-text-muted);
+}
+
+.bac-alert-body {
+  margin-top: 0.25rem;
+  padding-left: 2rem;
+}
+
+.bac-alert-close {
+  flex: 0 0 auto;
+  align-self: flex-start;
+  margin-left: auto;
+  opacity: 0.4;
+  transition: opacity 0.12s ease;
+}
+
+.bac-alert-close:hover {
+  opacity: 0.7;
 }
 
 @keyframes bac-slide-in {

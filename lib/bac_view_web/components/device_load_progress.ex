@@ -7,12 +7,14 @@ defmodule BacViewWeb.DeviceLoadProgress do
 
   def status_banner(assigns) do
     progress = normalize_progress(assigns.progress)
+    locale = assigns.locale
+    locale_version = assigns.locale_version
 
     assigns =
       assigns
       |> assign(:progress, progress)
-      |> assign(:heading, stage_label(progress.stage))
-      |> assign(:subtext, status_subtext(progress))
+      |> assign(:heading, stage_label(progress.stage, locale, locale_version))
+      |> assign(:subtext, status_subtext(progress, locale, locale_version))
 
     ~H"""
     <div
@@ -65,7 +67,9 @@ defmodule BacViewWeb.DeviceLoadProgress do
               {entry.object}
             </span>
             <span :if={entry.object} class="bac-text-faint mx-1">·</span>
-            <span class="text-[var(--bac-amber)]">{entry.message}</span>
+            <span class="text-[var(--bac-amber)]">
+              {error_entry_text(entry, @locale, @locale_version)}
+            </span>
           </li>
         </ul>
       </details>
@@ -98,42 +102,57 @@ defmodule BacViewWeb.DeviceLoadProgress do
 
   defp normalize_error_log(error_log) when is_list(error_log) do
     Enum.map(error_log, fn
-      %{object: object, message: message} when is_binary(message) ->
-        %{object: object, message: message}
-
-      %{object: object, message: message} ->
-        %{object: object, message: to_string(message)}
+      %{object: object} = entry ->
+        %{
+          object: object,
+          reason: Map.get(entry, :reason),
+          message: entry_message(entry)
+        }
 
       {object, message} ->
-        %{object: object, message: to_string(message)}
+        %{object: object, reason: nil, message: to_string(message)}
 
       message when is_binary(message) ->
-        %{object: nil, message: message}
+        %{object: nil, reason: nil, message: message}
 
       other ->
-        %{object: nil, message: inspect(other)}
+        %{object: nil, reason: nil, message: inspect(other)}
     end)
   end
 
   defp normalize_error_log(_error_log), do: []
 
-  defp stage_label(:connecting),
-    do: dgettext(BacViewWeb.Gettext, "default", "Verbindung zum Gerät…")
+  defp entry_message(%{message: message}) when is_binary(message), do: message
+  defp entry_message(%{message: message}), do: to_string(message)
+  defp entry_message(_entry), do: nil
 
-  defp stage_label(:reading_device),
-    do: dgettext(BacViewWeb.Gettext, "default", "Geräteobjekt lesen…")
+  defp error_entry_text(entry, locale, locale_version) do
+    case Map.get(entry, :reason) do
+      reason when not is_nil(reason) ->
+        BacViewWeb.ErrorMessageText.format(reason, locale, locale_version)
 
-  defp stage_label(:reading_object_list),
-    do: dgettext(BacViewWeb.Gettext, "default", "Objektliste abrufen…")
+      _ ->
+        Map.get(entry, :message, "")
+    end
+  end
 
-  defp stage_label(:scanning_objects),
-    do: dgettext(BacViewWeb.Gettext, "default", "BACnet-Objekte scannen…")
+  defp stage_label(:connecting, locale, locale_version),
+    do: t(locale, locale_version, "Verbindung zum Gerät…")
 
-  defp stage_label(:building_hierarchy),
-    do: dgettext(BacViewWeb.Gettext, "default", "Hierarchie aufbauen…")
+  defp stage_label(:reading_device, locale, locale_version),
+    do: t(locale, locale_version, "Geräteobjekt lesen…")
 
-  defp stage_label(_connecting),
-    do: dgettext(BacViewWeb.Gettext, "default", "Gerät wird geladen…")
+  defp stage_label(:reading_object_list, locale, locale_version),
+    do: t(locale, locale_version, "Objektliste abrufen…")
+
+  defp stage_label(:scanning_objects, locale, locale_version),
+    do: t(locale, locale_version, "BACnet-Objekte scannen…")
+
+  defp stage_label(:building_hierarchy, locale, locale_version),
+    do: t(locale, locale_version, "Hierarchie aufbauen…")
+
+  defp stage_label(_connecting, locale, locale_version),
+    do: t(locale, locale_version, "Gerät wird geladen…")
 
   defp progress_percent(%{total: total, done: done})
        when is_integer(total) and total > 0 and is_integer(done) do
@@ -142,42 +161,45 @@ defmodule BacViewWeb.DeviceLoadProgress do
 
   defp progress_percent(_progress_percent), do: nil
 
-  defp progress_detail(%{stage: :reading_object_list, done: done, total: total})
+  defp progress_detail(
+         %{stage: :reading_object_list, done: done, total: total},
+         locale,
+         locale_version
+       )
        when is_integer(done) and done > 0 and is_integer(total) and total > 0 do
-    dgettext(BacViewWeb.Gettext, "default", "Objekt-IDs lesen: %{done} / %{total}", %{
+    t(locale, locale_version, "Objekt-IDs lesen: %{done} / %{total}",
       done: done,
       total: total
-    })
+    )
   end
 
-  defp progress_detail(%{stage: :reading_object_list, total: total})
+  defp progress_detail(%{stage: :reading_object_list, total: total}, locale, locale_version)
        when is_integer(total) and total > 0 do
-    dgettext(BacViewWeb.Gettext, "default", "%{count} Objekte in der Geräteliste gefunden", %{
-      count: total
-    })
+    t(locale, locale_version, "%{count} Objekte in der Geräteliste gefunden", count: total)
   end
 
-  defp progress_detail(%{stage: :scanning_objects, detail: detail}) when is_binary(detail) do
-    dgettext(BacViewWeb.Gettext, "default", "Aktuell: %{object}", %{object: detail})
+  defp progress_detail(%{stage: :scanning_objects, detail: detail}, locale, locale_version)
+       when is_binary(detail) do
+    t(locale, locale_version, "Aktuell: %{object}", object: detail)
   end
 
-  defp progress_detail(%{stage: :building_hierarchy, total: total})
+  defp progress_detail(%{stage: :building_hierarchy, total: total}, locale, locale_version)
        when is_integer(total) and total > 0 do
-    dgettext(BacViewWeb.Gettext, "default", "%{count} Objekte verarbeiten", %{count: total})
+    t(locale, locale_version, "%{count} Objekte verarbeiten", count: total)
   end
 
-  defp progress_detail(_detail), do: nil
+  defp progress_detail(_detail, _locale, _locale_version), do: nil
 
-  defp status_subtext(progress) do
-    case progress_detail(progress) do
-      nil -> waiting_subtext(progress)
+  defp status_subtext(progress, locale, locale_version) do
+    case progress_detail(progress, locale, locale_version) do
+      nil -> waiting_subtext(progress, locale, locale_version)
       detail -> detail
     end
   end
 
-  defp waiting_subtext(%{stage: :building_hierarchy}), do: nil
+  defp waiting_subtext(%{stage: :building_hierarchy}, _locale, _locale_version), do: nil
 
-  defp waiting_subtext(_progress) do
-    dgettext(BacViewWeb.Gettext, "default", "Warte auf BACnet-Antwort…")
+  defp waiting_subtext(_progress, locale, locale_version) do
+    t(locale, locale_version, "Warte auf BACnet-Antwort…")
   end
 end

@@ -6,7 +6,7 @@ defmodule BacViewWeb.CovNotificationChartLive do
 
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Protocol.CovNotificationChart
-  alias BacView.BACnet.Protocol.ErrorMessage
+
   alias BacView.BACnet.Protocol.TrendLogChart
   alias BacView.BACnet.Protocol.TrendLogExport
 
@@ -185,7 +185,10 @@ defmodule BacViewWeb.CovNotificationChartLive do
          |> assign(:cov_chart_has_data, chart_has_data?(data))
          |> assign(:cov_chart_record_count, length(records))
          |> assign(:cov_chart_error, nil)
-         |> push_event("trend-chart:update", chart_event_payload(data))}
+         |> push_event(
+           "trend-chart:update",
+           chart_event_payload(data, socket.assigns.locale, socket.assigns.locale_version)
+         )}
 
       {:error, reason} ->
         {:noreply,
@@ -193,7 +196,14 @@ defmodule BacViewWeb.CovNotificationChartLive do
          |> assign(:cov_chart_data, nil)
          |> assign(:cov_chart_has_data, false)
          |> assign(:cov_chart_record_count, 0)
-         |> assign(:cov_chart_error, ErrorMessage.format_reason(reason))
+         |> assign(
+           :cov_chart_error,
+           BacViewWeb.ErrorMessageText.format(
+             reason,
+             socket.assigns.locale,
+             socket.assigns.locale_version
+           )
+         )
          |> push_event("trend-chart:update", %{series: [], scales: [], empty_label: nil})}
     end
   end
@@ -293,9 +303,15 @@ defmodule BacViewWeb.CovNotificationChartLive do
 
   defp chart_has_data?(data), do: BacViewWeb.ChartEventPayload.has_data?(data)
 
-  defp chart_event_payload(data) do
+  defp chart_event_payload(data, locale, locale_version) do
     BacViewWeb.ChartEventPayload.build(data,
-      empty_label: "Keine plottbaren COV-Meldungen im gewählten Zeitraum."
+      empty_label:
+        BacViewWeb.GettextLC.translate!(
+          "Keine plottbaren COV-Meldungen im gewählten Zeitraum.",
+          %{},
+          locale,
+          locale_version
+        )
     )
   end
 

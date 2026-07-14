@@ -17,7 +17,7 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.HierarchyBuilder
   alias BacView.BACnet.ObjectScanRead
   alias BacView.BACnet.PropertyLoad
-  alias BacView.BACnet.Protocol.ErrorMessage
+
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyDisplay
@@ -810,7 +810,6 @@ defmodule BacView.BACnet.DeviceSession do
       %{
         object: format_current_object(object_id),
         object_id: object_id,
-        message: ErrorMessage.format_reason(reason),
         reason: normalized_reason,
         recoverable: recoverable,
         retry_modes: retry_modes_for_reason(normalized_reason)
@@ -963,6 +962,13 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp normalize_error_log(error_log) when is_list(error_log) do
     Enum.map(error_log, fn
+      %{object: object, reason: reason} = entry ->
+        %{
+          object: object,
+          reason: reason,
+          message: Map.get(entry, :message)
+        }
+
       %{object: object, message: message} when is_binary(message) ->
         %{object: object, message: message}
 

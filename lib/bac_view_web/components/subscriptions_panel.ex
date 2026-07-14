@@ -276,7 +276,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
               <td class="bac-mono">{sub.property}</td>
               <td class="bac-text-faint">{format_time(sub.last_cov_at)}</td>
               <td class="bac-mono text-[var(--bac-emerald)]">{sub.last_value_formatted || "—"}</td>
-              <td class="bac-text-faint">{remaining_label(sub)}</td>
+              <td class="bac-text-faint">{remaining_label(sub, @locale, @locale_version)}</td>
               <td>
                 <div class="flex flex-wrap items-center gap-1">
                   <button
@@ -464,13 +464,14 @@ defmodule BacViewWeb.SubscriptionsPanel do
   defp time_remaining_label(nil), do: "—"
   defp time_remaining_label(sec) when is_integer(sec), do: "#{sec}s"
 
-  defp remaining_label(%{lifetime: 0}), do: dgettext(BacViewWeb.Gettext, "default", "Unbegrenzt")
+  defp remaining_label(%{lifetime: 0}, locale, locale_version),
+    do: t(locale, locale_version, "Unbegrenzt")
 
-  defp remaining_label(%{expires_at: nil}), do: "—"
+  defp remaining_label(%{expires_at: nil}, _locale, _locale_version), do: "—"
 
-  defp remaining_label(%{expires_at: expires_at}) do
+  defp remaining_label(%{expires_at: expires_at}, locale, locale_version) do
     sec = max(0, DateTime.diff(expires_at, DateTime.utc_now(), :second))
-    dgettext(BacViewWeb.Gettext, "default", "%{sec}s", %{sec: sec})
+    t(locale, locale_version, "%{sec}s", sec: sec)
   end
 
   defp object_path(device_id, %{type: type, instance: instance}, list_opts) do

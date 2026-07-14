@@ -503,7 +503,7 @@ defmodule BacViewWeb.ObjectDetail do
                         type="text"
                         name="value"
                         value={input_value(prop, @object)}
-                        placeholder={write_placeholder(prop)}
+                        placeholder={write_placeholder(prop, @locale, @locale_version)}
                         class="bac-input bac-input-sm bac-mono w-full"
                       />
                       <.write_actions
@@ -853,13 +853,14 @@ defmodule BacViewWeb.ObjectDetail do
     PropertyFormatter.format_edit_value(Map.get(prop, :value), object, prop)
   end
 
-  defp write_placeholder(%{property: :present_value, type: "REAL"}),
-    do: dgettext(BacViewWeb.Gettext, "default", "z. B. 21.5")
+  defp write_placeholder(%{property: :present_value, type: "REAL"}, locale, locale_version),
+    do: t(locale, locale_version, "z. B. 21.5")
 
-  defp write_placeholder(%{type: "BOOLEAN"}),
-    do: dgettext(BacViewWeb.Gettext, "default", "true oder false")
+  defp write_placeholder(%{type: "BOOLEAN"}, locale, locale_version),
+    do: t(locale, locale_version, "true oder false")
 
-  defp write_placeholder(_Gettext), do: dgettext(BacViewWeb.Gettext, "default", "Neuer Wert")
+  defp write_placeholder(_prop, locale, locale_version),
+    do: t(locale, locale_version, "Neuer Wert")
 
   defp format_time(nil), do: "—"
 

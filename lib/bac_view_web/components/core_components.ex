@@ -27,7 +27,9 @@ defmodule BacViewWeb.CoreComponents do
 
   """
   use Phoenix.Component
-  use Gettext, backend: BacViewWeb.Gettext
+  use BacViewWeb.LocaleAttrs
+
+  import BacViewWeb.GettextLC, only: [t: 3]
 
   alias Phoenix.LiveView.JS
 
@@ -58,28 +60,32 @@ defmodule BacViewWeb.CoreComponents do
       role="alert"
       class={[
         "bac-alert",
+        @title && "bac-alert-titled",
         @kind == :info && "bac-alert-info",
         @kind == :error && "bac-alert-error"
       ]}
       {@rest}
     >
-      <.icon
-        :if={@kind == :info}
-        name="hero-information-circle"
-        class="bac-alert-icon size-5 shrink-0"
-      />
-      <.icon
-        :if={@kind == :error}
-        name="hero-exclamation-circle"
-        class="bac-alert-icon size-5 shrink-0"
-      />
-      <div class="flex-1 min-w-0">
-        <p :if={@title} class="font-semibold text-[var(--bac-text)]">{@title}</p>
-        <p class="text-[var(--bac-text-muted)]">{msg}</p>
+      <div class="bac-alert-header">
+        <.icon
+          :if={@kind == :info}
+          name="hero-information-circle"
+          class="bac-alert-icon size-5 shrink-0"
+        />
+        <.icon
+          :if={@kind == :error}
+          name="hero-exclamation-circle"
+          class="bac-alert-icon size-5 shrink-0"
+        />
+        <p :if={@title} class="bac-alert-title">{@title}</p>
+        <div :if={!@title} class="bac-alert-message">{msg}</div>
+        <button type="button" class="bac-alert-close" aria-label={t(@locale, @locale_version, "close")}>
+          <.icon name="hero-x-mark" class="size-4" />
+        </button>
       </div>
-      <button type="button" class="shrink-0 opacity-40 hover:opacity-70" aria-label={gettext("close")}>
-        <.icon name="hero-x-mark" class="size-4" />
-      </button>
+      <div :if={@title} class="bac-alert-body">
+        <div class="bac-alert-message">{msg}</div>
+      </div>
     </div>
     """
   end
@@ -348,7 +354,7 @@ defmodule BacViewWeb.CoreComponents do
         <tr>
           <th :for={col <- @col}>{col[:label]}</th>
           <th :if={@action != []}>
-            <span class="sr-only">{gettext("Actions")}</span>
+            <span class="sr-only">{t(@locale, @locale_version, "Actions")}</span>
           </th>
         </tr>
       </thead>

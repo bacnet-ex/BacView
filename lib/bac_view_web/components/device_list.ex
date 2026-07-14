@@ -162,10 +162,10 @@ defmodule BacViewWeb.DeviceList do
         <.link
           navigate={~p"/devices/#{@device.id}"}
           class="flex-1 min-w-0 block overflow-hidden"
-          title={device_name(@device)}
+          title={device_name(@device, @locale, @locale_version)}
         >
           <h3 class="bac-device-card-title truncate">
-            {device_name(@device)}
+            {device_name(@device, @locale, @locale_version)}
           </h3>
           <p :if={device_description(@device)} class="text-xs bac-text-muted truncate mt-0.5">
             {device_description(@device)}
@@ -265,9 +265,9 @@ defmodule BacViewWeb.DeviceList do
               <.link
                 navigate={~p"/devices/#{device.id}"}
                 class="block truncate"
-                title={device_name(device)}
+                title={device_name(device, @locale, @locale_version)}
               >
-                {device_name(device)}
+                {device_name(device, @locale, @locale_version)}
               </.link>
             </td>
             <td class="text-[var(--bac-text-muted)]">
@@ -378,7 +378,7 @@ defmodule BacViewWeb.DeviceList do
       ) do
     devices
     |> filtered_devices(search, vendor_names, locale, locale_version)
-    |> maybe_sorted(sort_by, sort_dir, vendor_names, view)
+    |> maybe_sorted(sort_by, sort_dir, vendor_names, view, locale, locale_version)
   end
 
   @doc false
@@ -387,12 +387,15 @@ defmodule BacViewWeb.DeviceList do
   end
 
   @doc false
-  def sorted_devices(devices, sort_by, sort_dir, vendor_names)
+  def sorted_devices(devices, sort_by, sort_dir, vendor_names, locale \\ "de", locale_version \\ 0)
+
+  def sorted_devices(devices, sort_by, sort_dir, vendor_names, locale, locale_version)
       when sort_by in @sort_columns do
-    Enum.sort_by(devices, &sort_key(&1, sort_by, vendor_names), sort_dir)
+    Enum.sort_by(devices, &sort_key(&1, sort_by, vendor_names, locale, locale_version), sort_dir)
   end
 
-  def sorted_devices(devices, _sort_by, _sort_dir, _vendor_names), do: devices
+  def sorted_devices(devices, _sort_by, _sort_dir, _vendor_names, _locale, _locale_version),
+    do: devices
 
   @doc false
   def normalize_sort_column(column) when column in @sort_columns, do: column
@@ -416,11 +419,12 @@ defmodule BacViewWeb.DeviceList do
   def toggle_sort(column, :desc, column), do: {column, :asc}
   def toggle_sort(_sort_by, _sort_dir, column), do: {column, :asc}
 
-  defp maybe_sorted(devices, sort_by, sort_dir, vendor_names, :table) do
-    sorted_devices(devices, sort_by, sort_dir, vendor_names)
+  defp maybe_sorted(devices, sort_by, sort_dir, vendor_names, :table, locale, locale_version) do
+    sorted_devices(devices, sort_by, sort_dir, vendor_names, locale, locale_version)
   end
 
-  defp maybe_sorted(devices, _sort_by, _sort_dir, _vendor_names, :grid), do: devices
+  defp maybe_sorted(devices, _sort_by, _sort_dir, _vendor_names, :grid, _locale, _locale_version),
+    do: devices
 
   defp matches_search?(device, search, vendor_names, locale, locale_version) do
     SearchQuery.haystack_matches?(
@@ -431,7 +435,7 @@ defmodule BacViewWeb.DeviceList do
 
   defp device_search_haystack(device, vendor_names, locale, locale_version) do
     [
-      device_name(device),
+      device_name(device, locale, locale_version),
       VendorNames.label(vendor_names, device.vendor_id),
       device_address_label(device),
       to_string(device.instance),
@@ -442,20 +446,23 @@ defmodule BacViewWeb.DeviceList do
     |> String.downcase()
   end
 
-  defp sort_key(device, "name", _vendor_names), do: nullable_string_key(device_name(device))
+  defp sort_key(device, "name", _vendor_names, locale, locale_version),
+    do: nullable_string_key(device_name(device, locale, locale_version))
 
-  defp sort_key(device, "vendor", vendor_names),
+  defp sort_key(device, "vendor", vendor_names, _locale, _locale_version),
     do: nullable_string_key(VendorNames.label(vendor_names, device.vendor_id))
 
-  defp sort_key(device, "address", _vendor_names),
+  defp sort_key(device, "address", _vendor_names, _locale, _locale_version),
     do: Address.destination_sort_key(device.address || {device.ip, device.port})
 
-  defp sort_key(device, "instance", _vendor_names), do: device.instance
+  defp sort_key(device, "instance", _vendor_names, _locale, _locale_version),
+    do: device.instance
 
-  defp sort_key(device, "status", _vendor_names),
+  defp sort_key(device, "status", _vendor_names, _locale, _locale_version),
     do: status_sort_key(device.status)
 
-  defp sort_key(device, "objects", _vendor_names), do: objects_sort_key(device.object_count)
+  defp sort_key(device, "objects", _vendor_names, _locale, _locale_version),
+    do: objects_sort_key(device.object_count)
 
   defp nullable_string_key(nil), do: {1, NaturalSort.key("")}
   defp nullable_string_key(value), do: {0, NaturalSort.key(value)}
@@ -469,9 +476,9 @@ defmodule BacViewWeb.DeviceList do
   defp objects_sort_key(nil), do: -1
   defp objects_sort_key(count) when is_integer(count), do: count
 
-  defp device_name(device) do
+  defp device_name(device, locale, locale_version) do
     device.name ||
-      dgettext(BacViewWeb.Gettext, "default", "Gerät %{id}", %{id: device.instance})
+      t(locale, locale_version, "Gerät %{id}", id: device.instance)
   end
 
   defp device_description(%{description: description})

@@ -3,7 +3,6 @@ defmodule BacViewWeb.StackSettingsPanel do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
-  alias BacView.BACnet.Protocol.ErrorMessage
   alias BacView.BACnet.TransportResolver
 
   attr(:form, :map, required: true)
@@ -41,11 +40,11 @@ defmodule BacViewWeb.StackSettingsPanel do
 
       <div class="bac-panel-body space-y-3">
         <p
-          :if={stack_error_message(@stack_status)}
+          :if={stack_error_message(@stack_status, @locale, @locale_version)}
           id="stack-status-error"
           class="text-xs text-[var(--bac-rose)]"
         >
-          {stack_error_message(@stack_status)}
+          {stack_error_message(@stack_status, @locale, @locale_version)}
         </p>
 
         <p :if={@settings.interface_error} class="text-xs text-[var(--bac-rose)]">
@@ -310,10 +309,10 @@ defmodule BacViewWeb.StackSettingsPanel do
   defp stack_status_badge_class(%{last_error: nil}), do: "bac-badge-ghost"
   defp stack_status_badge_class(_status), do: "bac-badge-warning"
 
-  defp stack_error_message(%{running?: true}), do: nil
-  defp stack_error_message(%{last_error: nil}), do: nil
+  defp stack_error_message(%{running?: true}, _locale, _locale_version), do: nil
+  defp stack_error_message(%{last_error: nil}, _locale, _locale_version), do: nil
 
-  defp stack_error_message(%{last_error: reason}) do
-    ErrorMessage.format_reason(reason)
+  defp stack_error_message(%{last_error: reason}, locale, locale_version) do
+    BacViewWeb.ErrorMessageText.format(reason, locale, locale_version)
   end
 end

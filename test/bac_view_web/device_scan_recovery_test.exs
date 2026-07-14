@@ -99,6 +99,14 @@ defmodule BacViewWeb.DeviceScanRecoveryTest do
     refute html =~ ~s/id="device-scan-recovery-panel"/
   end
 
+  test "renders scan error messages in english when locale is en" do
+    html = render_recovery_panel(locale: "en", locale_version: 1)
+
+    assert html =~ "objects could not be read"
+    assert html =~ "BACnet specification"
+    refute html =~ "Eigenschaftswert entspricht nicht"
+  end
+
   test "shows retry status banner and disables actions while retrying" do
     html =
       render_recovery_panel(

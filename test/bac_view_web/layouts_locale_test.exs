@@ -23,4 +23,28 @@ defmodule BacViewWeb.LayoutsLocaleTest do
     assert html =~ "Help"
     refute html =~ ">Hilfe<"
   end
+
+  test "flash group renders a single connection error toast" do
+    html =
+      flash_group(%{flash: %{}, locale: "en", locale_version: 1})
+      |> rendered_to_string()
+
+    assert html =~ ~s(id="connection-error")
+    refute html =~ ~s(id="client-error")
+    refute html =~ ~s(id="server-error")
+    assert html =~ "Unable to connect to server"
+    assert html =~ "Attempting to reconnect"
+    refute html =~ "Something went wrong!"
+    refute html =~ "We can't find the internet"
+  end
+
+  test "flash group shows german reconnect subtitle for de locale" do
+    html =
+      flash_group(%{flash: %{}, locale: "de", locale_version: 0})
+      |> rendered_to_string()
+
+    assert html =~ "Verbindung zum Server nicht möglich"
+    assert html =~ "Verbindung wird wiederhergestellt…"
+    refute html =~ "Attempting to reconnect"
+  end
 end

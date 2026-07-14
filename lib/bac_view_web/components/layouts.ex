@@ -109,31 +109,23 @@ defmodule BacViewWeb.Layouts do
     ~H"""
     <%= for _ <- [@locale_version] do %>
     <div id={@id} class="bac-toast" aria-live="polite">
-      <.flash kind={:info} flash={@flash} />
-      <.flash kind={:error} flash={@flash} />
+      <.flash kind={:info} flash={@flash} locale={@locale} locale_version={@locale_version} />
+      <.flash kind={:error} flash={@flash} locale={@locale} locale_version={@locale_version} />
 
       <.flash
-        id="client-error"
+        id="connection-error"
         kind={:error}
-        title={t(@locale, @locale_version, "We can't find the internet")}
-        phx-disconnected={show(".phx-client-error #client-error") |> JS.remove_attribute("hidden")}
-        phx-connected={hide("#client-error") |> JS.set_attribute({"hidden", ""})}
+        locale={@locale}
+        locale_version={@locale_version}
+        title={t(@locale, @locale_version, "Verbindung zum Server nicht möglich")}
+        phx-disconnected={show("#connection-error") |> JS.remove_attribute("hidden")}
+        phx-connected={hide("#connection-error") |> JS.set_attribute({"hidden", ""})}
         hidden
       >
-        {t(@locale, @locale_version, "Attempting to reconnect")}
-        <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
-      </.flash>
-
-      <.flash
-        id="server-error"
-        kind={:error}
-        title={t(@locale, @locale_version, "Something went wrong!")}
-        phx-disconnected={show(".phx-server-error #server-error") |> JS.remove_attribute("hidden")}
-        phx-connected={hide("#server-error") |> JS.set_attribute({"hidden", ""})}
-        hidden
-      >
-        {t(@locale, @locale_version, "Attempting to reconnect")}
-        <.icon name="hero-arrow-path" class="ml-1 size-3 motion-safe:animate-spin" />
+        <span class="inline-flex items-center gap-1">
+          {t(@locale, @locale_version, "Verbindung wird wiederhergestellt…")}
+          <.icon name="hero-arrow-path" class="size-3 motion-safe:animate-spin" />
+        </span>
       </.flash>
     </div>
     <% end %>

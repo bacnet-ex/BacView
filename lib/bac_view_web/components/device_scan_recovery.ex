@@ -115,7 +115,9 @@ defmodule BacViewWeb.DeviceScanRecovery do
         >
           <div class="flex flex-wrap items-start gap-x-2 gap-y-1 min-w-0">
             <span class="bac-mono text-sm text-[var(--bac-text)]">{entry.object}</span>
-            <span class="text-xs text-[var(--bac-amber)]">{entry.message}</span>
+            <span class="text-xs text-[var(--bac-amber)]">
+              {error_entry_text(entry, @locale, @locale_version)}
+            </span>
           </div>
           <div class="mt-2 flex flex-wrap gap-2">
             <button
@@ -185,7 +187,8 @@ defmodule BacViewWeb.DeviceScanRecovery do
         [
           %{
             object: object,
-            message: Map.get(entry, :message, ""),
+            reason: Map.get(entry, :reason),
+            message: Map.get(entry, :message),
             retry_modes: Map.get(entry, :retry_modes, []),
             type: Atom.to_string(type),
             instance: Integer.to_string(instance),
@@ -212,4 +215,14 @@ defmodule BacViewWeb.DeviceScanRecovery do
 
   defp retrying?(retrying, key) when is_map(retrying), do: Map.get(retrying, key, false)
   defp retrying?(_retrying, _key), do: false
+
+  defp error_entry_text(entry, locale, locale_version) do
+    case Map.get(entry, :reason) do
+      reason when not is_nil(reason) ->
+        BacViewWeb.ErrorMessageText.format(reason, locale, locale_version)
+
+      _ ->
+        Map.get(entry, :message, "")
+    end
+  end
 end
