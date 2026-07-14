@@ -106,6 +106,7 @@ defmodule BacViewWeb.Shortcuts do
 
   @device_shortcuts [
     :subscribe_all_pv,
+    :unsubscribe_all_cov,
     :subscribe_selected_cov,
     :unsubscribe_selected_cov,
     :resubscribe_selected_subscriptions,
@@ -126,9 +127,20 @@ defmodule BacViewWeb.Shortcuts do
   end
 
   defp device_shortcut(:subscribe_all_pv, params, assigns) do
-    if shift_pressed?(params) && letter_key_pressed?(params, "c") && objects_tab?(assigns) &&
+    if shift_pressed?(params) && letter_key_pressed?(params, "c") &&
+         subscribe_all_pv_tab?(assigns) &&
          not assigns.loading && not assigns.bulk_subscribing do
       {:event, "subscribe_all_pv"}
+    else
+      :none
+    end
+  end
+
+  defp device_shortcut(:unsubscribe_all_cov, params, assigns) do
+    if shift_pressed?(params) && letter_key_pressed?(params, "u") &&
+         subscribe_all_pv_tab?(assigns) &&
+         not assigns.loading && active_subscriptions?(assigns) do
+      {:event, "unsubscribe_all_cov"}
     else
       :none
     end
@@ -144,8 +156,8 @@ defmodule BacViewWeb.Shortcuts do
   end
 
   defp device_shortcut(:unsubscribe_selected_cov, params, assigns) do
-    if letter_key_pressed?(params, "u") && objects_tab?(assigns) && not assigns.loading &&
-         selected_objects?(assigns) do
+    if letter_key_pressed?(params, "u") && not shift_pressed?(params) && objects_tab?(assigns) &&
+         not assigns.loading && selected_objects?(assigns) do
       {:event, "unsubscribe_selected_cov"}
     else
       :none
@@ -163,8 +175,9 @@ defmodule BacViewWeb.Shortcuts do
   end
 
   defp device_shortcut(:unsubscribe_selected_subscriptions, params, assigns) do
-    if letter_key_pressed?(params, "u") && cov_subscriptions_list?(assigns) &&
-         not assigns.loading && selected_subscriptions?(assigns) do
+    if letter_key_pressed?(params, "u") && not shift_pressed?(params) &&
+         cov_subscriptions_list?(assigns) && not assigns.loading &&
+         selected_subscriptions?(assigns) do
       {:event, "unsubscribe_selected_subscriptions"}
     else
       :none
@@ -200,6 +213,10 @@ defmodule BacViewWeb.Shortcuts do
 
   defp objects_tab?(assigns), do: assigns.tab == "objects"
 
+  defp subscribe_all_pv_tab?(assigns) do
+    objects_tab?(assigns) or assigns.tab == "subscriptions"
+  end
+
   defp cov_subscriptions_list?(assigns) do
     assigns.tab == "subscriptions" && assigns.cov_view == "subscriptions"
   end
@@ -218,6 +235,10 @@ defmodule BacViewWeb.Shortcuts do
 
   defp selected_subscriptions?(assigns) do
     MapSet.size(assigns.selected_subscription_keys) > 0
+  end
+
+  defp active_subscriptions?(assigns) do
+    assigns.subscriptions != []
   end
 
   defp nc_subscribe_enabled?(assigns) do

@@ -48,21 +48,26 @@ defmodule BacViewWeb.KeyboardNavigationTest do
       nc_enrolled_count: 0,
       nc_total: 2,
       selected_object_keys: MapSet.new([{:analog_input, 1}]),
-      selected_subscription_keys: MapSet.new([{:analog_input, 1, :present_value}])
+      selected_subscription_keys: MapSet.new([{:analog_input, 1, :present_value}]),
+      subscriptions: [%{object_id: %{type: :analog_input, instance: 1}, property: :present_value}]
     }
 
     c = %{"key" => "c", "code" => "KeyC", "shift" => false}
     shift_c = %{"key" => "C", "code" => "KeyC", "shift" => true}
     u = %{"key" => "u", "code" => "KeyU", "shift" => false}
+    shift_u = %{"key" => "U", "code" => "KeyU", "shift" => true}
     e = %{"key" => "e", "code" => "KeyE", "shift" => false}
 
     assert Shortcuts.device_action(c, base) == {:event, "subscribe_selected_cov"}
     assert Shortcuts.device_action(u, base) == {:event, "unsubscribe_selected_cov"}
     assert Shortcuts.device_action(shift_c, base) == {:event, "subscribe_all_pv"}
+    assert Shortcuts.device_action(shift_u, base) == {:event, "unsubscribe_all_cov"}
 
     cov = %{base | tab: "subscriptions"}
     assert Shortcuts.device_action(c, cov) == {:event, "resubscribe_selected_subscriptions"}
+    assert Shortcuts.device_action(shift_c, cov) == {:event, "subscribe_all_pv"}
     assert Shortcuts.device_action(u, cov) == {:event, "unsubscribe_selected_subscriptions"}
+    assert Shortcuts.device_action(shift_u, cov) == {:event, "unsubscribe_all_cov"}
 
     alarms = %{base | tab: "alarms", nc_enrolled_count: 1}
     assert Shortcuts.device_action(c, alarms) == {:event, "subscribe_notification_classes"}
@@ -70,6 +75,9 @@ defmodule BacViewWeb.KeyboardNavigationTest do
 
     events = %{base | tab: "alarms", alarm_view: "event_information"}
     assert Shortcuts.device_action(e, events) == {:event, "refresh_alarms"}
+
+    no_subs = %{base | subscriptions: []}
+    assert Shortcuts.device_action(shift_u, no_subs) == :none
   end
 
   test "device_action ignores shortcuts outside their list context" do

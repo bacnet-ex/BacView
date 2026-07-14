@@ -87,6 +87,10 @@ defmodule BacViewWeb.KeyboardShortcuts do
           %{
             keys: "u",
             desc: t(@locale, @locale_version, "COV kündigen (Auswahl)")
+          },
+          %{
+            keys: "Shift + u",
+            desc: t(@locale, @locale_version, "Alle kündigen")
           }
         ]}
       />
@@ -99,8 +103,16 @@ defmodule BacViewWeb.KeyboardShortcuts do
             desc: t(@locale, @locale_version, "Erneut abonnieren (Auswahl)")
           },
           %{
+            keys: "Shift + c",
+            desc: t(@locale, @locale_version, "Alle PV abonnieren")
+          },
+          %{
             keys: "u",
             desc: t(@locale, @locale_version, "Ausgewählte kündigen")
+          },
+          %{
+            keys: "Shift + u",
+            desc: t(@locale, @locale_version, "Alle kündigen")
           }
         ]}
       />

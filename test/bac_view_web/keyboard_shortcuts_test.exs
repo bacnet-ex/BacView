@@ -21,10 +21,12 @@ defmodule BacViewWeb.KeyboardShortcutsTest do
     assert html =~ "Subscribe all present values"
     assert html =~ "Resubscribe (selection)"
     assert html =~ "Cancel selected"
+    assert html =~ "Cancel all"
     assert html =~ "Enroll recipient list"
     assert html =~ "Remove recipient list"
     assert html =~ "Fetch events"
     assert html =~ ~s(<kbd class="bac-kbd">Shift + c</kbd>)
+    assert html =~ ~s(<kbd class="bac-kbd">Shift + u</kbd>)
     assert html =~ ~s(<kbd class="bac-kbd">e</kbd>)
   end
 
