@@ -73,4 +73,32 @@ defmodule BacView.BACnet.Protocol.MultistateStateTest do
              ]
     end
   end
+
+  describe "enum_chart?/2" do
+    test "requires multistate object, state-value property, and state options" do
+      object = %{
+        type: :multi_state_value,
+        number_of_states: 2,
+        state_text: ["Off", "On"]
+      }
+
+      assert MultistateState.enum_chart?(object, :present_value)
+      assert MultistateState.enum_chart?(object, :relinquish_default)
+      refute MultistateState.enum_chart?(object, :units)
+      refute MultistateState.enum_chart?(%{type: :analog_input}, :present_value)
+      refute MultistateState.enum_chart?(%{type: :multi_state_value}, :present_value)
+    end
+  end
+
+  describe "enum_ticks/1" do
+    test "mirrors state_options" do
+      object = %{
+        type: :multi_state_value,
+        number_of_states: 2,
+        state_text: ["Off", "On"]
+      }
+
+      assert MultistateState.enum_ticks(object) == MultistateState.state_options(object)
+    end
+  end
 end

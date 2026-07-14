@@ -15,23 +15,24 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.DeviceSessionSupervisor
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.HierarchyBuilder
+  alias BacView.BACnet.ObjectScanRead
+  alias BacView.BACnet.PropertyLoad
   alias BacView.BACnet.Protocol.ErrorMessage
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyFormatter
-  alias BacView.BACnet.Protocol.PropertyReader
   alias BacView.BACnet.Protocol.PropertyWriter
   alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.BACnet.Protocol.TrendLogNavigation
   alias BacView.BACnet.Segmentation
   alias BacView.BACnet.Stack
+  alias BacView.BACnet.ValidationSkipStore
   alias BacView.Text
 
   @objects_table :bacview_objects
   @properties_table :bacview_properties
   @devices_table :bacview_devices
-  @validation_skip_modes_table :bacview_validation_skip_modes
 
   def start_link(device_id) when is_integer(device_id) do
     GenServer.start_link(__MODULE__, device_id, name: DeviceSessionSupervisor.via(device_id))
@@ -95,84 +96,6 @@ defmodule BacView.BACnet.DeviceSession do
       {:value_failed_property_validation, _property} -> [:value, true]
       {:invalid_property_type, _property} -> [true]
       _other -> []
-    end
-  end
-
-  @doc false
-  @spec property_read_opts(:value | true | nil, ObjectIdentifier.t() | nil) :: keyword()
-  def property_read_opts(skip_mode \\ nil, device_obj \\ nil) do
-    base =
-      case device_obj do
-        %ObjectIdentifier{instance: instance} ->
-          [allow_unknown_properties: true, remote_device_id: instance]
-
-        _other ->
-          [allow_unknown_properties: true]
-      end
-
-    case skip_mode do
-      nil ->
-        base
-
-      mode when mode in [:value, true] ->
-        Keyword.put(base, :object_opts, skip_property_validation_remote_object: mode)
-    end
-  end
-
-  @doc false
-  @spec property_validation_skip_mode_from_objects([map()], ObjectIdentifier.t()) ::
-          :value | true | nil
-  def property_validation_skip_mode_from_objects(objects, %ObjectIdentifier{
-        type: type,
-        instance: instance
-      })
-      when is_list(objects) do
-    Enum.find_value(objects, fn
-      %{type: ^type, instance: ^instance} = obj ->
-        Map.get(obj, :property_validation_skip_mode)
-
-      _obj ->
-        nil
-    end)
-  end
-
-  def property_validation_skip_mode_from_objects(_objects, _object), do: nil
-
-  @doc false
-  @spec apply_property_validation_skip_mode([map()], ObjectIdentifier.t(), :value | true) ::
-          [map()]
-  def apply_property_validation_skip_mode(
-        objects,
-        %ObjectIdentifier{type: type, instance: instance},
-        skip_mode
-      )
-      when is_list(objects) and skip_mode in [:value, true] do
-    Enum.map(objects, fn
-      %{type: ^type, instance: ^instance} = obj ->
-        Map.put(obj, :property_validation_skip_mode, skip_mode)
-
-      obj ->
-        obj
-    end)
-  end
-
-  @doc false
-  @spec scan_read_opts(ObjectIdentifier.t(), :value | true | nil) :: keyword()
-  def scan_read_opts(%ObjectIdentifier{} = device_obj, skip_mode \\ nil) do
-    base = [
-      allow_unknown_properties: true,
-      remote_device_id: device_obj.instance
-    ]
-
-    case skip_mode do
-      nil ->
-        base
-
-      mode when mode in [:value, true] ->
-        Keyword.put(base, :object_opts, skip_property_validation_remote_object: mode)
-
-      _other ->
-        base
     end
   end
 
@@ -364,13 +287,13 @@ defmodule BacView.BACnet.DeviceSession do
     skip_mode =
       call_opts
       |> Keyword.get(:skip_mode)
-      |> then(&(&1 || resolve_property_validation_skip_mode(state, object)))
+      |> then(&(&1 || ValidationSkipStore.resolve(state, object)))
 
     device_obj = Map.get(device || %{}, :object)
 
     {result, state} =
       if device do
-        case safe_read_properties(device.address, object, skip_mode, device_obj) do
+        case PropertyLoad.read(device.address, object, skip_mode, device_obj) do
           {:ok, %{properties: props} = result} ->
             :ets.insert(@properties_table, {property_key(device_id, object), props})
 
@@ -397,12 +320,12 @@ defmodule BacView.BACnet.DeviceSession do
         _from,
         %{device: device} = state
       ) do
-    skip_mode = resolve_property_validation_skip_mode(state, object)
+    skip_mode = ValidationSkipStore.resolve(state, object)
     device_obj = Map.get(device || %{}, :object)
 
     result =
       if device do
-        read_opts = Keyword.merge(property_read_opts(skip_mode, device_obj), opts)
+        read_opts = Keyword.merge(PropertyLoad.property_read_opts(skip_mode, device_obj), opts)
         Client.read_property(device.address, object, property, read_opts)
       else
         {:error, :device_not_loaded}
@@ -497,85 +420,6 @@ defmodule BacView.BACnet.DeviceSession do
     Enum.each(waiters, &GenServer.reply(&1, reply))
   end
 
-  defp safe_read_properties(address, object, skip_mode, device_obj) do
-    if properties_scan_fallback_path?(object, skip_mode, device_obj) do
-      read_properties_via_scan_fallback(address, object, device_obj, skip_mode)
-    else
-      read_properties_via_property_reader(address, object, skip_mode, device_obj)
-    end
-  rescue
-    exception ->
-      {:error, {:property_read_failed, exception}}
-  catch
-    :exit, reason ->
-      {:error, {:property_read_failed, reason}}
-  end
-
-  defp read_properties_via_property_reader(address, object, skip_mode, device_obj) do
-    opts = property_read_opts(skip_mode, device_obj)
-
-    case PropertyReader.read_all(Client, address, object, opts) do
-      {:ok, _result} = ok ->
-        ok
-
-      {:error, reason} = err ->
-        if properties_scan_fallback_on_error?(reason) do
-          case read_properties_via_scan_fallback(address, object, device_obj, skip_mode) do
-            {:ok, _fallback_result} = fallback_ok -> fallback_ok
-            {:error, _fallback_err} -> err
-          end
-        else
-          err
-        end
-    end
-  end
-
-  defp read_properties_via_scan_fallback(address, object, device_obj, skip_mode) do
-    fallback_opts = scan_fallback_read_opts(device_obj, skip_mode)
-
-    case read_object_fallback(address, object, fallback_opts) do
-      {:ok, obj} ->
-        {:ok, PropertyReader.read_result_from_object(object, obj)}
-
-      {:error, _reason} = err ->
-        err
-    end
-  end
-
-  defp scan_fallback_read_opts(%ObjectIdentifier{} = device_obj, skip_mode),
-    do: scan_read_opts(device_obj, skip_mode)
-
-  defp scan_fallback_read_opts(device_obj, skip_mode),
-    do: property_read_opts(skip_mode, device_obj)
-
-  @doc false
-  @spec properties_scan_fallback_path?(
-          ObjectIdentifier.t(),
-          :value | true | nil,
-          ObjectIdentifier.t() | nil
-        ) :: boolean()
-  def properties_scan_fallback_path?(object, skip_mode, device_obj) do
-    (skip_mode in [:value, true] and match?(%ObjectIdentifier{}, device_obj)) or
-      device_object?(object, device_obj)
-  end
-
-  @doc false
-  @spec properties_scan_fallback_on_error?(term()) :: boolean()
-  def properties_scan_fallback_on_error?(reason) do
-    Segmentation.fallback_error?({:error, reason}) or
-      reason in [:object_unavailable, :property_list_not_readable]
-  end
-
-  @doc false
-  @spec device_object?(ObjectIdentifier.t(), ObjectIdentifier.t() | nil) :: boolean()
-  def device_object?(
-        %ObjectIdentifier{type: :device, instance: instance},
-        %ObjectIdentifier{type: :device, instance: instance}
-      ),
-      do: true
-
-  def device_object?(_object, _device_obj), do: false
-
   @doc false
   @spec device_object_summary(map(), ObjectIdentifier.t()) :: map() | nil
   def device_object_summary(loaded, %ObjectIdentifier{type: :device, instance: instance}) do
@@ -625,7 +469,9 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp load_device_impl(discovered, device_id, address, device_obj) do
     with {:ok, device} <-
-           read_object_fallback(address, device_obj, allow_unknown_properties: true),
+           ObjectScanRead.read_object_fallback(address, device_obj,
+             allow_unknown_properties: true
+           ),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
          {:ok, scanned, scan_errors} <-
            scan_object_list(device_id, address, device_obj, object_ids) do
@@ -647,7 +493,7 @@ defmodule BacView.BACnet.DeviceSession do
 
       :ets.insert(@objects_table, {discovered.id, objects})
       :ets.insert(:bacview_hierarchy, {discovered.id, hierarchy})
-      clear_validation_skip_modes(device_id)
+      ValidationSkipStore.clear_device(device_id)
 
       loaded =
         Map.merge(discovered, %{
@@ -795,7 +641,7 @@ defmodule BacView.BACnet.DeviceSession do
     if total == 0 do
       {:ok, [], []}
     else
-      scan_opts = scan_read_opts(device_obj)
+      scan_opts = PropertyLoad.scan_read_opts(device_obj)
 
       done_counter = :counters.new(1, [])
       error_counter = :counters.new(1, [])
@@ -805,7 +651,7 @@ defmodule BacView.BACnet.DeviceSession do
         object_ids
         |> Task.async_stream(
           fn object_id ->
-            case read_object_fallback(address, object_id, scan_opts) do
+            case ObjectScanRead.read_object_fallback(address, object_id, scan_opts) do
               {:ok, obj} -> {:ok, {object_id, obj}}
               {:error, :unsupported_object_type} -> {:skipped, object_id}
               {:error, reason} -> {:error, object_id, reason}
@@ -918,180 +764,6 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
-  # Reads an object, using ReadPropertyMultiple when possible. If the device
-  # returns a segmentation_not_supported error (some devices do not support
-  # segmentation and large RPM responses will fail), falls back to reading
-  # relevant properties one-by-one using single ReadProperty requests.
-  defp read_object_fallback(address, %ObjectIdentifier{} = object, opts) do
-    case Client.read_object(address, object, opts) do
-      {:ok, obj} ->
-        {:ok, obj}
-
-      {:error, :unsupported_object_type} = err ->
-        err
-
-      {:error, _reason} = err ->
-        if Segmentation.fallback_error?(err) do
-          read_properties_for_scan(address, object, opts)
-        else
-          err
-        end
-    end
-  end
-
-  # Fallback for devices that do not support segmentation: read the property list
-  # (indexed when the full array is too large), then read each listed property
-  # individually. The resulting plain map is sufficient for summarize_object/1 and
-  # hierarchy building (for Structured View subordinate lists etc.).
-  defp read_properties_for_scan(address, %ObjectIdentifier{} = object_id, opts) do
-    read_opts =
-      opts
-      |> Keyword.take([:allow_unknown_properties, :remote_device_id])
-      |> maybe_merge_object_opts(opts)
-
-    case read_property_list_for_scan(address, object_id, read_opts) do
-      {:ok, property_list} ->
-        props = scan_readable_properties(property_list, object_id)
-
-        read_scanned_properties(address, object_id, props, read_opts)
-
-      {:error, _reason} ->
-        read_properties_for_scan_from_schema(address, object_id, read_opts)
-    end
-  end
-
-  defp read_properties_for_scan_from_schema(address, object_id, read_opts) do
-    case PropertyReader.schema_properties(object_id) do
-      {:ok, schema_props} ->
-        props = scan_readable_properties(schema_props, object_id)
-
-        read_scanned_properties(address, object_id, props, read_opts)
-
-      {:error, _reason} = err ->
-        err
-    end
-  end
-
-  defp read_scanned_properties(address, object_id, props, read_opts) do
-    {result, _failures} =
-      props
-      |> Task.async_stream(
-        fn prop ->
-          case debug_read_property(
-                 address,
-                 object_id,
-                 prop,
-                 read_opts,
-                 "read_properties_for_scan"
-               ) do
-            {:ok, value} -> {:ok, {prop, value}}
-            {:error, reason} -> {:error, {prop, reason}}
-          end
-        end,
-        max_concurrency: PropertyReader.scan_property_read_concurrency(),
-        timeout: :infinity,
-        ordered: false
-      )
-      |> Enum.reduce({%{}, []}, fn
-        {:ok, {:ok, {prop, value}}}, {acc, failed} ->
-          {Map.put(acc, prop, value), failed}
-
-        {:ok, {:error, {prop, reason}}}, {acc, failed} ->
-          {acc, [{prop, reason} | failed]}
-
-        _other, {acc, failed} ->
-          {acc, failed}
-      end)
-
-    {:ok, result}
-  end
-
-  defp read_property_list_for_scan(address, object_id, read_opts) do
-    case debug_read_property(
-           address,
-           object_id,
-           :property_list,
-           read_opts,
-           "read_property_list_for_scan"
-         ) do
-      {:ok, property_list} ->
-        normalized = PropertyReader.normalize_properties(unwrap_property_list(property_list))
-
-        {:ok, normalized}
-
-      {:error, _reason} ->
-        read_property_list_indexed_for_scan(address, object_id, read_opts)
-    end
-  end
-
-  defp read_property_list_indexed_for_scan(address, object_id, read_opts) do
-    length_opts = Keyword.put(read_opts, :array_index, 0)
-
-    case debug_read_property(
-           address,
-           object_id,
-           :property_list,
-           length_opts,
-           "read_property_list_indexed_for_scan.length"
-         ) do
-      {:ok, 0} ->
-        {:ok, []}
-
-      {:ok, count} when is_integer(count) and count > 0 ->
-        props =
-          1..count
-          |> Task.async_stream(
-            fn idx ->
-              case debug_read_property(
-                     address,
-                     object_id,
-                     :property_list,
-                     Keyword.merge(read_opts, array_index: idx),
-                     "read_property_list_indexed_for_scan.element"
-                   ) do
-                {:ok, prop} ->
-                  prop
-
-                {:error, _reason} ->
-                  nil
-              end
-            end,
-            max_concurrency: 8,
-            timeout: :infinity,
-            ordered: false
-          )
-          |> Enum.reduce([], fn
-            {:ok, prop}, acc when not is_nil(prop) ->
-              [prop | acc]
-
-            {:exit, _reason}, acc ->
-              acc
-
-            _other, acc ->
-              acc
-          end)
-          |> Enum.reverse()
-          |> PropertyReader.normalize_properties()
-
-        {:ok, props}
-
-      {:error, _reason} = err ->
-        err
-
-      _other ->
-        {:error, :property_list_not_readable}
-    end
-  end
-
-  defp unwrap_property_list(%BACnetArray{} = array), do: BACnetArray.to_list(array)
-  defp unwrap_property_list(list) when is_list(list), do: list
-  defp unwrap_property_list(%Encoding{value: value}), do: unwrap_property_list(value)
-  defp unwrap_property_list(value), do: [value]
-
-  defp scan_readable_properties(properties, object_id) do
-    PropertyReader.skip_heavy_properties(properties, object_id)
-  end
-
   defp bump_scan_progress(
          device_id,
          done_counter,
@@ -1141,28 +813,21 @@ defmodule BacView.BACnet.DeviceSession do
   defp normalize_scan_error_reason({:error, reason}), do: normalize_scan_error_reason(reason)
   defp normalize_scan_error_reason(reason), do: reason
 
-  defp maybe_merge_object_opts(read_opts, opts) do
-    case Keyword.get(opts, :object_opts) do
-      object_opts when is_list(object_opts) -> Keyword.put(read_opts, :object_opts, object_opts)
-      _other -> read_opts
-    end
-  end
-
   defp retry_scan_object_impl(
          %{device: %{address: address, object: device_obj} = device, device_id: device_id} =
            state,
          %ObjectIdentifier{} = object,
          skip_mode
        ) do
-    opts = scan_read_opts(device_obj, skip_mode)
+    opts = PropertyLoad.scan_read_opts(device_obj, skip_mode)
 
-    with {:ok, obj} <- read_object_fallback(address, object, opts) do
+    with {:ok, obj} <- ObjectScanRead.read_object_fallback(address, object, opts) do
       scanned = upsert_scanned(state.scanned, {object, obj})
 
       objects =
         scanned
         |> Enum.map(&summarize_object/1)
-        |> apply_property_validation_skip_mode(object, skip_mode)
+        |> ValidationSkipStore.apply_to_objects(object, skip_mode)
         |> Enum.sort_by(fn obj -> {obj.type, obj.instance} end)
 
       hierarchy = HierarchyBuilder.build(scanned, objects)
@@ -1177,7 +842,7 @@ defmodule BacView.BACnet.DeviceSession do
 
       :ets.insert(@objects_table, {device_id, objects})
       :ets.insert(:bacview_hierarchy, {device_id, hierarchy})
-      persist_validation_skip_mode(device_id, object, skip_mode)
+      ValidationSkipStore.put(device_id, object, skip_mode)
 
       summary =
         Enum.find(objects, fn obj ->
@@ -1235,71 +900,6 @@ defmodule BacView.BACnet.DeviceSession do
       {type, instance} == key
     end)
     |> then(&[{object, obj} | &1])
-  end
-
-  defp resolve_property_validation_skip_mode(state, %ObjectIdentifier{} = object) do
-    property_validation_skip_mode_from_objects(Map.get(state, :objects, []), object) ||
-      property_validation_skip_mode_from_objects(
-        get_in(state, [:device, :objects]) || [],
-        object
-      ) ||
-      lookup_validation_skip_mode(state.device_id, object)
-  end
-
-  defp persist_validation_skip_mode(device_id, %ObjectIdentifier{} = object, skip_mode)
-       when skip_mode in [:value, true] do
-    ensure_validation_skip_modes_table!()
-    :ets.insert(@validation_skip_modes_table, {validation_skip_key(device_id, object), skip_mode})
-    :ok
-  end
-
-  defp persist_validation_skip_mode(_device_id, _object, _skip_mode), do: :ok
-
-  defp lookup_validation_skip_mode(device_id, %ObjectIdentifier{} = object) do
-    ensure_validation_skip_modes_table!()
-
-    case :ets.lookup(@validation_skip_modes_table, validation_skip_key(device_id, object)) do
-      [{_key, skip_mode}] when skip_mode in [:value, true] -> skip_mode
-      _lookup -> property_validation_skip_mode_from_cached_objects(device_id, object)
-    end
-  end
-
-  defp property_validation_skip_mode_from_cached_objects(device_id, object) do
-    if :ets.whereis(@objects_table) == :undefined do
-      nil
-    else
-      case :ets.lookup(@objects_table, device_id) do
-        [{^device_id, objects}] when is_list(objects) ->
-          property_validation_skip_mode_from_objects(objects, object)
-
-        _cached ->
-          nil
-      end
-    end
-  end
-
-  defp clear_validation_skip_modes(device_id) when is_integer(device_id) do
-    ensure_validation_skip_modes_table!()
-
-    match = {{device_id, :_, :_}, :_}
-
-    :ets.select_delete(@validation_skip_modes_table, [
-      {match, [], [true]}
-    ])
-
-    :ok
-  end
-
-  defp validation_skip_key(device_id, %ObjectIdentifier{type: type, instance: instance}) do
-    {device_id, type, instance}
-  end
-
-  defp ensure_validation_skip_modes_table!() do
-    if :ets.whereis(@validation_skip_modes_table) == :undefined do
-      :ets.new(@validation_skip_modes_table, [:named_table, :set, :public, read_concurrency: true])
-    end
-
-    :ok
   end
 
   defp remove_scan_error(scan_errors, %ObjectIdentifier{type: type, instance: instance}) do
@@ -1814,9 +1414,5 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp property_key(device_id, %ObjectIdentifier{type: type, instance: instance}) do
     {device_id, type, instance}
-  end
-
-  defp debug_read_property(address, object_id, property, read_opts, _context) do
-    PropertyReader.read_property_value(Client, address, object_id, property, read_opts)
   end
 end

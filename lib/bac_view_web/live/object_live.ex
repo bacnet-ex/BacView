@@ -5,6 +5,7 @@ defmodule BacViewWeb.ObjectLive do
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.PriorityArray
 
+  alias BacView.BACnet.ActiveAlarms
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.DeviceServices
   alias BacView.BACnet.DeviceSession
@@ -38,7 +39,6 @@ defmodule BacViewWeb.ObjectLive do
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.LiveFlash
   alias BacViewWeb.ObjectDetail
-  alias BacViewWeb.StatusFlagsIcons
   alias BacViewWeb.TrendLogChartModal
   alias BacViewWeb.WriteFormParams
   alias BacViewWeb.WritePropertyModal
@@ -182,19 +182,7 @@ defmodule BacViewWeb.ObjectLive do
 
     Task.start(fn ->
       device_result = DeviceSession.load(device_id)
-
-      props_result =
-        case device_result do
-          {:ok, loaded} ->
-            skip_mode =
-              DeviceSession.property_validation_skip_mode_from_objects(loaded.objects, object_id)
-
-            DeviceSession.read_properties(device_id, object_id, skip_mode: skip_mode)
-
-          _load_object ->
-            DeviceSession.read_properties(device_id, object_id)
-        end
-
+      props_result = DeviceSession.read_properties(device_id, object_id)
       send(parent, {:object_load_done, device_result, props_result})
     end)
 
@@ -1585,15 +1573,7 @@ defmodule BacViewWeb.ObjectLive do
       object_id = socket.assigns.object_id
 
       Task.start(fn ->
-        skip_mode =
-          DeviceSession.property_validation_skip_mode_from_objects(
-            socket.assigns.device_objects,
-            object_id
-          )
-
-        result =
-          DeviceSession.read_properties(device_id, object_id, skip_mode: skip_mode)
-
+        result = DeviceSession.read_properties(device_id, object_id)
         send(parent, {:properties_refreshed, result})
       end)
 
@@ -1901,36 +1881,13 @@ defmodule BacViewWeb.ObjectLive do
 
     socket
     |> assign(:alarm_summary, AlarmEvent.summary(device_id))
-    |> assign(:alarm_tab_count, alarm_tab_count(device_id, socket.assigns.device_objects))
-  end
-
-  defp active_alarm_objects(objects) when is_list(objects) do
-    Enum.filter(objects, &object_in_active_alarm?/1)
-  end
-
-  defp object_in_active_alarm?(obj) do
-    flags = Map.get(obj, :status_flags)
-
-    flags &&
-      Enum.any?([:in_alarm, :fault], fn flag ->
-        flag in StatusFlagsIcons.active_flags(flags)
-      end)
-  end
-
-  defp alarm_tab_count(device_id, objects) do
-    event_keys =
-      device_id
-      |> AlarmEvent.list_active_events()
-      |> Enum.map(fn event -> {event.object_id.type, event.object_id.instance} end)
-      |> MapSet.new()
-
-    status_keys =
-      objects
-      |> active_alarm_objects()
-      |> Enum.map(fn obj -> {obj.type, obj.instance} end)
-      |> MapSet.new()
-
-    MapSet.size(MapSet.union(event_keys, status_keys))
+    |> assign(
+      :alarm_tab_count,
+      ActiveAlarms.count(
+        device_id: device_id,
+        objects: socket.assigns.device_objects
+      )
+    )
   end
 
   defp sync_device_object_flags(socket, object, flags, at) when is_map(object) do
@@ -2240,11 +2197,7 @@ defmodule BacViewWeb.ObjectLive do
     end
   end
 
-  defp chart_has_data?(%{series: series}) when is_list(series) do
-    Enum.any?(series, fn %{points: points} -> points != [] end)
-  end
-
-  defp chart_has_data?(_series), do: false
+  defp chart_has_data?(data), do: BacViewWeb.ChartEventPayload.has_data?(data)
 
   defp trend_chart_download(socket, format) do
     case socket.assigns.trend_chart_data do
@@ -2276,24 +2229,11 @@ defmodule BacViewWeb.ObjectLive do
     end
   end
 
-  defp trend_chart_event_payload(%{series: series} = data) when is_list(series) do
-    payload_series = BacViewWeb.ChartEventPayload.series_payload(series)
-
-    if chart_has_data?(data) do
-      Map.put(data, :series, payload_series)
-    else
-      %{
-        series: [],
-        scales: Map.get(data, :scales, []),
-        markers: Map.get(data, :markers, []),
-        range: Map.get(data, :range, %{}),
-        empty_label: "Keine plottbaren Datensätze im gewählten Zeitraum."
-      }
-    end
+  defp trend_chart_event_payload(data) do
+    BacViewWeb.ChartEventPayload.build(data,
+      empty_label: "Keine plottbaren Datensätze im gewählten Zeitraum."
+    )
   end
-
-  defp trend_chart_event_payload(_series),
-    do: %{series: [], scales: [], empty_label: "Keine Daten geladen."}
 
   defp file_object?(socket) do
     match?(%{type: :file}, socket.assigns.object)

@@ -143,7 +143,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   defp series_def(index, ref, unit, objects) do
     object = ref_object(ref, objects)
     property = ref_property(ref)
-    enum_chart? = enum_chart?(object, property)
+    enum_chart? = MultistateState.enum_chart?(object, property)
     resolved_unit = normalize_unit(unit || ref_unit(ref, objects))
 
     scale_id =
@@ -156,7 +156,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
       unit_label: unit_label(resolved_unit),
       scale_id: scale_id,
       enum_object: if(enum_chart?, do: object, else: nil),
-      enum_ticks: if(enum_chart?, do: enum_ticks(object), else: nil)
+      enum_ticks: if(enum_chart?, do: MultistateState.enum_ticks(object), else: nil)
     }
 
     if enum_chart?, do: Map.put(base, :paths, "stepped"), else: base
@@ -293,18 +293,6 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   end
 
   defp build_chart_point(at, value, _enum_object), do: %{t: at, v: value}
-
-  defp enum_chart?(object, property) do
-    MultistateState.multistate_object?(object) and
-      MultistateState.state_value_property?(property) and
-      MultistateState.state_options(object) != []
-  end
-
-  defp enum_ticks(object) do
-    Enum.map(MultistateState.state_options(object), fn %{value: value, label: label} ->
-      %{value: value, label: label}
-    end)
-  end
 
   defp enum_scale_id(
          %DeviceObjectPropertyRef{

@@ -47,7 +47,15 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   @spec list_active(integer() | nil) :: [map()]
   def list_active(device_id \\ nil) do
-    GenServer.call(__MODULE__, {:list_active, device_id})
+    if :ets.whereis(@table) == :undefined do
+      []
+    else
+      @table
+      |> :ets.tab2list()
+      |> Enum.map(fn {_key, sub} -> sub end)
+      |> maybe_filter_device(device_id)
+      |> Enum.sort_by(&{&1.device_id, &1.object_id.type, &1.object_id.instance, &1.property})
+    end
   end
 
   @spec active_count(integer() | nil) :: non_neg_integer()
@@ -116,22 +124,6 @@ defmodule BacView.BACnet.SubscriptionManager do
   def handle_call({:unsubscribe, device_id, object_id, property}, _from, state) do
     result = do_unsubscribe(device_id, object_id, property)
     {:reply, result, state}
-  end
-
-  @impl true
-  def handle_call({:list_active, device_id}, _from, state) do
-    subs =
-      if :ets.whereis(@table) == :undefined do
-        []
-      else
-        @table
-        |> :ets.tab2list()
-        |> Enum.map(fn {_key, sub} -> sub end)
-        |> maybe_filter_device(device_id)
-        |> Enum.sort_by(&{&1.device_id, &1.object_id.type, &1.object_id.instance, &1.property})
-      end
-
-    {:reply, subs, state}
   end
 
   @impl true

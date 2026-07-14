@@ -2,6 +2,7 @@ defmodule BacViewWeb.DeviceBadgeCounts do
   @moduledoc false
 
   alias BacView.BACnet.ActiveAlarms
+  alias BacView.BACnet.SubscriptionManager
   alias BacViewWeb.DeviceUrl
 
   @type t :: %{alarms: %{integer() => non_neg_integer()}, cov: %{integer() => non_neg_integer()}}
@@ -83,8 +84,7 @@ defmodule BacViewWeb.DeviceBadgeCounts do
   end
 
   defp cov_counts() do
-    :bacview_subscriptions
-    |> ets_subscriptions()
+    SubscriptionManager.list_active()
     |> Enum.group_by(& &1.device_id)
     |> Map.new(fn {device_id, subs} -> {device_id, length(subs)} end)
     |> Enum.reject(fn {_device_id, count} -> count == 0 end)
@@ -100,14 +100,4 @@ defmodule BacViewWeb.DeviceBadgeCounts do
        do: description
 
   defp device_description(_device), do: nil
-
-  defp ets_subscriptions(table) do
-    if :ets.whereis(table) == :undefined do
-      []
-    else
-      table
-      |> :ets.tab2list()
-      |> Enum.map(fn {_key, sub} -> sub end)
-    end
-  end
 end

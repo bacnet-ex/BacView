@@ -69,6 +69,9 @@ defmodule BacView.BACnet.ActiveAlarms do
     |> sort_entries()
   end
 
+  @spec count(keyword()) :: non_neg_integer()
+  def count(opts \\ []), do: opts |> list() |> length()
+
   defp collect_events(nil, _objects_override) do
     AlarmEvent.list_all_active_events()
   end

@@ -291,30 +291,13 @@ defmodule BacViewWeb.CovNotificationChartLive do
     end
   end
 
-  defp chart_has_data?(%{series: series}) when is_list(series) do
-    Enum.any?(series, fn %{points: points} -> points != [] end)
+  defp chart_has_data?(data), do: BacViewWeb.ChartEventPayload.has_data?(data)
+
+  defp chart_event_payload(data) do
+    BacViewWeb.ChartEventPayload.build(data,
+      empty_label: "Keine plottbaren COV-Meldungen im gewählten Zeitraum."
+    )
   end
-
-  defp chart_has_data?(_data), do: false
-
-  defp chart_event_payload(%{series: series} = data) when is_list(series) do
-    payload_series = BacViewWeb.ChartEventPayload.series_payload(series)
-
-    if chart_has_data?(data) do
-      Map.put(data, :series, payload_series)
-    else
-      %{
-        series: [],
-        scales: Map.get(data, :scales, []),
-        markers: Map.get(data, :markers, []),
-        range: Map.get(data, :range, %{}),
-        empty_label: "Keine plottbaren COV-Meldungen im gewählten Zeitraum."
-      }
-    end
-  end
-
-  defp chart_event_payload(_data),
-    do: %{series: [], scales: [], empty_label: "Keine Daten geladen."}
 
   defp parse_type(type) when is_binary(type) do
     {:ok, String.to_existing_atom(type)}

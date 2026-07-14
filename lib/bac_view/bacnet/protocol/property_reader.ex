@@ -270,14 +270,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   end
 
   defp read_object_name(client, destination, object, read_opts) do
-    case debug_read_property(
-           client,
-           destination,
-           object,
-           :object_name,
-           read_opts,
-           "PropertyReader.read_object_name"
-         ) do
+    case read_property_value(client, destination, object, :object_name, read_opts) do
       {:ok, name} when is_binary(name) ->
         {:ok, name}
 
@@ -315,14 +308,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   end
 
   defp read_property_list(client, destination, object, read_opts) do
-    case debug_read_property(
-           client,
-           destination,
-           object,
-           :property_list,
-           read_opts,
-           "PropertyReader.read_property_list"
-         ) do
+    case read_property_value(client, destination, object, :property_list, read_opts) do
       {:ok, property_list} ->
         {:ok, unwrap_property_list(property_list)}
 
@@ -334,14 +320,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp read_property_list_indexed(client, destination, object, read_opts) do
     indexed_opts = Keyword.merge(read_opts, array_index: 0)
 
-    case debug_read_property(
-           client,
-           destination,
-           object,
-           :property_list,
-           indexed_opts,
-           "PropertyReader.read_property_list_indexed.length"
-         ) do
+    case read_property_value(client, destination, object, :property_list, indexed_opts) do
       {:ok, 0} ->
         {:ok, []}
 
@@ -350,13 +329,12 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
           1..count
           |> Task.async_stream(
             fn idx ->
-              case debug_read_property(
+              case read_property_value(
                      client,
                      destination,
                      object,
                      :property_list,
-                     Keyword.merge(read_opts, array_index: idx),
-                     "PropertyReader.read_property_list_indexed.element"
+                     Keyword.merge(read_opts, array_index: idx)
                    ) do
                 {:ok, prop} -> unwrap_property_identifier(prop)
                 {:error, _reason} -> nil
@@ -472,14 +450,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     properties
     |> Task.async_stream(
       fn prop ->
-        case debug_read_property(
-               client,
-               destination,
-               object,
-               prop,
-               read_opts,
-               "PropertyReader.read_properties_individually"
-             ) do
+        case read_property_value(client, destination, object, prop, read_opts) do
           {:ok, value} -> {prop, value}
           {:error, _client} -> nil
         end
@@ -731,9 +702,5 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       _other ->
         {:error, :property_array_not_readable}
     end
-  end
-
-  defp debug_read_property(client, destination, object, property, read_opts, _context) do
-    read_property_value(client, destination, object, property, read_opts)
   end
 end

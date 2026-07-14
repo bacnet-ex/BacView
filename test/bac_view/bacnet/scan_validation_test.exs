@@ -3,6 +3,8 @@ defmodule BacView.BACnet.ScanValidationTest do
 
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.DeviceSession
+  alias BacView.BACnet.PropertyLoad
+  alias BacView.BACnet.ValidationSkipStore
 
   describe "recoverable_validation_error?/1" do
     test "detects value and type validation failures" do
@@ -37,15 +39,15 @@ defmodule BacView.BACnet.ScanValidationTest do
     end
   end
 
-  describe "property_read_opts/2" do
+  describe "PropertyLoad.property_read_opts/2" do
     test "builds strict property read opts by default" do
-      assert DeviceSession.property_read_opts() == [allow_unknown_properties: true]
+      assert PropertyLoad.property_read_opts() == [allow_unknown_properties: true]
     end
 
     test "includes remote_device_id when device object is known" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
-      assert DeviceSession.property_read_opts(nil, device_obj) == [
+      assert PropertyLoad.property_read_opts(nil, device_obj) == [
                allow_unknown_properties: true,
                remote_device_id: 12
              ]
@@ -53,7 +55,7 @@ defmodule BacView.BACnet.ScanValidationTest do
 
     test "passes skip mode through object_opts for property reads" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
-      value_opts = DeviceSession.property_read_opts(:value, device_obj)
+      value_opts = PropertyLoad.property_read_opts(:value, device_obj)
 
       assert Keyword.get(value_opts, :remote_device_id) == 12
 
@@ -61,7 +63,7 @@ defmodule BacView.BACnet.ScanValidationTest do
                skip_property_validation_remote_object: :value
              ]
 
-      all_opts = DeviceSession.property_read_opts(true, device_obj)
+      all_opts = PropertyLoad.property_read_opts(true, device_obj)
 
       assert Keyword.get(all_opts, :object_opts) == [
                skip_property_validation_remote_object: true
@@ -69,11 +71,11 @@ defmodule BacView.BACnet.ScanValidationTest do
     end
   end
 
-  describe "property_validation_skip_mode_from_objects/2" do
+  describe "ValidationSkipStore.from_objects/2" do
     test "reads skip mode from object summaries" do
       object_id = %ObjectIdentifier{type: :multi_state_value, instance: 42}
 
-      assert DeviceSession.property_validation_skip_mode_from_objects(
+      assert ValidationSkipStore.from_objects(
                [
                  %{type: :multi_state_value, instance: 42, property_validation_skip_mode: :value}
                ],
@@ -82,7 +84,7 @@ defmodule BacView.BACnet.ScanValidationTest do
     end
   end
 
-  describe "apply_property_validation_skip_mode/3" do
+  describe "ValidationSkipStore.apply_to_objects/3" do
     test "tags the matching object summary" do
       object_id = %ObjectIdentifier{type: :multi_state_value, instance: 42}
 
@@ -91,38 +93,38 @@ defmodule BacView.BACnet.ScanValidationTest do
         %{type: :multi_state_value, instance: 42}
       ]
 
-      assert DeviceSession.apply_property_validation_skip_mode(objects, object_id, :value) == [
+      assert ValidationSkipStore.apply_to_objects(objects, object_id, :value) == [
                %{type: :analog_input, instance: 1},
                %{type: :multi_state_value, instance: 42, property_validation_skip_mode: :value}
              ]
     end
   end
 
-  describe "properties_scan_fallback_path?/3" do
+  describe "PropertyLoad.properties_scan_fallback_path?/3" do
     test "uses scan fallback for skip mode reads" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
       object = %ObjectIdentifier{type: :analog_input, instance: 1}
 
-      assert DeviceSession.properties_scan_fallback_path?(object, :value, device_obj)
-      assert DeviceSession.properties_scan_fallback_path?(object, true, device_obj)
-      refute DeviceSession.properties_scan_fallback_path?(object, nil, device_obj)
+      assert PropertyLoad.properties_scan_fallback_path?(object, :value, device_obj)
+      assert PropertyLoad.properties_scan_fallback_path?(object, true, device_obj)
+      refute PropertyLoad.properties_scan_fallback_path?(object, nil, device_obj)
     end
 
     test "uses scan fallback for the device object itself" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
       object = %ObjectIdentifier{type: :device, instance: 12}
 
-      assert DeviceSession.properties_scan_fallback_path?(object, nil, device_obj)
-      refute DeviceSession.device_object?(object, %ObjectIdentifier{type: :device, instance: 99})
+      assert PropertyLoad.properties_scan_fallback_path?(object, nil, device_obj)
+      refute PropertyLoad.device_object?(object, %ObjectIdentifier{type: :device, instance: 99})
     end
   end
 
-  describe "properties_scan_fallback_on_error?/1" do
+  describe "PropertyLoad.properties_scan_fallback_on_error?/1" do
     test "detects segmentation and property reader fallback errors" do
-      assert DeviceSession.properties_scan_fallback_on_error?(:segmentation_not_supported)
-      assert DeviceSession.properties_scan_fallback_on_error?(:buffer_overflow)
-      assert DeviceSession.properties_scan_fallback_on_error?(:object_unavailable)
-      refute DeviceSession.properties_scan_fallback_on_error?(:timeout)
+      assert PropertyLoad.properties_scan_fallback_on_error?(:segmentation_not_supported)
+      assert PropertyLoad.properties_scan_fallback_on_error?(:buffer_overflow)
+      assert PropertyLoad.properties_scan_fallback_on_error?(:object_unavailable)
+      refute PropertyLoad.properties_scan_fallback_on_error?(:timeout)
     end
   end
 
@@ -152,11 +154,24 @@ defmodule BacView.BACnet.ScanValidationTest do
     end
   end
 
-  describe "scan_read_opts/2" do
+  describe "PropertyLoad.scan_read_opts/2" do
+    test "matches property_read_opts for the same device and skip mode" do
+      device_obj = %ObjectIdentifier{type: :device, instance: 12}
+
+      assert PropertyLoad.scan_read_opts(device_obj) ==
+               PropertyLoad.property_read_opts(nil, device_obj)
+
+      assert PropertyLoad.scan_read_opts(device_obj, :value) ==
+               PropertyLoad.property_read_opts(:value, device_obj)
+
+      assert PropertyLoad.scan_read_opts(device_obj, true) ==
+               PropertyLoad.property_read_opts(true, device_obj)
+    end
+
     test "builds strict scan opts by default" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
-      assert DeviceSession.scan_read_opts(device_obj) == [
+      assert PropertyLoad.scan_read_opts(device_obj) == [
                allow_unknown_properties: true,
                remote_device_id: 12
              ]
@@ -165,7 +180,7 @@ defmodule BacView.BACnet.ScanValidationTest do
     test "passes skip mode through object_opts" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
-      value_opts = DeviceSession.scan_read_opts(device_obj, :value)
+      value_opts = PropertyLoad.scan_read_opts(device_obj, :value)
       assert Keyword.get(value_opts, :allow_unknown_properties)
       assert Keyword.get(value_opts, :remote_device_id) == 12
 
@@ -173,7 +188,7 @@ defmodule BacView.BACnet.ScanValidationTest do
                skip_property_validation_remote_object: :value
              ]
 
-      all_opts = DeviceSession.scan_read_opts(device_obj, true)
+      all_opts = PropertyLoad.scan_read_opts(device_obj, true)
 
       assert Keyword.get(all_opts, :object_opts) == [
                skip_property_validation_remote_object: true

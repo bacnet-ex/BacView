@@ -80,7 +80,7 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
       |> Enum.sort_by(& &1.t)
 
     unit = series_unit(device_id, object_id, property, object, subscription)
-    enum_chart? = enum_chart?(object, property)
+    enum_chart? = MultistateState.enum_chart?(object, property)
     scale_id = if enum_chart?, do: "states", else: scale_id_for(unit)
 
     series = [
@@ -241,30 +241,24 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
   end
 
   defp chart_value(value, object, property) do
-    if enum_chart?(object, property), do: trunc(value), else: value
+    if MultistateState.enum_chart?(object, property), do: trunc(value), else: value
   end
 
   defp chart_point_label(object, property, value) do
-    if enum_chart?(object, property) do
+    if MultistateState.enum_chart?(object, property) do
       MultistateState.format_present_value(value, object) || Integer.to_string(trunc(value))
     end
   end
 
-  defp enum_chart?(object, property) do
-    MultistateState.multistate_object?(object) and
-      MultistateState.state_value_property?(property) and
-      MultistateState.state_options(object) != []
-  end
-
   defp build_scales("states", _unit, object, property) do
-    if enum_chart?(object, property) do
+    if MultistateState.enum_chart?(object, property) do
       [
         %{
           id: "states",
           label: "—",
           side: "left",
           kind: "enum",
-          ticks: enum_ticks(object)
+          ticks: MultistateState.enum_ticks(object)
         }
       ]
     else
@@ -280,12 +274,6 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
         side: "left"
       }
     ]
-  end
-
-  defp enum_ticks(object) do
-    Enum.map(MultistateState.state_options(object), fn %{value: value, label: label} ->
-      %{value: value, label: label}
-    end)
   end
 
   defp maybe_put_series_paths(series, true), do: Map.put(series, :paths, "stepped")

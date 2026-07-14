@@ -128,6 +128,20 @@ defmodule BacView.BACnet.Protocol.MultistateState do
     end
   end
 
+  @doc """
+  True when the object/property pair can be charted as a discrete multistate series.
+  """
+  @spec enum_chart?(map() | nil, term()) :: boolean()
+  def enum_chart?(object, property) do
+    multistate_object?(object) and state_value_property?(property) and state_options(object) != []
+  end
+
+  @doc """
+  Chart axis ticks derived from `state_options/1` (`%{value, label}` maps).
+  """
+  @spec enum_ticks(map()) :: [%{value: pos_integer(), label: String.t()}]
+  def enum_ticks(object) when is_map(object), do: state_options(object)
+
   @spec object_fields(map()) :: map()
   def object_fields(obj) when is_map(obj) do
     type = Map.get(obj, :type)

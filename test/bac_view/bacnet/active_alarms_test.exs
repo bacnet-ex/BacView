@@ -159,6 +159,51 @@ defmodule BacView.BACnet.ActiveAlarmsTest do
     assert since.sort_key == DateTime.to_unix(updated_at, :microsecond)
   end
 
+  test "count unions events and status-flag objects" do
+    BacnetEtsLock.with_tables(@tables, fn ->
+      device_id = 90_044
+      event_object = %ObjectIdentifier{type: :analog_input, instance: 1}
+
+      event =
+        EventRecord.from_alarm_summary(device_id, %BACnet.Protocol.AlarmSummary{
+          object_identifier: event_object,
+          alarm_state: :offnormal,
+          acknowledged_transitions: %EventTransitionBits{
+            to_offnormal: false,
+            to_fault: true,
+            to_normal: true
+          }
+        })
+
+      :ets.insert(:bacview_events, {EventRecord.key(device_id, event_object), event})
+
+      objects = [
+        %{
+          type: :analog_input,
+          instance: 1,
+          status_flags: %StatusFlags{
+            in_alarm: true,
+            fault: false,
+            overridden: false,
+            out_of_service: false
+          }
+        },
+        %{
+          type: :binary_input,
+          instance: 2,
+          status_flags: %StatusFlags{
+            in_alarm: true,
+            fault: false,
+            overridden: false,
+            out_of_service: false
+          }
+        }
+      ]
+
+      assert ActiveAlarms.count(device_id: device_id, objects: objects) == 2
+    end)
+  end
+
   test "device_groups returns per-device alarm counts including status flags" do
     BacnetEtsLock.with_tables(@tables, fn ->
       device_id = 90_043
