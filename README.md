@@ -9,13 +9,22 @@ This project has been built with Grok Build and the Composer 2.5 Fast model.
 
 ## Features
 
-- **Network discovery** — Who-Is / I-Am scan with device list
-- **Structured View** — hierarchy tree with search and flat-list reveal
-- **Object explorer** — property reads (chunked RPM), live COV badges
-- **COV subscriptions** — per-property subscribe, bulk Present_Value subscribe, auto-renewal
-- **Alarms & events** — GetAlarmSummary polling, live event notifications, JSON/CSV export
-- **i18n** — German (default) and English, persisted in `localStorage`
-- **Keyboard shortcuts** — press `?` for help (`/`, `r`, `1`–`4` on device pages)
+- **Network discovery** — Who-Is / I-Am scan with live device list, filters, and optional limited instance / vendor ranges
+- **BBMD / Foreign Device** — register with a remote BBMD so Who-Is is distributed via Distribute-Broadcast-To-Network; automatic re-registration
+- **Stack settings** — transport (BACnet/IP or MS/TP), network interface / serial port, local device instance, APDU/timeout options; persisted to `runtime_settings.json` and restartable from the UI
+- **Device load & scan** — full device object list scan with progress banner; scan recovery for validation failures (relaxed value/type skip modes)
+- **Hierarchies** — Structured View tree with search and “reveal in flat list”; optional **name-based hierarchy** built from object-name separators when no Structured View exists
+- **Object explorer** — property table with RPM (ReadPropertyMultiple) first, individual ReadProperty fallback, live load progress, status-flag icons, and COV badges
+- **Property writes** — Present_Value (with priority where applicable), generic property write, and weekly schedule editor
+- **COV subscriptions** — per-property or bulk Present_Value subscribe, auto-renewal, active-subscription overview, notification log, and COV history charts (CSV/JSON export)
+- **Alarms & events** — GetAlarmSummary polling, live Confirmed/UnconfirmedEventNotification handling, active-alarm popups, notification-class recipient enrollment, JSON/CSV event export
+- **Trend logs** — chart viewer for log buffer data, time-range navigation, CSV/JSON export
+- **File objects** — AtomicReadFile / AtomicWriteFile transfer UI
+- **EDE export** — generate BACnet Engineering Data Exchange files from a scanned device (`bacnet_ede`)
+- **Device services** — time synchronization, DeviceCommunicationControl, and ReinitializeDevice
+- **i18n** — German (default) and English via Gettext; locale switcher persisted in `localStorage` (desktop: OS locale on first launch)
+- **Keyboard shortcuts** — press `?` for help (`/`, `r`, `1`–`4`, `0` / Escape on device pages)
+- **Desktop app (experimental)** — optional native window via elixir-desktop (`BACVIEW_DESKTOP=1`)
 
 ## Requirements
 
@@ -114,26 +123,91 @@ Place a `.env` file next to the release root to load environment variables at st
 
 ## Architecture
 
+### Supervision tree
+
 ```
 BacView.Application
-├── BacViewWeb.Endpoint
+├── BacViewWeb.Telemetry
 ├── BacView.PubSub
-├── BacView.BACnet.Cache          # ETS tables
-├── BacView.BACnet.Stack          # bacstack client (IPv4/MSTP transport)
-├── BacView.Settings
-├── BacView.BACnet.Discovery
-├── BacView.BACnet.SubscriptionManager
-├── BacView.BACnet.AlarmEvent
-└── BacView.BACnet.DeviceSessionSupervisor
+├── BacView.Settings                    # runtime_settings.json
+├── BacView.BACnet.Cache                # named ETS tables
+├── BacView.BACnet.Stack                # Boot + optional Runtime (client/transport)
+├── BacView.BACnet.ForeignRegistration  # BBMD foreign device re-registration
+├── BacView.BACnet.Discovery            # Who-Is / I-Am
+├── BacView.BACnet.SubscriptionManager  # COV subscribe / renew / log
+├── BacView.BACnet.NotificationClassRecipient
+├── BacView.BACnet.AlarmEvent           # GetAlarmSummary + event notifications
+├── BacView.BACnet.DeviceRegistry       # Registry for per-device sessions
+├── BacView.BACnet.DeviceSessionSupervisor  # DynamicSupervisor → DeviceSession
+└── BacViewWeb.Endpoint
+    # (+ Desktop.Window when BACVIEW_DESKTOP=1)
 ```
 
-**Transports:** `BacView.BACnet.Transport.IPv4` is production-ready. `BacView.BACnet.Transport.MSTP` is available,
-but considered experimental. `BacView.BACnet.Transport.BACnetSC` is a documented stub for future BACnet/SC support.
+BACnet children (Cache through DeviceSessionSupervisor) start only when
+`config :bacview, start_bacnet: true` (the default). Tests set `start_bacnet: false`.
+The stack transport/client is started after the supervisor boots via
+`Stack.Boot.start_runtime/0` so invalid settings leave the app up with BACnet offline.
+
+### Layers
+
+| Layer | Modules | Role |
+|-------|---------|------|
+| Stack / transport | `Stack`, `Stack.Boot` / `Runtime`, `Transport.*`, `Client` | bacstack client, IPv4/MS/TP, BBMD foreign registration |
+| Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list in ETS |
+| Per-device session | `DeviceSession`, `DeviceSessionSupervisor` | Load/scan device, object cache, property read/write, scan recovery |
+| Property IO | `PropertyLoad`, `Protocol.PropertyReader`, `ObjectScanRead` | RPM first, individual ReadProperty fallback, scan fallback on hard errors |
+| Validation recovery | `ValidationSkipStore` | Persist skip modes after scan recovery |
+| Subscriptions / COV | `SubscriptionManager` | COV subscribe, notification log, pruning |
+| Alarms | `AlarmEvent`, `ActiveAlarms` | Event state, active-alarm lists |
+| Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `HierarchySplit` | Structured View + name-split trees |
+| Web | `BacViewWeb.Live.*`, components | LiveViews, tables, popups, charts |
+
+Primary UI routes:
+
+| Path | LiveView |
+|------|----------|
+| `/` | `DashboardLive` |
+| `/devices/:device_id` | `DeviceLive` |
+| `/devices/:device_id/objects/:type/:instance` | `ObjectLive` |
+
+Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. Runtime BACnet state uses **ETS** (`BacView.BACnet.Cache`) and JSON settings (`BacView.Settings`) — no Ecto for domain data.
+
+### Device load vs object property load
+
+**Full device scan** (`DeviceSession` load/reload): device object → object list → per-object scan → hierarchy. Progress on PubSub `"device:#{id}:load_progress"`.
+
+**Single-object properties** (`DeviceSession.read_properties` → `PropertyLoad` → `PropertyReader`):
+
+1. Prefer RPM (`read_object` / ReadPropertyMultiple).
+2. On segmentation/buffer-style failures → individual concurrent `ReadProperty` (default concurrency **8**, `BACVIEW_PROPERTY_READ_CONCURRENCY`).
+3. Validation skip mode (from scan recovery) is applied via bacstack `object_opts` on the normal path — it does not force the scan path alone.
+4. On certain hard failures → `ObjectScanRead` fallback.
+
+Individual property progress is broadcast on `"device:#{id}:properties_progress"` and shown in the object detail UI.
+
+### ETS tables
+
+Owned by `BacView.BACnet.Cache`:
+
+`:bacview_devices`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`,
+`:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`
+
+Web code must not open subscription ETS directly — use `SubscriptionManager` APIs.
+
+### Transports
+
+| Module | Status |
+|--------|--------|
+| `BacView.BACnet.Transport.IPv4` | Production-ready (BACnet/IP UDP) |
+| `BacView.BACnet.Transport.MSTP` | Available when `circuits_uart` / MS/TP stack is present; experimental |
+| `BacView.BACnet.Transport.BACnetSC` | Stub for future BACnet/SC (WebSocket) |
+
+Transport selection and network interface are configured in the dashboard sidebar (persisted settings).
 
 ## Tests
 
 ```bash
-mix precommit   # compile, format check, unused deps, test
+mix precommit   # unlock unused deps, compile -Werror, format, credo, dialyzer, test
 ```
 
 BACnet is disabled in test (`config/test.exs`: `start_bacnet: false`) to avoid UDP port conflicts.

@@ -61,6 +61,7 @@ defmodule BacViewWeb.ObjectLive do
           if connected?(socket) do
             Phoenix.PubSub.subscribe(BacView.PubSub, "device:#{device_id}:cov")
             Phoenix.PubSub.subscribe(BacView.PubSub, "device:#{device_id}:alarms")
+            Phoenix.PubSub.subscribe(BacView.PubSub, "device:#{device_id}:properties_progress")
             Phoenix.PubSub.subscribe(BacView.PubSub, "cov:updates")
             send(self(), :load_object)
           end
@@ -76,6 +77,7 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:unknown_properties, [])
            |> assign(:loading, true)
            |> assign(:properties_loading, true)
+           |> assign(:properties_progress, nil)
            |> assign(:subscribed_keys, MapSet.new())
            |> assign(:subscriptions, [])
            |> assign(:cov_count, 0)
@@ -239,6 +241,7 @@ defmodule BacViewWeb.ObjectLive do
       |> assign(:unknown_properties, unknown_properties)
       |> assign(:unknown_property_hex_keys, MapSet.new())
       |> assign(:properties_loading, properties_loading)
+      |> assign(:properties_progress, nil)
       |> assign(:page_title, page_title)
       |> assign(:device_objects, Enum.map(device_objects, &Text.sanitize_object/1))
       |> assign(:file_metadata, file_metadata)
@@ -456,6 +459,15 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   @impl true
+  def handle_info({:object_properties_progress, object_id, progress}, socket) do
+    if object_id_match?(socket.assigns.object_id, object_id) do
+      {:noreply, assign(socket, :properties_progress, progress)}
+    else
+      {:noreply, socket}
+    end
+  end
+
+  @impl true
   def handle_info({:properties_refreshed, result}, socket) do
     socket =
       case result do
@@ -471,6 +483,7 @@ defmodule BacViewWeb.ObjectLive do
           |> assign(:unknown_properties, unknown)
           |> assign(:unknown_property_hex_keys, MapSet.new())
           |> assign(:properties_loading, false)
+          |> assign(:properties_progress, nil)
           |> assign(:writing_property, nil)
           |> assign_object_nav_targets(object, enriched, socket.assigns.device_objects)
           |> maybe_refresh_object_summary(enriched, object)
@@ -479,6 +492,7 @@ defmodule BacViewWeb.ObjectLive do
         {:error, reason} ->
           socket
           |> assign(:properties_loading, false)
+          |> assign(:properties_progress, nil)
           |> assign(:writing_property, nil)
           |> LiveFlash.put_error(:refresh_properties, reason)
       end
@@ -1577,9 +1591,19 @@ defmodule BacViewWeb.ObjectLive do
         send(parent, {:properties_refreshed, result})
       end)
 
-      assign(socket, :properties_loading, true)
+      socket
+      |> assign(:properties_loading, true)
+      |> assign(:properties_progress, nil)
     end
   end
+
+  defp object_id_match?(%ObjectIdentifier{type: type, instance: instance}, %ObjectIdentifier{
+         type: type,
+         instance: instance
+       }),
+       do: true
+
+  defp object_id_match?(_left, _right), do: false
 
   defp format_parse_error(:invalid_boolean), do: gt("erwartet true/false")
   defp format_parse_error(:invalid_number), do: gt("erwartet Zahl")
@@ -1987,7 +2011,7 @@ defmodule BacViewWeb.ObjectLive do
         <% end %>
       </:topbar_end>
 
-      <%= for _ <- [{@locale_version, @loading, @properties_loading}] do %>
+      <%= for _ <- [{@locale_version, @loading, @properties_loading, @properties_progress}] do %>
         <ObjectDetail.object_detail
           device={@device}
           object={@object}
@@ -1995,6 +2019,7 @@ defmodule BacViewWeb.ObjectLive do
           unknown_properties={@unknown_properties}
           loading={@loading}
           properties_loading={@properties_loading}
+          properties_progress={@properties_progress}
           subscribed_keys={@subscribed_keys}
           write_priority={@write_priority}
           writing_property={@writing_property}

@@ -13,7 +13,7 @@ defmodule BacView.BACnet.Protocol.TrendLogExportTest do
         },
         %{
           label: "BI-2",
-          unit_label: "—",
+          unit_label: "",
           points: [%{t: 1_710_000_000_000, v: 1.0}]
         }
       ]
@@ -46,7 +46,7 @@ defmodule BacView.BACnet.Protocol.TrendLogExportTest do
       series: [
         %{
           label: "MSV-1",
-          unit_label: "—",
+          unit_label: "",
           points: [
             %{t: 1_710_000_000_000, v: 1, label: "1 (Aus)"},
             %{t: 1_710_000_060_000, v: 2, label: "2 (Ein)"}

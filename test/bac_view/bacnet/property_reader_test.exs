@@ -223,6 +223,28 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert expected_fallback_rows(rows)
     end
 
+    test "reports progress during individual property reads" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+      parent = self()
+
+      assert {:ok, %{properties: rows}} =
+               PropertyReader.read_all(
+                 __MODULE__.SegmentationClient,
+                 :dest,
+                 object,
+                 on_property_progress: fn progress ->
+                   send(parent, {:progress, progress})
+                 end
+               )
+
+      assert expected_fallback_rows(rows)
+
+      progresses = drain_progress_messages()
+      assert Enum.any?(progresses, &(&1.done == 0 and &1.total > 0))
+      assert Enum.any?(progresses, &(&1.done == &1.total and &1.total > 0))
+      assert Enum.all?(progresses, &(&1.stage == :reading_properties))
+    end
+
     test "falls back to individual reads when buffer overflow occurs" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
 
@@ -653,6 +675,14 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
   defp restore_property_read_concurrency(value),
     do: Application.put_env(:bacview, :property_read_concurrency, value)
+
+  defp drain_progress_messages(acc \\ []) do
+    receive do
+      {:progress, progress} -> drain_progress_messages([progress | acc])
+    after
+      0 -> Enum.reverse(acc)
+    end
+  end
 
   defmodule PropertyListUnavailableDeviceClient do
     def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}

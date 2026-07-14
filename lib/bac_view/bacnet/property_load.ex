@@ -47,11 +47,21 @@ defmodule BacView.BACnet.PropertyLoad do
 
   Skip mode is applied via `object_opts` on the normal RPM/individual path; it
   does **not** force the scan fallback path up front.
+
+  Optional `opts`:
+  - `:on_property_progress` — `fun.(%{stage: :reading_properties, done: n, total: m})`
+    during individual (non-RPM) property streams
   """
-  @spec read(term(), ObjectIdentifier.t(), :value | true | nil, ObjectIdentifier.t() | nil) ::
+  @spec read(
+          term(),
+          ObjectIdentifier.t(),
+          :value | true | nil,
+          ObjectIdentifier.t() | nil,
+          keyword()
+        ) ::
           {:ok, PropertyReader.read_result()} | {:error, term()}
-  def read(address, %ObjectIdentifier{} = object, skip_mode, device_obj) do
-    read_via_property_reader(address, object, skip_mode, device_obj)
+  def read(address, %ObjectIdentifier{} = object, skip_mode, device_obj, opts \\ []) do
+    read_via_property_reader(address, object, skip_mode, device_obj, opts)
   rescue
     exception ->
       {:error, {:property_read_failed, exception}}
@@ -67,16 +77,16 @@ defmodule BacView.BACnet.PropertyLoad do
       reason in [:object_unavailable, :property_list_not_readable]
   end
 
-  defp read_via_property_reader(address, object, skip_mode, device_obj) do
-    opts = property_read_opts(skip_mode, device_obj)
+  defp read_via_property_reader(address, object, skip_mode, device_obj, opts) do
+    read_opts = merge_progress_opts(property_read_opts(skip_mode, device_obj), opts)
 
-    case PropertyReader.read_all(Client, address, object, opts) do
+    case PropertyReader.read_all(Client, address, object, read_opts) do
       {:ok, _result} = ok ->
         ok
 
       {:error, reason} = err ->
         if properties_scan_fallback_on_error?(reason) do
-          case read_via_scan_fallback(address, object, device_obj, skip_mode) do
+          case read_via_scan_fallback(address, object, device_obj, skip_mode, opts) do
             {:ok, _fallback_result} = fallback_ok -> fallback_ok
             {:error, _fallback_err} -> err
           end
@@ -86,8 +96,11 @@ defmodule BacView.BACnet.PropertyLoad do
     end
   end
 
-  defp read_via_scan_fallback(address, object, device_obj, skip_mode) do
-    fallback_opts = scan_fallback_read_opts(device_obj, skip_mode)
+  defp read_via_scan_fallback(address, object, device_obj, skip_mode, opts) do
+    fallback_opts =
+      device_obj
+      |> scan_fallback_read_opts(skip_mode)
+      |> merge_progress_opts(opts)
 
     case ObjectScanRead.read_object_fallback(address, object, fallback_opts) do
       {:ok, obj} ->
@@ -103,4 +116,11 @@ defmodule BacView.BACnet.PropertyLoad do
 
   defp scan_fallback_read_opts(device_obj, skip_mode),
     do: property_read_opts(skip_mode, device_obj)
+
+  defp merge_progress_opts(read_opts, opts) when is_list(read_opts) and is_list(opts) do
+    case Keyword.get(opts, :on_property_progress) do
+      fun when is_function(fun, 1) -> Keyword.put(read_opts, :on_property_progress, fun)
+      _no_progress -> read_opts
+    end
+  end
 end

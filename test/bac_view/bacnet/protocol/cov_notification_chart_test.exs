@@ -101,12 +101,14 @@ defmodule BacView.BACnet.Protocol.CovNotificationChartTest do
     assert [scale] = data.scales
     assert scale.id == "states"
     assert scale.kind == "enum"
+    assert scale.label == ""
     assert length(scale.ticks) == 3
     assert Enum.at(scale.ticks, 0).label == "1 (Aus)"
     assert Enum.at(scale.ticks, 1).label == "2 (Ein)"
 
     assert [series] = data.series
     assert series.scale_id == "states"
+    assert series.unit_label == ""
     assert series.paths == "stepped"
     assert [%{v: 1, label: "1 (Aus)"}, %{v: 2, label: "2 (Ein)"}] = series.points
   end

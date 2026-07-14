@@ -1,13 +1,39 @@
-This is a web application written using the Phoenix web framework.
+# BacView — agent guidelines
+
+BacView is a **BACnet explorer** built with **Phoenix LiveView** and [bacstack](https://github.com/bacnet-ex/bacstack). App modules are `BacView` / `BacViewWeb`.
+
+Primary UI routes (see `lib/bac_view_web/router.ex`):
+
+| Path | LiveView |
+|------|----------|
+| `/` | `DashboardLive` |
+| `/devices/:device_id` | `DeviceLive` |
+| `/devices/:device_id/objects/:type/:instance` | `ObjectLive` |
+
+There is **no user auth / `current_scope`** in this app. Do not invent scope plugs or pass `current_scope` to layouts unless that feature is intentionally added.
+
+---
 
 ## Project guidelines
 
-- Use `mix precommit` alias when you are done with all changes and fix any pending issues
-- Use the already included and available `:req` (`Req`) library for HTTP requests, **avoid** `:httpoison`, `:tesla`, and `:httpc`. Req is included by default and is the preferred HTTP client for Phoenix apps
+- Use `mix precommit` when you are done with a set of changes and fix all issues it reports. It runs (see `mix.exs`):
+
+      deps.unlock --unused
+      compile --warnings-as-errors
+      format --check-formatted
+      credo --strict --all
+      dialyzer
+      test --warnings-as-errors
+
+- Use the included **`:req` (`Req`)** library for HTTP. **Avoid** `:httpoison`, `:tesla`, and `:httpc`.
+- Prefer **existing modules** over new layers. Domain BACnet logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`.
+- Do **not** add Ecto schemas/repos for BACnet domain data unless explicitly requested. Runtime state uses **ETS** (see `BacView.BACnet.Cache`) and JSON settings (`BacView.Settings` / `runtime_settings.json`).
+- Prefer mechanical, behavior-preserving refactors over “clever” rewrites of the BACnet stack.
 
 ### Localization (DE/EN)
 
-- UI copy uses German **msgids** via `t(@locale, @locale_version, "...")` in templates and `gt("...")` in LiveView/helpers; English lives in `priv/gettext/en/LC_MESSAGES/default.po`
+- UI copy uses **German msgids** via `t(@locale, @locale_version, "...")` in templates and `gt("...")` / `gt("...", opts)` in LiveView modules and helpers.
+- English catalog: `priv/gettext/en/LC_MESSAGES/default.po`
 - When you **add or change** translatable UI strings:
   1. Update the `TRANSLATIONS` map in `priv/gettext/build_en_translations.py`
   2. **Always** regenerate the catalog yourself (do not ask the user to run it):
@@ -15,46 +41,138 @@ This is a web application written using the Phoenix web framework.
          python3 priv/gettext/build_en_translations.py
 
   3. Run `mix test test/bac_view_web/locale_test.exs test/bac_view_web/locale_switch_live_test.exs` (or `mix precommit`)
-- The script fails if any msgid lacks an English translation — add the missing entry before finishing
+- The script **fails** if any msgid lacks an English translation — add the missing entry before finishing.
+- Locale switch: `BacViewWeb.LocaleHook` on the default `live_session`; use `LocaleAttrs` in function components that need `t/3`.
 
-### Phoenix v1.8 guidelines
+### Config & environment
 
-- **Always** begin your LiveView templates with `<Layouts.app flash={@flash} ...>` which wraps all inner content
-- The `MyAppWeb.Layouts` module is aliased in the `my_app_web.ex` file, so you can use it without needing to alias it again
-- Anytime you run into errors with no `current_scope` assign:
-  - You failed to follow the Authenticated Routes guidelines, or you failed to pass `current_scope` to `<Layouts.app>`
-  - **Always** fix the `current_scope` error by moving your routes to the proper `live_session` and ensure you pass `current_scope` as needed
-- Phoenix v1.8 moved the `<.flash_group>` component to the `Layouts` module. You are **forbidden** from calling `<.flash_group>` outside of the `layouts.ex` module
-- Out of the box, `core_components.ex` imports an `<.icon name="hero-x-mark" class="w-5 h-5"/>` component for for hero icons. **Always** use the `<.icon>` component for icons, **never** use `Heroicons` modules or similar
-- **Always** use the imported `<.input>` component for form inputs from `core_components.ex` when available. `<.input>` is imported and using it will will save steps and prevent errors
-- If you override the default input classes (`<.input class="myclass px-2 py-1 rounded-lg">)`) class with your own values, no default classes are inherited, so your
-custom classes must fully style the input
+Important keys (see `config/config.exs`, `config/runtime.exs`, `README.md`):
+
+| Key / env | Role |
+|-----------|------|
+| `BACVIEW_DESKTOP=1` | **Compile-time** desktop build (`elixir-desktop`); `mix clean` when switching web ↔ desktop |
+| `BACVIEW_TIMEZONE` | IANA timezone (default `Europe/Zurich`) |
+| `BACVIEW_PROPERTY_READ_CONCURRENCY` | Max parallel individual `ReadProperty` (default **8**). Set **1** if old devices are overwhelmed |
+| `BACVIEW_SETTINGS_PATH` | Override path for persisted stack settings |
+| `BACVIEW_BACSTACK_DEBUG` | Verbose bacstack logging |
+| `BACVIEW_ENABLE_MSTP` | Force MS/TP enable when UART stack is available |
+| `:bacview, :property_read_concurrency` | Application env used by `PropertyReader.property_read_concurrency/0` |
+
+---
+
+## BacView architecture (BACnet)
+
+### Layers
+
+| Layer | Location | Responsibility |
+|-------|----------|----------------|
+| Stack / transport | `BacView.BACnet.Stack`, `Transport`, `Client` | bacstack client, UDP/MS/TP, BBMD / foreign registration |
+| Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list ETS |
+| Per-device session | `DeviceSession` (+ supervisor) | Load/scan device, object cache, property reads/writes |
+| Property IO | `PropertyLoad`, `PropertyReader`, `ObjectScanRead` | Full object property load, RPM vs individual, scan fallback |
+| Validation recovery | `ValidationSkipStore` | Persist skip modes after scan recovery |
+| Subscriptions / COV | `SubscriptionManager` | COV subscribe, notification log, pruning |
+| Alarms | `AlarmEvent`, `ActiveAlarms` | Event state, active-alarm lists/counts |
+| Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `HierarchySplit` | Structured View + name-split trees |
+| Web | `BacViewWeb.Live.*`, components | LiveViews, tables, popups, charts |
+
+### ETS tables (`BacView.BACnet.Cache`)
+
+Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`, `:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`.
+
+- **Web code must not** open subscription ETS directly — use `SubscriptionManager.list_active/0` (and related APIs).
+- Tests that touch named tables should use `BacView.Test.BacnetEtsLock.with_tables/2` when concurrent tests share global ETS.
+
+### Device load vs object property load
+
+**Full device scan** (`DeviceSession` load/reload):
+
+- Stages: reading device → object list → **scanning objects** → hierarchy.
+- Progress: PubSub `"device:#{id}:load_progress"` → `{:device_load_progress, progress}` (object-level done/total). UI: `DeviceLoadProgress`.
+
+**Single-object properties** (`DeviceSession.read_properties` → `PropertyLoad` → `PropertyReader`):
+
+1. Prefer **RPM** (`read_object` / property multiple) with opts from `PropertyLoad.property_read_opts/2`.
+2. On segmentation/buffer-style failures → individual path (property list / schema + concurrent `ReadProperty`).
+3. **Skip mode** (scan recovery) is applied via `object_opts: [skip_property_validation_remote_object: …]` on the normal path — do **not** force the scan path only because skip mode is set.
+4. On certain hard failures (`properties_scan_fallback_on_error?/1`) → `ObjectScanRead` (thin wrapper around `PropertyReader.read_properties_map/4`).
+
+**Individual (one-by-one) property progress** (object properties view):
+
+- `PropertyReader` accepts `on_property_progress: fun/1` with  
+  `%{stage: :reading_properties, done: n, total: m}`.
+- `DeviceSession` broadcasts by default on  
+  `"device:#{id}:properties_progress"` →  
+  `{:object_properties_progress, object_id, progress}`.
+- `ObjectLive` subscribes and drives `@properties_progress` in `ObjectDetail` (banner + bar). Clear progress when load finishes.
+- **Do not** send progress callbacks into bacstack client opts; strip via `client_opts/1` (never pass `:on_property_progress` to bacstack).
+
+### Validation skip store
+
+`BacView.BACnet.ValidationSkipStore` owns durable skip modes (`:value` | `true` for bacstack):
+
+- Resolve order: session object tags → `device.objects` tags → ETS.
+- `put/3` **must** persist (ensures ETS table); do not silently no-op.
+- Full device rescan **clears** skip modes for that device.
+- LiveViews should **not** pre-resolve skip mode for normal reads; session resolve is enough.
+
+### Property list fallbacks
+
+- Full `property_list` array fails → indexed 0..N **only** when `Segmentation.array_fallback_error?/1` (segmentation/buffer **or** `:property_not_readable`).
+- `:unknown_property` on `property_list` → **schema** path (device has no list), **not** indexed N-reads.
+- Heavy device properties (`object_list`, bindings, COV lists, etc.) are skipped on individual loads — see `PropertyReader.heavy_properties_for/1`.
+
+### Concurrency
+
+- Default parallel individual `ReadProperty`: **8** (`:property_read_concurrency` / `BACVIEW_PROPERTY_READ_CONCURRENCY`).
+- Device object scan still uses separate higher concurrency for **objects** (`Task.async_stream` in `DeviceSession.scan_object_list`), not the property-read setting.
+- Do not hard-code concurrency `1` globally; use config for fragile sites.
+
+### UI structure conventions
+
+- LiveViews: `DashboardLive`, `DeviceLive`, `ObjectLive` under `lib/bac_view_web/live/`.
+- Prefer **extracted helpers** over growing LiveViews further (`DeviceUrl`, `*Assigns`, `ChartEventPayload`, `CovNotificationChartLive`, badge/count modules). `DeviceLive` / `ObjectLive` are already very large — extract rather than add bulk.
+- Charts: shared JS hook `TrendLogChart` + `ChartEventPayload`; COV chart lifecycle via `CovNotificationChartLive`.
+- Icons: **always** `<.icon name="hero-…">` from `CoreComponents`, never Heroicons modules.
+- CSS: Tailwind v4 + custom `bac-*` classes in `assets/css/app.css`. daisyUI is vendored for theme tokens — **prefer existing BacView components and `bac-*` utilities**; do not expand daisyUI component-driven UI as the primary design system.
+- Keep `@import "tailwindcss" source(none)` and `@source` paths covering `lib/bac_view_web` (see `app.css`).
+
+### Testing
+
+- Prefer `element/2`, `has_element/2`, stable DOM **ids** over brittle full-page text.
+- BACnet unit tests often use fake **client modules** (function-exported `read_object` / `read_property`) rather than real UDP.
+- After localization changes, always run locale tests or full `mix precommit`.
+- Do not leave the suite red for flaky env pollution (e.g. transport port tests); fix isolation if you touch that area.
+
+### Desktop (optional)
+
+- Compile with `BACVIEW_DESKTOP=1` (`mix desktop.server`, `mix desktop_installer`).
+- Web workflow remains the default. See README for wx/desktop requirements.
+
+---
+
+### Phoenix v1.8 guidelines (BacView)
+
+- **Always** begin LiveView templates with `<Layouts.app flash={@flash} ...>` wrapping content.
+- `BacViewWeb.Layouts` is aliased via `BacViewWeb` html helpers — no extra alias needed.
+- **Do not** call `<.flash_group>` outside `layouts.ex` (Phoenix 1.8 placement).
+- **Always** use `<.icon name="hero-…">` and `<.input>` from `core_components.ex` when available.
+- If you override `<.input class="...">`, you replace defaults entirely — supply full styling.
 
 ### JS and CSS guidelines
 
-- **Use Tailwind CSS classes and custom CSS rules** to create polished, responsive, and visually stunning interfaces.
-- Tailwindcss v4 **no longer needs a tailwind.config.js** and uses a new import syntax in `app.css`:
+- Prefer Tailwind utilities + existing `bac-*` CSS for polished, responsive UI.
+- Tailwind v4 import pattern in `app.css` (keep `@source` for css/js/`lib/bac_view_web`).
+- **Never** use `@apply` in raw CSS.
+- Only **app.js** and **app.css** bundles are supported — import vendors into those; **no** external script/link in layouts; **no** inline `<script>` in HEEx.
+- Hooks that own DOM: `phx-hook` **and** `phx-update="ignore"`.
 
-      @import "tailwindcss" source(none);
-      @source "../css";
-      @source "../js";
-      @source "../../lib/my_app_web";
+### UI/UX guidelines
 
-- **Always use and maintain this import syntax** in the app.css file for projects generated with `phx.new`
-- **Never** use `@apply` when writing raw css
-- **Always** manually write your own tailwind-based components instead of using daisyUI for a unique, world-class design
-- Out of the box **only the app.js and app.css bundles are supported**
-  - You cannot reference an external vendor'd script `src` or link `href` in the layouts
-  - You must import the vendor deps into app.js and app.css to use them
-  - **Never write inline <script>custom js</script> tags within templates**
+- Prioritize usability, clear hierarchy, spacing, and readable typography.
+- Subtle transitions/hover states; loading and empty states should be explicit (device load banner, object property progress, etc.).
 
-### UI/UX & design guidelines
-
-- **Produce world-class UI designs** with a focus on usability, aesthetics, and modern design principles
-- Implement **subtle micro-interactions** (e.g., button hover effects, and smooth transitions)
-- Ensure **clean typography, spacing, and layout balance** for a refined, premium look
-- Focus on **delightful details** like hover effects, loading states, and smooth page transitions
-
+---
 
 <!-- usage-rules-start -->
 
@@ -111,15 +229,16 @@ custom classes must fully style the input
 
 - You **never** need to create your own `alias` for route definitions! The `scope` provides the alias, ie:
 
-      scope "/admin", AppWeb.Admin do
+      scope "/admin", BacViewWeb.Admin do
         pipe_through :browser
 
         live "/users", UserLive, :index
       end
 
-  the UserLive route would point to the `AppWeb.Admin.UserLive` module
+  the UserLive route would point to the `BacViewWeb.Admin.UserLive` module
 
-- `Phoenix.View` no longer is needed or included with Phoenix, don't use it
+- Default browser scope is already aliased with `BacViewWeb` — route with `live "/", DashboardLive`, etc.
+- `Phoenix.View` is no longer needed or included with Phoenix; don't use it
 <!-- phoenix:phoenix-end -->
 
 <!-- phoenix:html-start -->
@@ -129,7 +248,7 @@ custom classes must fully style the input
 - **Always** use the imported `Phoenix.Component.form/1` and `Phoenix.Component.inputs_for/1` function to build forms. **Never** use `Phoenix.HTML.form_for` or `Phoenix.HTML.inputs_for` as they are outdated
 - When building forms **always** use the already imported `Phoenix.Component.to_form/2` (`assign(socket, form: to_form(...))` and `<.form for={@form} id="msg-form">`), then access those forms in the template via `@form[:field]`
 - **Always** add unique DOM IDs to key elements (like forms, buttons, etc) when writing templates, these IDs can later be used in tests (`<.form for={@form} id="product-form">`)
-- For "app wide" template imports, you can import/alias into the `my_app_web.ex`'s `html_helpers` block, so they will be available to all LiveViews, LiveComponent's, and all modules that do `use MyAppWeb, :html` (replace "my_app" by the actual app name)
+- For app-wide template imports, use `lib/bac_view_web.ex` `html_helpers` so they are available to LiveViews and modules that `use BacViewWeb, :html`
 
 - Elixir supports `if/else` but **does NOT support `if/else if` or `if/elsif`. **Never use `else if` or `elseif` in Elixir**, **always** use `cond` or `case` for multiple conditionals.
 
@@ -206,7 +325,7 @@ custom classes must fully style the input
 
 - **Never** use the deprecated `live_redirect` and `live_patch` functions, instead **always** use the `<.link navigate={href}>` and  `<.link patch={href}>` in templates, and `push_navigate` and `push_patch` functions LiveViews
 - **Avoid LiveComponent's** unless you have a strong, specific need for them
-- LiveViews should be named like `AppWeb.WeatherLive`, with a `Live` suffix. When you go to add LiveView routes to the router, the default `:browser` scope is **already aliased** with the `AppWeb` module, so you can just do `live "/weather", WeatherLive`
+- LiveViews should be named like `BacViewWeb.DeviceLive`, with a `Live` suffix. Default `:browser` scope is aliased with `BacViewWeb`, so routes are `live "/devices/:device_id", DeviceLive`
 - Remember anytime you use `phx-hook="MyHook"` and that js hook manages its own DOM, you **must** also set the `phx-update="ignore"` attribute
 - **Never** write embedded `<script>` tags in HEEx. Instead always write your scripts and hooks in the `assets/js` directory and integrate them with the `assets/js/app.js` file
 
@@ -258,7 +377,7 @@ custom classes must fully style the input
 - Form tests are driven by `Phoenix.LiveViewTest`'s `render_submit/2` and `render_change/2` functions
 - Come up with a step-by-step test plan that splits major test cases into small, isolated files. You may start with simpler tests that verify content exists, gradually add interaction tests
 - **Always reference the key element IDs you added in the LiveView templates in your tests** for `Phoenix.LiveViewTest` functions like `element/2`, `has_element/2`, selectors, etc
-- **Never** tests again raw HTML, **always** use `element/2`, `has_element/2`, and similar: `assert has_element?(view, "#my-form")`
+- **Never** test against raw HTML dumps as the primary assertion style; **always** use `element/2`, `has_element/2`, and similar: `assert has_element?(view, "#my-form")`
 - Instead of relying on testing text content, which can change, favor testing for the presence of key elements
 - Focus on testing outcomes rather than implementation details
 - Be aware that `Phoenix.Component` functions like `<.form>` might produce different HTML than expected. Test against the output HTML structure, not your mental model of what you expect it to be
@@ -304,7 +423,7 @@ And then you create a changeset that you pass to `to_form`:
 
 Once the form is submitted, the params will be available under `%{"user" => user_params}`.
 
-In the template, the form form assign can be passed to the `<.form>` function component:
+In the template, the form assign can be passed to the `<.form>` function component:
 
     <.form for={@form} id="todo-form" phx-change="validate" phx-submit="save">
       <.input field={@form[:field]} type="text" />
@@ -329,7 +448,7 @@ And **never** do this:
     </.form>
 
 - You are FORBIDDEN from accessing the changeset in the template as it will cause errors
-- **Never** use `<.form let={f} ...>` in the template, instead **always use `<.form for={@form} ...>`**, then drive all form references from the form assign as in `@form[:field]`. The UI should **always** be driven by a `to_form/2` assigned in the LiveView module that is derived from a changeset
+- **Never** use `<.form let={f} ...>` in the template, instead **always use `<.form for={@form} ...>`**, then drive all form references from the form assign as in `@form[:field]`. The UI should **always** be driven by a `to_form/2` assigned in the LiveView module (map params or changeset-backed)
 <!-- phoenix:liveview-end -->
 
 <!-- usage-rules-end -->

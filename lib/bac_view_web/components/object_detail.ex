@@ -42,6 +42,7 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:unknown_property_hex_keys, :any, default: MapSet.new())
   attr(:loading, :boolean, default: false)
   attr(:properties_loading, :boolean, default: false)
+  attr(:properties_progress, :map, default: nil)
   attr(:subscribed_keys, :any, default: MapSet.new())
   attr(:write_priority, :integer, default: 8)
   attr(:writing_property, :any, default: nil)
@@ -190,13 +191,38 @@ defmodule BacViewWeb.ObjectDetail do
             name="hero-arrow-path"
             class="size-4 shrink-0 animate-spin text-[var(--bac-accent)]"
           />
-          <p class="text-sm font-medium text-[var(--bac-text)]">
+          <p class="text-sm font-medium text-[var(--bac-text)] truncate">
             {t(@locale, @locale_version, "Eigenschaften werden gelesen…")}
           </p>
+          <span
+            :if={properties_progress_percent(@properties_progress)}
+            class="bac-badge bac-badge-accent bac-badge-sm ml-auto shrink-0"
+          >
+            {properties_progress_percent(@properties_progress)}%
+          </span>
         </div>
         <p class="text-xs bac-text-muted mt-1.5 ml-7">
-          {t(@locale, @locale_version, "Warte auf BACnet-Antwort…")}
+          {properties_progress_subtext(@properties_progress, @locale, @locale_version)}
         </p>
+        <div
+          :if={properties_progress_total?(@properties_progress)}
+          class="mt-3 ml-7 space-y-1.5"
+        >
+          <progress
+            id="object-properties-progress"
+            class="bac-progress"
+            value={@properties_progress.done}
+            max={max(@properties_progress.total, 1)}
+          />
+          <div class="flex flex-wrap items-center justify-between gap-2 text-xs bac-text-faint">
+            <span>
+              {t(@locale, @locale_version, "%{done} / %{total}",
+                done: @properties_progress.done,
+                total: @properties_progress.total
+              )}
+            </span>
+          </div>
+        </div>
       </div>
 
       <div class="flex-1 min-w-0 overflow-auto p-5 space-y-5">
@@ -272,7 +298,7 @@ defmodule BacViewWeb.ObjectDetail do
                 {t(@locale, @locale_version, "%{count} Eigenschaften", count: length(@properties))}
               </p>
               <p :if={@properties_loading && @properties == []} class="text-xs bac-text-faint">
-                {t(@locale, @locale_version, "Eigenschaften werden gelesen…")}
+                {properties_progress_subtext(@properties_progress, @locale, @locale_version)}
               </p>
             </div>
             <div :if={commandable?(@object)} class="flex items-center gap-2 ml-auto">
@@ -668,6 +694,31 @@ defmodule BacViewWeb.ObjectDetail do
   defp subscribed?(_keys, _object2, _object), do: false
 
   defp live?(keys, obj), do: MapSet.member?(keys, {obj.type, obj.instance, :present_value})
+
+  defp properties_progress_total?(%{total: total, done: done})
+       when is_integer(total) and total > 0 and is_integer(done),
+       do: true
+
+  defp properties_progress_total?(_progress), do: false
+
+  defp properties_progress_percent(%{total: total, done: done})
+       when is_integer(total) and total > 0 and is_integer(done) do
+    min(100, trunc(done / total * 100))
+  end
+
+  defp properties_progress_percent(_progress), do: nil
+
+  defp properties_progress_subtext(%{total: total, done: done}, locale, locale_version)
+       when is_integer(total) and total > 0 and is_integer(done) do
+    t(locale, locale_version, "Eigenschaften einzeln lesen: %{done} / %{total}",
+      done: done,
+      total: total
+    )
+  end
+
+  defp properties_progress_subtext(_progress, locale, locale_version) do
+    t(locale, locale_version, "Warte auf BACnet-Antwort…")
+  end
 
   defp show_status_flags_in_header?(_object, properties, _properties_loading)
        when is_list(properties) do

@@ -90,8 +90,16 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   end
 
   defp build_read_opts(opts) when is_list(opts) do
-    Keyword.merge(@read_opts, Keyword.take(opts, [:object_opts, :remote_device_id]))
+    base = Keyword.merge(@read_opts, Keyword.take(opts, [:object_opts, :remote_device_id]))
+
+    case Keyword.get(opts, :on_property_progress) do
+      fun when is_function(fun, 1) -> Keyword.put(base, :on_property_progress, fun)
+      _no_progress -> base
+    end
   end
+
+  defp client_opts(read_opts) when is_list(read_opts),
+    do: Keyword.drop(read_opts, [:on_property_progress])
 
   @doc """
   Non-RPM property load: resolve property identifiers (full list / indexed / schema),
@@ -99,6 +107,9 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   Used by scan/fallback paths that need a map for hierarchy/`summarize_object`,
   not UI property rows.
+
+  Optional `on_property_progress` in `opts` is called as `fun.(%{stage, done, total})`
+  during individual ReadProperty streams (not for pure RPM success).
   """
   @spec read_properties_map(module(), term(), ObjectIdentifier.t(), keyword()) ::
           {:ok, map()} | {:error, term()}
@@ -228,7 +239,9 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   @spec read_property_value(module(), term(), ObjectIdentifier.t(), term(), keyword()) ::
           {:ok, term()} | {:error, term()}
   def read_property_value(client, destination, %ObjectIdentifier{} = object, property, read_opts) do
-    case client.read_property(destination, object, property, read_opts) do
+    client_opts = client_opts(read_opts)
+
+    case client.read_property(destination, object, property, client_opts) do
       {:ok, value} ->
         {:ok, sanitize_read_value(value)}
 
@@ -236,9 +249,9 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
         {:ok, sanitize_loose_property_value(raw)}
 
       {:error, _reason} = err ->
-        if is_nil(Keyword.get(read_opts, :array_index)) and array_property?(object, property) and
+        if is_nil(Keyword.get(client_opts, :array_index)) and array_property?(object, property) and
              Segmentation.fallback_error?(err) do
-          read_property_array_indexed(client, destination, object, property, read_opts)
+          read_property_array_indexed(client, destination, object, property, client_opts)
         else
           err
         end
@@ -261,7 +274,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp sanitize_read_value(value), do: value
 
   defp fetch_bacnet_object(client, destination, object, read_opts) do
-    opts = Keyword.merge(read_opts, read_level: :all)
+    opts = Keyword.merge(client_opts(read_opts), read_level: :all)
 
     case client.read_object(destination, object, opts) do
       {:ok, obj} when is_object(obj) ->
@@ -467,7 +480,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   defp read_chunk(client, destination, object, chunk, read_opts) do
     rpm_results =
-      case client.read_property_multiple(destination, object, chunk, read_opts) do
+      case client.read_property_multiple(destination, object, chunk, client_opts(read_opts)) do
         {:ok, results} -> results_map(results)
         {:error, _client} -> %{}
       end
@@ -489,6 +502,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp read_properties_individually(_client, _destination, _object, [], _read_opts), do: %{}
 
   defp read_properties_individually(client, destination, object, properties, read_opts) do
+    total = length(properties)
+    on_progress = Keyword.get(read_opts, :on_property_progress)
+    report_property_progress(on_progress, 0, total)
+
     properties
     |> Task.async_stream(
       fn prop ->
@@ -501,11 +518,33 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       timeout: :infinity,
       ordered: true
     )
-    |> Enum.reduce(%{}, fn
-      {:ok, {prop, value}}, acc -> Map.put(acc, prop, value)
-      _client, acc -> acc
+    |> Enum.reduce({%{}, 0}, fn
+      {:ok, {prop, value}}, {acc, done} ->
+        done = done + 1
+        report_property_progress(on_progress, done, total)
+        {Map.put(acc, prop, value), done}
+
+      _other, {acc, done} ->
+        done = done + 1
+        report_property_progress(on_progress, done, total)
+        {acc, done}
     end)
+    |> elem(0)
   end
+
+  defp report_property_progress(fun, done, total)
+       when is_function(fun, 1) and is_integer(done) and is_integer(total) and total > 0 do
+    if done == 0 or done == total or rem(done, property_progress_interval(total)) == 0 do
+      fun.(%{stage: :reading_properties, done: done, total: total})
+    end
+
+    :ok
+  end
+
+  defp report_property_progress(_fun, _done, _total), do: :ok
+
+  defp property_progress_interval(total) when total <= 40, do: 1
+  defp property_progress_interval(total), do: max(1, div(total, 20))
 
   defp results_map(%ObjectIdentifier{}), do: %{}
 

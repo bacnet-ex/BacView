@@ -219,7 +219,7 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
     end)
   end
 
-  defp unit_label(nil), do: "—"
+  defp unit_label(nil), do: ""
   defp unit_label(unit) when is_atom(unit), do: EngineeringUnits.symbol(unit)
 
   defp scale_id_for(nil), do: "raw"
@@ -255,7 +255,7 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
       [
         %{
           id: "states",
-          label: "—",
+          label: "",
           side: "left",
           kind: "enum",
           ticks: MultistateState.enum_ticks(object)

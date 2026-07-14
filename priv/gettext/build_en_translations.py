@@ -187,6 +187,11 @@ TRANSLATIONS: dict[str, str] = {
     "Eigenschaften laden fehlgeschlagen: %{detail}": "Failed to load properties: %{detail}",
     "Eigenschaften werden geladen…": "Loading properties…",
     "Eigenschaften werden gelesen…": "Reading properties…",
+    "Eigenschaften einzeln lesen: %{done} / %{total}":
+        "Reading properties one-by-one: %{done} / %{total}",
+    "Das Objekt konnte nicht gelesen werden.": "The object could not be read.",
+    "Die Eigenschaftsliste des Objekts konnte nicht gelesen werden.":
+        "The object's property list could not be read.",
     "Eigenschaftswert entspricht nicht der BACnet-Spezifikation (%{property}).": "Property value does not match the BACnet specification (%{property}).",
     "EDE exportieren": "Export EDE",
     "EDE-Export": "EDE export",

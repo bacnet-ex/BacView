@@ -291,9 +291,22 @@ defmodule BacView.BACnet.DeviceSession do
 
     device_obj = Map.get(device || %{}, :object)
 
+    progress_opts =
+      case Keyword.get(call_opts, :on_property_progress) do
+        fun when is_function(fun, 1) ->
+          [on_property_progress: fun]
+
+        _no_progress ->
+          [
+            on_property_progress: fn progress ->
+              broadcast_properties_progress(device_id, object, progress)
+            end
+          ]
+      end
+
     {result, state} =
       if device do
-        case PropertyLoad.read(device.address, object, skip_mode, device_obj) do
+        case PropertyLoad.read(device.address, object, skip_mode, device_obj, progress_opts) do
           {:ok, %{properties: props} = result} ->
             :ets.insert(@properties_table, {property_key(device_id, object), props})
 
@@ -985,6 +998,20 @@ defmodule BacView.BACnet.DeviceSession do
       BacView.PubSub,
       "device:#{device_id}:load_progress",
       {:device_load_progress, normalized}
+    )
+  end
+
+  defp broadcast_properties_progress(device_id, %ObjectIdentifier{} = object, progress)
+       when is_map(progress) do
+    Phoenix.PubSub.broadcast(
+      BacView.PubSub,
+      "device:#{device_id}:properties_progress",
+      {:object_properties_progress, object,
+       %{
+         stage: Map.get(progress, :stage, :reading_properties),
+         done: Map.get(progress, :done, 0),
+         total: Map.get(progress, :total)
+       }}
     )
   end
 

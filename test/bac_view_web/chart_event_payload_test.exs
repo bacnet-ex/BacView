@@ -8,7 +8,7 @@ defmodule BacViewWeb.ChartEventPayloadTest do
       %{
         id: "s0",
         label: "MSV-1",
-        unit_label: "—",
+        unit_label: "",
         scale_id: "states",
         paths: "stepped",
         points: [

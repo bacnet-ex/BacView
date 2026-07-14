@@ -345,6 +345,9 @@ msgstr "The device does not support segmentation."
 msgid "Das Objekt ist dem Gerät nicht bekannt."
 msgstr "The object is unknown to the device."
 
+msgid "Das Objekt konnte nicht gelesen werden."
+msgstr "The object could not be read."
+
 msgid "Datei auf das Gerät schreiben (Atomic Write File)."
 msgstr "Write file to device (Atomic Write File)."
 
@@ -389,6 +392,9 @@ msgstr "The request was too large for the device."
 
 msgid "Die Eigenschaft ist dem Gerät nicht bekannt."
 msgstr "The property is unknown to the device."
+
+msgid "Die Eigenschaftsliste des Objekts konnte nicht gelesen werden."
+msgstr "The object's property list could not be read."
 
 msgid "Dienst ausgeführt."
 msgstr "Service executed."
@@ -443,6 +449,9 @@ msgstr "Properties"
 
 msgid "Eigenschaften aktualisieren fehlgeschlagen: %{detail}"
 msgstr "Failed to refresh properties: %{detail}"
+
+msgid "Eigenschaften einzeln lesen: %{done} / %{total}"
+msgstr "Reading properties one-by-one: %{done} / %{total}"
 
 msgid "Eigenschaften laden fehlgeschlagen: %{detail}"
 msgstr "Failed to load properties: %{detail}"

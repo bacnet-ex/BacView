@@ -268,7 +268,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
       ticks when is_list(ticks) and ticks != [] ->
         %{
           id: scale_id,
-          label: "—",
+          label: "",
           side: side,
           kind: "enum",
           ticks: ticks
@@ -277,7 +277,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
       _ticks ->
         %{
           id: scale_id,
-          label: (sample && sample.unit_label) || scale_id,
+          label: scale_label(sample),
           side: side
         }
     end
@@ -322,9 +322,14 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   defp scale_id_for(nil), do: "raw"
   defp scale_id_for(unit) when is_atom(unit), do: Atom.to_string(unit)
 
-  defp unit_label(nil), do: "—"
+  defp unit_label(nil), do: ""
 
   defp unit_label(unit) when is_atom(unit), do: EngineeringUnits.symbol(unit)
+
+  defp scale_label(%{unit_label: unit_label}) when is_binary(unit_label) and unit_label != "",
+    do: unit_label
+
+  defp scale_label(_sample), do: ""
 
   defp normalize_unit(nil), do: nil
   defp normalize_unit(unit) when is_atom(unit), do: unit

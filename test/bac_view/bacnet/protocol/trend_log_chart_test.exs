@@ -125,12 +125,14 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
 
     assert [series] = data.series
     assert series.scale_id == "states-multi_state_value-1"
+    assert series.unit_label == ""
     assert series.paths == "stepped"
     assert [%{v: 1, label: "1 (Aus)"}, %{v: 2, label: "2 (Ein)"}] = series.points
 
     assert [scale] = data.scales
     assert scale.kind == "enum"
     assert scale.id == "states-multi_state_value-1"
+    assert scale.label == ""
     assert Enum.at(scale.ticks, 0).label == "1 (Aus)"
   end
 
@@ -172,7 +174,9 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
 
     assert length(data.series) == 2
     assert Enum.any?(data.series, &(&1.scale_id == "degrees_celsius"))
-    assert Enum.any?(data.series, &(&1.scale_id == "raw"))
+    bi = Enum.find(data.series, &(&1.scale_id == "raw"))
+    assert bi.unit_label == ""
+    assert Enum.any?(data.scales, &(&1.id == "raw" and &1.label == ""))
   end
 
   test "build mixes multistate enum series with numeric series on trend log multiple" do
