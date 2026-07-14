@@ -98,4 +98,19 @@ defmodule BacViewWeb.DeviceScanRecoveryTest do
 
     refute html =~ ~s/id="device-scan-recovery-panel"/
   end
+
+  test "shows retry status banner and disables actions while retrying" do
+    html =
+      render_recovery_panel(
+        scan_retrying: %{"multistate_value:1" => true},
+        scan_recovery_open: true
+      )
+
+    assert html =~ ~s/id="device-scan-recovery-status"/
+    assert html =~ "Objekte werden mit reduzierter Validierung nachgelesen…"
+    assert Regex.match?(~r/id="device-scan-recovery-bulk-value"[^>]*disabled/, html)
+    assert Regex.match?(~r/id="device-scan-recovery-value-1"[^>]*disabled/, html)
+    assert html =~ ~s/phx-disable-with="Wird nachgelesen…"/
+    assert html =~ "animate-spin"
+  end
 end

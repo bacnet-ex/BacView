@@ -1305,6 +1305,9 @@ msgstr "End restore"
 msgid "Wiederherstellung starten"
 msgstr "Start restore"
 
+msgid "Wird nachgelesen…"
+msgstr "Re-reading…"
+
 msgid "Wochenplan bearbeiten"
 msgstr "Edit weekly schedule"
 

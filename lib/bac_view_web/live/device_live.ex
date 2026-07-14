@@ -239,6 +239,55 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
+  def handle_info({:scan_retry_done, {:bulk, _skip_mode}, result}, socket) do
+    socket = assign(socket, :scan_retrying, %{})
+
+    case result do
+      {:ok, %{succeeded: succeeded, failed: failed}} ->
+        case DeviceSession.load(socket.assigns.device_id) do
+          {:ok, loaded} ->
+            {:noreply,
+             socket
+             |> apply_loaded_device(loaded)
+             |> put_bulk_scan_retry_flash(succeeded, failed)}
+
+          {:error, reason} ->
+            {:noreply, LiveFlash.put_error(socket, :load_device, reason)}
+        end
+
+      {:error, reason} ->
+        {:noreply, LiveFlash.put_error(socket, :load_properties, reason)}
+    end
+  end
+
+  @impl true
+  def handle_info({:scan_retry_done, {:single, object_id, retry_key}, result}, socket) do
+    socket = assign(socket, :scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
+
+    case result do
+      {:ok, _summary} ->
+        case DeviceSession.load(socket.assigns.device_id) do
+          {:ok, loaded} ->
+            {:noreply,
+             socket
+             |> apply_loaded_device(loaded)
+             |> put_flash(
+               :info,
+               gt("Objekt %{object} erfolgreich nachgelesen.",
+                 object: "#{object_id.type}:#{object_id.instance}"
+               )
+             )}
+
+          {:error, reason} ->
+            {:noreply, LiveFlash.put_error(socket, :load_device, reason)}
+        end
+
+      {:error, reason} ->
+        {:noreply, LiveFlash.put_error(socket, :load_properties, reason)}
+    end
+  end
+
+  @impl true
   def handle_info({:write_modal_priority, type, instance, priority_array}, socket) do
     {:noreply, apply_write_modal_priority(socket, type, instance, priority_array)}
   end
@@ -416,73 +465,55 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("retry_all_scan_objects", params, socket) do
-    case parse_skip_mode(params["skip-mode"]) do
-      {:ok, skip_mode} ->
-        retry_keys = scan_error_retry_keys(socket, skip_mode)
+    if scan_retry_in_progress?(socket.assigns.scan_retrying) do
+      {:noreply, socket}
+    else
+      case parse_skip_mode(params["skip-mode"]) do
+        {:ok, skip_mode} ->
+          retry_keys = scan_error_retry_keys(socket, skip_mode)
 
-        socket =
-          assign(
-            socket,
-            :scan_retrying,
-            mark_scan_retrying(socket.assigns.scan_retrying, retry_keys)
-          )
+          socket =
+            socket
+            |> assign(
+              :scan_retrying,
+              mark_scan_retrying(socket.assigns.scan_retrying, retry_keys)
+            )
+            |> assign(:scan_recovery_open, true)
 
-        case DeviceSession.retry_all_scan_objects(socket.assigns.device_id, skip_mode) do
-          {:ok, %{succeeded: succeeded, failed: failed}} ->
-            {:ok, loaded} = DeviceSession.load(socket.assigns.device_id)
+          start_scan_retry_task(socket.assigns.device_id, {:bulk, skip_mode})
+          {:noreply, socket}
 
-            {:noreply,
-             socket
-             |> assign(:scan_retrying, %{})
-             |> apply_loaded_device(loaded)
-             |> put_bulk_scan_retry_flash(succeeded, failed)}
-
-          {:error, reason} ->
-            {:noreply,
-             socket
-             |> assign(:scan_retrying, %{})
-             |> LiveFlash.put_error(:load_properties, reason)}
-        end
-
-      :error ->
-        {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+        :error ->
+          {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+      end
     end
   end
 
   @impl true
   def handle_event("retry_scan_object", params, socket) do
-    with {:ok, type_atom} <- parse_type(params["type"]),
-         instance_int <- String.to_integer(params["instance"]),
-         {:ok, skip_mode} <- parse_skip_mode(params["skip-mode"]),
-         object_id <- %ObjectIdentifier{type: type_atom, instance: instance_int} do
-      retry_key = "#{type_atom}:#{instance_int}"
-
-      socket =
-        assign(socket, :scan_retrying, Map.put(socket.assigns.scan_retrying, retry_key, true))
-
-      case DeviceSession.retry_scan_object(socket.assigns.device_id, object_id, skip_mode) do
-        {:ok, _summary} ->
-          {:ok, loaded} = DeviceSession.load(socket.assigns.device_id)
-
-          {:noreply,
-           socket
-           |> assign(:scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
-           |> apply_loaded_device(loaded)
-           |> put_flash(
-             :info,
-             gt("Objekt %{object} erfolgreich nachgelesen.",
-               object: "#{type_atom}:#{instance_int}"
-             )
-           )}
-
-        {:error, reason} ->
-          {:noreply,
-           socket
-           |> assign(:scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
-           |> LiveFlash.put_error(:load_properties, reason)}
-      end
+    if scan_retry_in_progress?(socket.assigns.scan_retrying) do
+      {:noreply, socket}
     else
-      _err -> {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+      with {:ok, type_atom} <- parse_type(params["type"]),
+           instance_int <- String.to_integer(params["instance"]),
+           {:ok, skip_mode} <- parse_skip_mode(params["skip-mode"]),
+           object_id <- %ObjectIdentifier{type: type_atom, instance: instance_int} do
+        retry_key = "#{type_atom}:#{instance_int}"
+
+        socket =
+          socket
+          |> assign(:scan_retrying, Map.put(socket.assigns.scan_retrying, retry_key, true))
+          |> assign(:scan_recovery_open, true)
+
+        start_scan_retry_task(
+          socket.assigns.device_id,
+          {:single, object_id, skip_mode, retry_key}
+        )
+
+        {:noreply, socket}
+      else
+        _err -> {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+      end
     end
   end
 
@@ -1800,6 +1831,35 @@ defmodule BacViewWeb.DeviceLive do
 
   defp mark_scan_retrying(retrying, keys) when is_map(retrying) and is_list(keys) do
     Enum.reduce(keys, retrying, fn key, acc -> Map.put(acc, key, true) end)
+  end
+
+  defp scan_retry_in_progress?(retrying) when is_map(retrying) do
+    Enum.any?(retrying, fn {_key, in_progress?} -> in_progress? end)
+  end
+
+  defp scan_retry_in_progress?(_retrying), do: false
+
+  defp start_scan_retry_task(device_id, kind) do
+    parent = self()
+
+    Task.start(fn ->
+      result =
+        try do
+          case kind do
+            {:bulk, skip_mode} ->
+              DeviceSession.retry_all_scan_objects(device_id, skip_mode)
+
+            {:single, object_id, skip_mode, _retry_key} ->
+              DeviceSession.retry_scan_object(device_id, object_id, skip_mode)
+          end
+        rescue
+          exception -> {:error, exception}
+        catch
+          :exit, reason -> {:error, reason}
+        end
+
+      send(parent, {:scan_retry_done, kind, result})
+    end)
   end
 
   defp put_bulk_scan_retry_flash(socket, succeeded, failed)

@@ -10,14 +10,16 @@ defmodule BacViewWeb.DeviceScanRecovery do
   def recovery_panel(assigns) do
     scan_errors = normalize_scan_errors(assigns.scan_errors)
 
+    scan_retrying = Map.get(assigns, :scan_retrying, %{})
+
     assigns =
       assigns
       |> assign(:scan_errors, scan_errors)
-      |> assign(:scan_retrying, Map.get(assigns, :scan_retrying, %{}))
+      |> assign(:scan_retrying, scan_retrying)
       |> assign(:scan_recovery_open, Map.get(assigns, :scan_recovery_open, false))
       |> assign(:value_bulk_available?, bulk_retry_available?(scan_errors, :value))
       |> assign(:all_bulk_available?, bulk_retry_available?(scan_errors, true))
-      |> assign(:bulk_retrying?, scan_retry_in_progress?(assigns.scan_retrying))
+      |> assign(:any_retrying?, scan_retry_in_progress?(scan_retrying))
 
     ~H"""
     <details
@@ -45,6 +47,22 @@ defmodule BacViewWeb.DeviceScanRecovery do
         )}
       </p>
       <div
+        :if={@any_retrying?}
+        id="device-scan-recovery-status"
+        role="status"
+        aria-live="polite"
+        class="bac-collapsible-content mt-3 flex items-center gap-2 rounded-md border border-[var(--bac-accent)]/25 bg-[var(--bac-accent)]/8 px-3 py-2 text-xs text-[var(--bac-text)]"
+      >
+        <.icon name="hero-arrow-path" class="size-3.5 shrink-0 animate-spin text-[var(--bac-accent)]" />
+        <span>
+          {t(
+            @locale,
+            @locale_version,
+            "Objekte werden mit reduzierter Validierung nachgelesen…"
+          )}
+        </span>
+      </div>
+      <div
         :if={@value_bulk_available? or @all_bulk_available?}
         class="bac-collapsible-content mt-3 flex flex-wrap gap-2"
       >
@@ -54,14 +72,15 @@ defmodule BacViewWeb.DeviceScanRecovery do
           id="device-scan-recovery-bulk-value"
           phx-click="retry_all_scan_objects"
           phx-value-skip-mode="value"
-          disabled={@bulk_retrying?}
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@any_retrying?}
           class={[
             "bac-btn bac-btn-sm",
-            @bulk_retrying? && "opacity-60 cursor-wait"
+            @any_retrying? && "opacity-60 cursor-wait"
           ]}
         >
           <.icon
-            :if={@bulk_retrying?}
+            :if={@any_retrying?}
             name="hero-arrow-path"
             class="size-3.5 animate-spin"
           />
@@ -73,12 +92,18 @@ defmodule BacViewWeb.DeviceScanRecovery do
           id="device-scan-recovery-bulk-all"
           phx-click="retry_all_scan_objects"
           phx-value-skip-mode="all"
-          disabled={@bulk_retrying?}
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@any_retrying?}
           class={[
             "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
-            @bulk_retrying? && "opacity-60 cursor-wait"
+            @any_retrying? && "opacity-60 cursor-wait"
           ]}
         >
+          <.icon
+            :if={@any_retrying?}
+            name="hero-arrow-path"
+            class="size-3.5 animate-spin"
+          />
           {t(@locale, @locale_version, "Alle: Validierung überspringen")}
         </button>
       </div>
@@ -101,7 +126,8 @@ defmodule BacViewWeb.DeviceScanRecovery do
               phx-value-type={entry.type}
               phx-value-instance={entry.instance}
               phx-value-skip-mode="value"
-              disabled={retrying?(@scan_retrying, entry.key)}
+              phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+              disabled={@any_retrying?}
               class={[
                 "bac-btn bac-btn-sm",
                 retrying?(@scan_retrying, entry.key) && "opacity-60 cursor-wait"
@@ -122,12 +148,18 @@ defmodule BacViewWeb.DeviceScanRecovery do
               phx-value-type={entry.type}
               phx-value-instance={entry.instance}
               phx-value-skip-mode="all"
-              disabled={retrying?(@scan_retrying, entry.key)}
+              phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+              disabled={@any_retrying?}
               class={[
                 "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
                 retrying?(@scan_retrying, entry.key) && "opacity-60 cursor-wait"
               ]}
             >
+              <.icon
+                :if={retrying?(@scan_retrying, entry.key)}
+                name="hero-arrow-path"
+                class="size-3.5 animate-spin"
+              />
               {t(@locale, @locale_version, "Alle Validierung überspringen")}
             </button>
           </div>
