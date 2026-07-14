@@ -11,15 +11,17 @@ defmodule BacViewWeb.WritePresentValueModal do
   attr(:writing, :boolean, default: false)
 
   def modal(assigns) do
+    state_options =
+      if MultistateState.multistate_object?(assigns.object) do
+        MultistateState.state_options(assigns.object)
+      else
+        []
+      end
+
     assigns =
-      assign(
-        assigns,
-        :state_options,
-        if(MultistateState.multistate_object?(assigns.object),
-          do: MultistateState.state_options(assigns.object),
-          else: []
-        )
-      )
+      assigns
+      |> assign(:state_options, state_options)
+      |> assign(:state_dropdown?, state_options != [])
 
     ~H"""
     <div id="write-present-value-modal" class="bac-modal-backdrop">
@@ -107,7 +109,7 @@ defmodule BacViewWeb.WritePresentValueModal do
                 <option value="false" selected={@object.present_value == false}>false</option>
               </select>
               <select
-                :if={!boolean_value?(@object) && @state_options != []}
+                :if={!boolean_value?(@object) && @state_dropdown?}
                 id="modal-write-value"
                 name="value"
                 class="bac-input bac-input-sm w-full"
@@ -121,7 +123,7 @@ defmodule BacViewWeb.WritePresentValueModal do
                 </option>
               </select>
               <input
-                :if={!boolean_value?(@object) && @state_options == []}
+                :if={!boolean_value?(@object) && !@state_dropdown?}
                 id="modal-write-value"
                 type="text"
                 name="value"

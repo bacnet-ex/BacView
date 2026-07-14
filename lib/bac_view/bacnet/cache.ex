@@ -11,7 +11,8 @@ defmodule BacView.BACnet.Cache do
     :bacview_subscriptions,
     :bacview_hierarchy,
     :bacview_name_hierarchy,
-    :bacview_events
+    :bacview_events,
+    :bacview_validation_skip_modes
   ]
 
   def start_link(opts \\ []) do

@@ -44,6 +44,22 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     assert Enum.any?(property_field.enum_options, &(&1.value == :present_value))
   end
 
+  test "form fields keep enum dropdowns when enumerated field value is out of range" do
+    encoding = %Encoding{
+      encoding: :primitive,
+      extras: [tag_number: 0],
+      type: 99,
+      value: 42.0
+    }
+
+    fields = ComplexPropertyEditor.form_fields(encoding)
+    type_field = Enum.find(fields, &(&1.path == "type"))
+
+    assert type_field.enum_options != nil
+    assert type_field.value == "99"
+    assert Enum.any?(type_field.enum_options, &(&1.value == :real))
+  end
+
   test "applies enum field changes via form fields" do
     ref = %ObjectPropertyRef{
       object_identifier: %ObjectIdentifier{type: :binary_value, instance: 189},

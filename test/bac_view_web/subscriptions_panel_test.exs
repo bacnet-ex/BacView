@@ -63,4 +63,58 @@ defmodule BacViewWeb.SubscriptionsPanelTest do
     assert html =~ "Diagramm"
     refute html =~ "cov-chart-open-characterstring_value-2-present_value"
   end
+
+  test "renders subscription search input and filters visible rows" do
+    trendable = %{
+      device_id: 1,
+      object_id: %ObjectIdentifier{type: :analog_input, instance: 1},
+      property: :present_value,
+      last_value_formatted: "21.5",
+      last_cov_at: nil,
+      lifetime: 3600,
+      expires_at: nil
+    }
+
+    other = %{
+      device_id: 1,
+      object_id: %ObjectIdentifier{type: :binary_input, instance: 2},
+      property: :present_value,
+      last_value_formatted: "0",
+      last_cov_at: nil,
+      lifetime: 3600,
+      expires_at: nil
+    }
+
+    html =
+      render_component(
+        &SubscriptionsPanel.subscriptions_panel/1,
+        %{
+          device_id: 1,
+          list_opts: [],
+          cov_view: "subscriptions",
+          cov_view_paths: %{
+            "subscriptions" => "/devices/1?tab=subscriptions",
+            "notifications" => "/devices/1?tab=subscriptions&cov_view=notifications"
+          },
+          subscriptions: [trendable, other],
+          objects: [
+            %{
+              type: :analog_input,
+              instance: 1,
+              name: "AI-1",
+              description: "Raumtemperatur EG"
+            }
+          ],
+          cov_notifications: [],
+          search: "raum",
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(id="subscription-search")
+    assert html =~ "Abonnements suchen"
+    assert html =~ "analog_input:1"
+    refute html =~ "binary_input:2"
+  end
 end

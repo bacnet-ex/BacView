@@ -21,8 +21,14 @@ defmodule BacView.BACnet.Protocol.TrendLogExport do
           [format_timestamp(t)] ++
             Enum.map(series, fn %{points: points} ->
               case Enum.find(points, &(&1.t == t)) do
-                %{v: value} -> csv_cell(value)
-                _series -> ""
+                %{label: label} when is_binary(label) and label != "" ->
+                  csv_cell(label)
+
+                %{v: value} ->
+                  csv_cell(value)
+
+                _series ->
+                  ""
               end
             end)
 
@@ -70,8 +76,14 @@ defmodule BacView.BACnet.Protocol.TrendLogExport do
   end
 
   defp series_header(%{label: label, unit_label: unit_label}) do
-    csv_cell("#{label} (#{unit_label})")
+    csv_cell(series_header_label(label, unit_label))
   end
+
+  defp series_header_label(label, unit_label)
+       when is_binary(unit_label) and unit_label not in ["", "—"],
+       do: "#{label} (#{unit_label})"
+
+  defp series_header_label(label, _unit_label), do: label
 
   defp format_timestamp(ms) when is_integer(ms) do
     ms
@@ -87,23 +99,25 @@ defmodule BacView.BACnet.Protocol.TrendLogExport do
 
   defp filename_part(_fallback, fallback), do: fallback
 
-  defp series_to_json(%{
-         id: id,
-         label: label,
-         unit_label: unit_label,
-         scale_id: scale_id,
-         points: points
-       }) do
+  defp series_to_json(%{label: label, unit_label: unit_label, points: points} = series) do
     %{
-      id: id,
+      id: Map.get(series, :id),
       label: label,
       unit_label: unit_label,
-      scale_id: scale_id,
-      points:
-        Enum.map(points, fn %{t: t, v: v} ->
-          %{timestamp: format_timestamp(t), value: json_value(v)}
-        end)
+      scale_id: Map.get(series, :scale_id),
+      points: Enum.map(points, &point_to_json/1)
     }
+    |> Enum.reject(fn {_key, value} -> is_nil(value) end)
+    |> Map.new()
+  end
+
+  defp point_to_json(%{t: t, v: v} = point) do
+    base = %{timestamp: format_timestamp(t), value: json_value(v)}
+
+    case Map.get(point, :label) do
+      label when is_binary(label) and label != "" -> Map.put(base, :label, label)
+      _label -> base
+    end
   end
 
   defp marker_to_json(%{t: t, kind: kind, label: label}) do

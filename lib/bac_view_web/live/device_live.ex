@@ -90,6 +90,7 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:loading_in_progress, false)
          |> assign(:load_progress, %{stage: :connecting, done: 0, total: nil})
          |> assign(:scan_retrying, %{})
+         |> assign(:scan_recovery_open, false)
          |> assign(:search, "")
          |> assign(:type_filter, [])
          |> assign(:type_filter_open, false)
@@ -470,10 +471,50 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
+  def handle_event("toggle_scan_recovery_panel", _params, socket) do
+    {:noreply, assign(socket, :scan_recovery_open, !socket.assigns.scan_recovery_open)}
+  end
+
+  @impl true
+  def handle_event("retry_all_scan_objects", params, socket) do
+    case parse_skip_mode(params["skip-mode"]) do
+      {:ok, skip_mode} ->
+        retry_keys = scan_error_retry_keys(socket, skip_mode)
+
+        socket =
+          assign(
+            socket,
+            :scan_retrying,
+            mark_scan_retrying(socket.assigns.scan_retrying, retry_keys)
+          )
+
+        case DeviceSession.retry_all_scan_objects(socket.assigns.device_id, skip_mode) do
+          {:ok, %{succeeded: succeeded, failed: failed}} ->
+            {:ok, loaded} = DeviceSession.load(socket.assigns.device_id)
+
+            {:noreply,
+             socket
+             |> assign(:scan_retrying, %{})
+             |> apply_loaded_device(loaded)
+             |> put_bulk_scan_retry_flash(succeeded, failed)}
+
+          {:error, reason} ->
+            {:noreply,
+             socket
+             |> assign(:scan_retrying, %{})
+             |> LiveFlash.put_error(:load_properties, reason)}
+        end
+
+      :error ->
+        {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+    end
+  end
+
+  @impl true
   def handle_event("retry_scan_object", params, socket) do
     with {:ok, type_atom} <- parse_type(params["type"]),
          instance_int <- String.to_integer(params["instance"]),
-         {:ok, skip_mode} <- parse_skip_mode(params["skip_mode"]),
+         {:ok, skip_mode} <- parse_skip_mode(params["skip-mode"]),
          object_id <- %ObjectIdentifier{type: type_atom, instance: instance_int} do
       retry_key = "#{type_atom}:#{instance_int}"
 
@@ -509,6 +550,11 @@ defmodule BacViewWeb.DeviceLive do
   @impl true
   def handle_event("search_objects", %{"value" => search}, socket) do
     {:noreply, patch_objects_tab(socket, search: search)}
+  end
+
+  @impl true
+  def handle_event("search_subscriptions", %{"value" => search}, socket) do
+    {:noreply, patch_subscriptions_tab(socket, search: search)}
   end
 
   @impl true
@@ -980,17 +1026,17 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("toggle_select_all_subscriptions", _params, socket) do
-    all_keys = subscription_keys(socket.assigns.subscriptions)
+    filtered_keys = filtered_subscription_keys(socket)
 
     all_selected? =
-      all_keys != MapSet.new() and
-        MapSet.subset?(all_keys, socket.assigns.selected_subscription_keys)
+      filtered_keys != MapSet.new() and
+        MapSet.subset?(filtered_keys, socket.assigns.selected_subscription_keys)
 
     selected =
       if all_selected? do
-        MapSet.difference(socket.assigns.selected_subscription_keys, all_keys)
+        MapSet.difference(socket.assigns.selected_subscription_keys, filtered_keys)
       else
-        MapSet.union(socket.assigns.selected_subscription_keys, all_keys)
+        MapSet.union(socket.assigns.selected_subscription_keys, filtered_keys)
       end
 
     {:noreply, assign(socket, :selected_subscription_keys, selected)}
@@ -1813,6 +1859,48 @@ defmodule BacViewWeb.DeviceLive do
   defp parse_skip_mode("all"), do: {:ok, true}
   defp parse_skip_mode(_mode), do: :error
 
+  defp scan_error_retry_keys(socket, skip_mode) do
+    socket.assigns.device
+    |> Map.get(:scan_errors, [])
+    |> Enum.filter(fn entry -> skip_mode in Map.get(entry, :retry_modes, []) end)
+    |> Enum.map(fn %{object_id: %ObjectIdentifier{type: type, instance: instance}} ->
+      "#{type}:#{instance}"
+    end)
+  end
+
+  defp mark_scan_retrying(retrying, keys) when is_map(retrying) and is_list(keys) do
+    Enum.reduce(keys, retrying, fn key, acc -> Map.put(acc, key, true) end)
+  end
+
+  defp put_bulk_scan_retry_flash(socket, succeeded, failed)
+       when is_integer(succeeded) and succeeded > 0 and failed == 0 do
+    put_flash(
+      socket,
+      :info,
+      gt("%{count} Objekte erfolgreich nachgelesen.", count: succeeded)
+    )
+  end
+
+  defp put_bulk_scan_retry_flash(socket, succeeded, failed)
+       when is_integer(succeeded) and succeeded > 0 and is_integer(failed) and failed > 0 do
+    put_flash(
+      socket,
+      :info,
+      gt("%{succeeded} Objekte nachgelesen, %{failed} fehlgeschlagen.",
+        succeeded: succeeded,
+        failed: failed
+      )
+    )
+  end
+
+  defp put_bulk_scan_retry_flash(socket, 0, failed) when is_integer(failed) and failed > 0 do
+    put_flash(socket, :error, gt("Keine Objekte konnten nachgelesen werden."))
+  end
+
+  defp put_bulk_scan_retry_flash(socket, 0, 0) do
+    put_flash(socket, :info, gt("Keine Objekte zum Nachlesen gefunden."))
+  end
+
   defp parse_status(status) when is_binary(status) do
     case ObjectTable.normalize_status_flag(status) do
       nil -> :error
@@ -1964,22 +2052,7 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   defp chart_event_payload(%{series: series} = data) when is_list(series) do
-    payload_series =
-      Enum.map(series, fn %{
-                            id: id,
-                            label: label,
-                            unit_label: unit_label,
-                            scale_id: scale_id,
-                            points: points
-                          } ->
-        %{
-          id: id,
-          label: label,
-          unit_label: unit_label,
-          scale_id: scale_id,
-          points: Enum.map(points, fn %{t: t, v: v} -> %{t: t, v: v} end)
-        }
-      end)
+    payload_series = BacViewWeb.ChartEventPayload.series_payload(series)
 
     if chart_has_data?(data) do
       Map.put(data, :series, payload_series)
@@ -2253,12 +2326,6 @@ defmodule BacViewWeb.DeviceLive do
     |> MapSet.to_list()
   end
 
-  defp subscription_keys(subscriptions) when is_list(subscriptions) do
-    subscriptions
-    |> Enum.map(&subscription_key/1)
-    |> MapSet.new()
-  end
-
   defp subscription_key(sub) do
     {sub.object_id.type, sub.object_id.instance, sub.property}
   end
@@ -2267,6 +2334,18 @@ defmodule BacViewWeb.DeviceLive do
     Enum.filter(subscriptions, fn sub ->
       MapSet.member?(selected_keys, subscription_key(sub))
     end)
+  end
+
+  defp filtered_subscription_keys(socket) do
+    socket.assigns.subscriptions
+    |> BacViewWeb.SubscriptionTable.list_subscriptions(
+      socket.assigns.objects,
+      socket.assigns.search,
+      socket.assigns.subscriptions_sort_by,
+      socket.assigns.subscriptions_sort_dir
+    )
+    |> Enum.map(&subscription_key/1)
+    |> MapSet.new()
   end
 
   defp resubscribe_subscription(device_id, sub) do
@@ -2540,6 +2619,26 @@ defmodule BacViewWeb.DeviceLive do
         |> assign(sort_by_key, sort_by)
         |> assign(sort_dir_key, sort_dir)
     end
+  end
+
+  defp patch_subscriptions_tab(socket, opts) do
+    search = Keyword.get(opts, :search, socket.assigns.search)
+    cov_view = Keyword.get(opts, :cov_view, socket.assigns.cov_view)
+
+    path =
+      DeviceUrl.device_path(socket.assigns.device_id,
+        tab: "subscriptions",
+        cov_view: cov_view,
+        search: search,
+        types: socket.assigns.type_filter,
+        status: socket.assigns.status_filter,
+        sort: socket.assigns.sort_by,
+        dir: socket.assigns.sort_dir
+      )
+
+    socket
+    |> assign(:search, search)
+    |> push_patch(to: path)
   end
 
   defp patch_objects_tab(socket, opts) do
@@ -2833,6 +2932,7 @@ defmodule BacViewWeb.DeviceLive do
           :if={!@loading}
           scan_errors={Map.get(@device, :scan_errors, [])}
           scan_retrying={@scan_retrying}
+          scan_recovery_open={@scan_recovery_open}
           locale={@locale}
           locale_version={@locale_version}
         />
@@ -2916,6 +3016,7 @@ defmodule BacViewWeb.DeviceLive do
               objects={@objects}
               cov_notifications={@cov_notifications}
               selected_keys={@selected_subscription_keys}
+              search={@search}
               sort_by={@subscriptions_sort_by}
               sort_dir={@subscriptions_sort_dir}
               notifications_sort_by={@cov_notifications_sort_by}

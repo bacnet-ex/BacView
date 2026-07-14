@@ -250,19 +250,12 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end)
   end
 
-  defp enum_options_for(value, enum_type, _parent, _field_key) when is_atom(enum_type) do
-    if enum_dropdown_value?(value) do
-      case PropertyEnumeration.options(enum_type) do
-        [] -> nil
-        options -> options
-      end
-    else
-      nil
+  defp enum_options_for(_value, enum_type, _parent, _field_key) when is_atom(enum_type) do
+    case PropertyEnumeration.options(enum_type) do
+      [] -> nil
+      options -> options
     end
   end
-
-  defp enum_dropdown_value?(value) when is_atom(value) or is_nil(value), do: true
-  defp enum_dropdown_value?(_value), do: false
 
   defp update_in_structure(%Encoding{} = data, [:encoding], string_value) do
     with {:ok, encoding} <- decode_encoding_kind(string_value) do

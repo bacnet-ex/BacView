@@ -4,6 +4,7 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Protocol.EngineeringUnits
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.TrendLogChart
   alias BacView.BACnet.Protocol.TrendLogReader
   alias BacView.Timezone
@@ -75,43 +76,30 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
 
     points =
       filtered
-      |> Enum.flat_map(fn entry ->
-        case TrendLogReader.numeric_value(Map.get(entry, :value)) do
-          {:ok, value} ->
-            case received_at_to_ms(Map.get(entry, :received_at)) do
-              {:ok, ms} -> [%{t: ms, v: value}]
-              :error -> []
-            end
-
-          :error ->
-            []
-        end
-      end)
+      |> Enum.flat_map(&build_point(&1, object, property))
       |> Enum.sort_by(& &1.t)
 
     unit = series_unit(device_id, object_id, property, object, subscription)
-    scale_id = scale_id_for(unit)
+    enum_chart? = enum_chart?(object, property)
+    scale_id = if enum_chart?, do: "states", else: scale_id_for(unit)
 
     series = [
-      %{
-        id: "s0",
-        label: series_label(object_id, property, object),
-        unit: unit,
-        unit_label: unit_label(unit),
-        scale_id: scale_id,
-        points: points
-      }
+      maybe_put_series_paths(
+        %{
+          id: "s0",
+          label: series_label(object_id, property, object),
+          unit: unit,
+          unit_label: unit_label(unit),
+          scale_id: scale_id,
+          points: points
+        },
+        enum_chart?
+      )
     ]
 
     %{
       series: series,
-      scales: [
-        %{
-          id: scale_id,
-          label: unit_label(unit),
-          side: "left"
-        }
-      ],
+      scales: build_scales(scale_id, unit, object, property),
       markers: [],
       range: %{
         start: start_dt && TrendLogChart.naive_to_unix_ms(start_dt),
@@ -236,6 +224,72 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
 
   defp scale_id_for(nil), do: "raw"
   defp scale_id_for(unit) when is_atom(unit), do: Atom.to_string(unit)
+
+  defp build_point(entry, object, property) do
+    with {:ok, value} <- TrendLogReader.numeric_value(Map.get(entry, :value)),
+         {:ok, ms} <- received_at_to_ms(Map.get(entry, :received_at)) do
+      v = chart_value(value, object, property)
+      point = %{t: ms, v: v}
+
+      case chart_point_label(object, property, v) do
+        nil -> [point]
+        label -> [Map.put(point, :label, label)]
+      end
+    else
+      _error -> []
+    end
+  end
+
+  defp chart_value(value, object, property) do
+    if enum_chart?(object, property), do: trunc(value), else: value
+  end
+
+  defp chart_point_label(object, property, value) do
+    if enum_chart?(object, property) do
+      MultistateState.format_present_value(value, object) || Integer.to_string(trunc(value))
+    end
+  end
+
+  defp enum_chart?(object, property) do
+    MultistateState.multistate_object?(object) and
+      MultistateState.state_value_property?(property) and
+      MultistateState.state_options(object) != []
+  end
+
+  defp build_scales("states", _unit, object, property) do
+    if enum_chart?(object, property) do
+      [
+        %{
+          id: "states",
+          label: "—",
+          side: "left",
+          kind: "enum",
+          ticks: enum_ticks(object)
+        }
+      ]
+    else
+      build_scales("raw", nil, object, property)
+    end
+  end
+
+  defp build_scales(scale_id, unit, _object, _property) do
+    [
+      %{
+        id: scale_id,
+        label: unit_label(unit),
+        side: "left"
+      }
+    ]
+  end
+
+  defp enum_ticks(object) do
+    Enum.map(MultistateState.state_options(object), fn %{value: value, label: label} ->
+      %{value: value, label: label}
+    end)
+  end
+
+  defp maybe_put_series_paths(series, true), do: Map.put(series, :paths, "stepped")
+  defp maybe_put_series_paths(series, _enum_chart?), do: series
 
   defp filename_part(%NaiveDateTime{} = dt, _fallback) do
     dt

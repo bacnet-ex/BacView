@@ -17,6 +17,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   attr(:objects, :list, default: [])
   attr(:cov_notifications, :list, required: true)
   attr(:selected_keys, :any, default: MapSet.new())
+  attr(:search, :string, default: "")
   attr(:sort_by, :string, default: nil)
   attr(:sort_dir, :atom, default: :asc)
   attr(:notifications_sort_by, :string, default: nil)
@@ -60,6 +61,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
         subscriptions={@subscriptions}
         objects={@objects}
         selected_keys={@selected_keys}
+        search={@search}
         sort_by={@sort_by}
         sort_dir={@sort_dir}
         locale={@locale}
@@ -85,6 +87,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   attr(:subscriptions, :list, required: true)
   attr(:objects, :list, default: [])
   attr(:selected_keys, :any, default: MapSet.new())
+  attr(:search, :string, default: "")
   attr(:sort_by, :string, default: nil)
   attr(:sort_dir, :atom, default: :asc)
   attr(:locale, :string, required: true)
@@ -95,13 +98,31 @@ defmodule BacViewWeb.SubscriptionsPanel do
       assign(
         assigns,
         :sorted_subscriptions,
-        assigns.subscriptions
-        |> SubscriptionTable.enrich_subscriptions(assigns.objects)
-        |> SubscriptionTable.sorted_subscriptions(assigns.sort_by, assigns.sort_dir)
+        SubscriptionTable.list_subscriptions(
+          assigns.subscriptions,
+          assigns.objects,
+          assigns.search,
+          assigns.sort_by,
+          assigns.sort_dir
+        )
       )
 
     ~H"""
     <div class="space-y-4 min-w-0 w-full" id="cov-panel-subscriptions">
+      <input
+        :if={@subscriptions != []}
+        id="subscription-search"
+        type="search"
+        name="search"
+        value={@search}
+        placeholder={
+          t(@locale, @locale_version, "Abonnements suchen… (-Begriff zum Ausschliessen)")
+        }
+        phx-keyup="search_subscriptions"
+        phx-debounce="200"
+        class="bac-input bac-input-sm max-w-md"
+      />
+
       <div :if={@subscriptions != []} class="flex flex-wrap items-center gap-2">
         <button
           type="button"
@@ -118,7 +139,14 @@ defmodule BacViewWeb.SubscriptionsPanel do
         {t(@locale, @locale_version, "Keine aktiven COV-Abonnements.")}
       </p>
 
-      <div :if={@subscriptions != []} class="bac-table-wrap">
+      <p
+        :if={@subscriptions != [] and @sorted_subscriptions == []}
+        class="text-sm bac-text-muted py-12 text-center"
+      >
+        {t(@locale, @locale_version, "Keine Treffer")}
+      </p>
+
+      <div :if={@sorted_subscriptions != []} class="bac-table-wrap">
         <table class="bac-table" id="cov-subscriptions-table">
           <colgroup>
             <col class="w-8" />
@@ -136,7 +164,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                 <input
                   id="subscription-select-all"
                   type="checkbox"
-                  checked={all_selected?(@selected_keys, @subscriptions)}
+                  checked={all_selected?(@selected_keys, @sorted_subscriptions)}
                   phx-click="toggle_select_all_subscriptions"
                   class="bac-checkbox shrink-0"
                   aria-label={t(@locale, @locale_version, "Alle Abonnements auswählen")}

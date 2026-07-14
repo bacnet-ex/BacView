@@ -37,6 +37,67 @@ defmodule BacView.BACnet.ScanValidationTest do
     end
   end
 
+  describe "property_read_opts/2" do
+    test "builds strict property read opts by default" do
+      assert DeviceSession.property_read_opts() == [allow_unknown_properties: true]
+    end
+
+    test "includes remote_device_id when device object is known" do
+      device_obj = %ObjectIdentifier{type: :device, instance: 12}
+
+      assert DeviceSession.property_read_opts(nil, device_obj) == [
+               allow_unknown_properties: true,
+               remote_device_id: 12
+             ]
+    end
+
+    test "passes skip mode through object_opts for property reads" do
+      device_obj = %ObjectIdentifier{type: :device, instance: 12}
+      value_opts = DeviceSession.property_read_opts(:value, device_obj)
+
+      assert Keyword.get(value_opts, :remote_device_id) == 12
+
+      assert Keyword.get(value_opts, :object_opts) == [
+               skip_property_validation_remote_object: :value
+             ]
+
+      all_opts = DeviceSession.property_read_opts(true, device_obj)
+
+      assert Keyword.get(all_opts, :object_opts) == [
+               skip_property_validation_remote_object: true
+             ]
+    end
+  end
+
+  describe "property_validation_skip_mode_from_objects/2" do
+    test "reads skip mode from object summaries" do
+      object_id = %ObjectIdentifier{type: :multi_state_value, instance: 42}
+
+      assert DeviceSession.property_validation_skip_mode_from_objects(
+               [
+                 %{type: :multi_state_value, instance: 42, property_validation_skip_mode: :value}
+               ],
+               object_id
+             ) == :value
+    end
+  end
+
+  describe "apply_property_validation_skip_mode/3" do
+    test "tags the matching object summary" do
+      object_id = %ObjectIdentifier{type: :multi_state_value, instance: 42}
+
+      objects = [
+        %{type: :analog_input, instance: 1},
+        %{type: :multi_state_value, instance: 42}
+      ]
+
+      assert DeviceSession.apply_property_validation_skip_mode(objects, object_id, :value) == [
+               %{type: :analog_input, instance: 1},
+               %{type: :multi_state_value, instance: 42, property_validation_skip_mode: :value}
+             ]
+    end
+  end
+
   describe "scan_read_opts/2" do
     test "builds strict scan opts by default" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}

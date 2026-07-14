@@ -47,6 +47,17 @@ defmodule BacView.BACnet.Protocol.MultistateStateTest do
     end
   end
 
+  describe "valid_state_value?/2" do
+    test "accepts values within 1..number_of_states" do
+      object = %{type: :multi_state_value, number_of_states: 3, state_text: ["A", "B", "C"]}
+
+      assert MultistateState.valid_state_value?(object, 1)
+      assert MultistateState.valid_state_value?(object, 3)
+      refute MultistateState.valid_state_value?(object, 0)
+      refute MultistateState.valid_state_value?(object, 4)
+    end
+  end
+
   describe "state_options/1" do
     test "returns valid state labels only" do
       object = %{

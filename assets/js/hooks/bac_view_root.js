@@ -9,9 +9,9 @@ const SEARCH_INPUT_IDS = [
 
 const FORM_FIELD_SELECTOR = "input, textarea, select, [contenteditable=true]"
 
-// Keys documented in the keyboard-shortcuts modal that must work even when a
-// filter/search field still has focus (otherwise "r" never triggers refresh).
-const GLOBAL_SHORTCUT_KEYS = new Set(["r", "R", "?", "Escape"])
+// Only Escape bypasses form-field focus so open modals can be dismissed.
+// Shortcut keys like "r" and "?" are typed normally inside inputs.
+const GLOBAL_SHORTCUT_KEYS = new Set(["Escape"])
 
 function isFormField(el) {
   return el?.matches?.(FORM_FIELD_SELECTOR) ?? false

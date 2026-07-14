@@ -173,7 +173,19 @@ defmodule BacViewWeb.ObjectLive do
 
     Task.start(fn ->
       device_result = DeviceSession.load(device_id)
-      props_result = DeviceSession.read_properties(device_id, object_id)
+
+      props_result =
+        case device_result do
+          {:ok, loaded} ->
+            skip_mode =
+              DeviceSession.property_validation_skip_mode_from_objects(loaded.objects, object_id)
+
+            DeviceSession.read_properties(device_id, object_id, skip_mode: skip_mode)
+
+          _load_object ->
+            DeviceSession.read_properties(device_id, object_id)
+        end
+
       send(parent, {:object_load_done, device_result, props_result})
     end)
 
@@ -1489,7 +1501,15 @@ defmodule BacViewWeb.ObjectLive do
       object_id = socket.assigns.object_id
 
       Task.start(fn ->
-        result = DeviceSession.read_properties(device_id, object_id)
+        skip_mode =
+          DeviceSession.property_validation_skip_mode_from_objects(
+            socket.assigns.device_objects,
+            object_id
+          )
+
+        result =
+          DeviceSession.read_properties(device_id, object_id, skip_mode: skip_mode)
+
         send(parent, {:properties_refreshed, result})
       end)
 
@@ -2130,22 +2150,7 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   defp trend_chart_event_payload(%{series: series} = data) when is_list(series) do
-    payload_series =
-      Enum.map(series, fn %{
-                            id: id,
-                            label: label,
-                            unit_label: unit_label,
-                            scale_id: scale_id,
-                            points: points
-                          } ->
-        %{
-          id: id,
-          label: label,
-          unit_label: unit_label,
-          scale_id: scale_id,
-          points: Enum.map(points, fn %{t: t, v: v} -> %{t: t, v: v} end)
-        }
-      end)
+    payload_series = BacViewWeb.ChartEventPayload.series_payload(series)
 
     if chart_has_data?(data) do
       Map.put(data, :series, payload_series)

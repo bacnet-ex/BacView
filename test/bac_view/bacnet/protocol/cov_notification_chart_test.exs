@@ -70,6 +70,47 @@ defmodule BacView.BACnet.Protocol.CovNotificationChartTest do
     assert series.label == "Raumtemperatur EG (analog_input:1 present value)"
   end
 
+  test "build uses enum scale and state labels for multistate present_value" do
+    object_id = %ObjectIdentifier{type: :multi_state_value, instance: 1}
+    subscription = %{object_id: object_id, property: :present_value}
+
+    object = %{
+      type: :multi_state_value,
+      instance: 1,
+      number_of_states: 3,
+      state_text: ["Aus", "Ein", "Störung"]
+    }
+
+    notifications = [
+      %{
+        object_id: object_id,
+        property: :present_value,
+        value: 1,
+        received_at: ~U[2025-03-15 10:30:00Z]
+      },
+      %{
+        object_id: object_id,
+        property: :present_value,
+        value: 2,
+        received_at: ~U[2025-03-15 10:31:00Z]
+      }
+    ]
+
+    data = CovNotificationChart.build(notifications, subscription, object: object)
+
+    assert [scale] = data.scales
+    assert scale.id == "states"
+    assert scale.kind == "enum"
+    assert length(scale.ticks) == 3
+    assert Enum.at(scale.ticks, 0).label == "1 (Aus)"
+    assert Enum.at(scale.ticks, 1).label == "2 (Ein)"
+
+    assert [series] = data.series
+    assert series.scale_id == "states"
+    assert series.paths == "stepped"
+    assert [%{v: 1, label: "1 (Aus)"}, %{v: 2, label: "2 (Ein)"}] = series.points
+  end
+
   test "filter_notifications_by_range keeps notifications in selected window" do
     object_id = %ObjectIdentifier{type: :binary_input, instance: 2}
 

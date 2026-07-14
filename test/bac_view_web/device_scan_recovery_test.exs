@@ -6,32 +6,43 @@ defmodule BacViewWeb.DeviceScanRecoveryTest do
   alias BACnet.Protocol.ObjectIdentifier
   alias BacViewWeb.DeviceScanRecovery
 
-  test "renders recovery actions for validation failures" do
-    html =
-      render_component(&DeviceScanRecovery.recovery_panel/1,
-        scan_errors: [
-          %{
-            object: "multistate_value:1",
-            object_id: %ObjectIdentifier{type: :multistate_value, instance: 1},
-            message:
-              "Eigenschaftswert entspricht nicht der BACnet-Spezifikation (present value).",
-            reason: {:value_failed_property_validation, :present_value},
-            recoverable: true,
-            retry_modes: [:value, true]
-          },
-          %{
-            object: "analog_input:2",
-            object_id: %ObjectIdentifier{type: :analog_input, instance: 2},
-            message: "Eigenschaftswert hat einen ungültigen BACnet-Datentyp (present value).",
-            reason: {:invalid_property_type, :present_value},
-            recoverable: true,
-            retry_modes: [true]
-          }
+  @scan_errors [
+    %{
+      object: "multistate_value:1",
+      object_id: %ObjectIdentifier{type: :multistate_value, instance: 1},
+      message: "Eigenschaftswert entspricht nicht der BACnet-Spezifikation (present value).",
+      reason: {:value_failed_property_validation, :present_value},
+      recoverable: true,
+      retry_modes: [:value, true]
+    },
+    %{
+      object: "analog_input:2",
+      object_id: %ObjectIdentifier{type: :analog_input, instance: 2},
+      message: "Eigenschaftswert hat einen ungültigen BACnet-Datentyp (present value).",
+      reason: {:invalid_property_type, :present_value},
+      recoverable: true,
+      retry_modes: [true]
+    }
+  ]
+
+  defp render_recovery_panel(overrides \\ []) do
+    assigns =
+      Keyword.merge(
+        [
+          scan_errors: @scan_errors,
+          scan_retrying: %{},
+          scan_recovery_open: false,
+          locale: "de",
+          locale_version: 0
         ],
-        scan_retrying: %{},
-        locale: "de",
-        locale_version: 0
+        overrides
       )
+
+    render_component(&DeviceScanRecovery.recovery_panel/1, assigns)
+  end
+
+  test "renders recovery actions for validation failures" do
+    html = render_recovery_panel()
 
     assert html =~ ~s/id="device-scan-recovery-panel"/
     assert html =~ "2 Objekte konnten nicht gelesen werden"
@@ -44,14 +55,46 @@ defmodule BacViewWeb.DeviceScanRecoveryTest do
     assert html =~ ~s/id="device-scan-recovery-all-2"/
   end
 
-  test "does not render when there are no scan errors" do
+  test "is collapsed by default and preserves open state via assign" do
+    collapsed = render_recovery_panel()
+    refute collapsed =~ ~s(<details open)
+
+    expanded =
+      render_recovery_panel(scan_recovery_open: true)
+
+    assert expanded =~ ~s/id="device-scan-recovery-panel" open/
+    assert expanded =~ ~s/phx-click="toggle_scan_recovery_panel"/
+  end
+
+  test "renders bulk retry actions when applicable" do
+    html = render_recovery_panel()
+
+    assert html =~ ~s/id="device-scan-recovery-bulk-value"/
+    assert html =~ ~s/id="device-scan-recovery-bulk-all"/
+    assert html =~ ~s/phx-click="retry_all_scan_objects"/
+    assert html =~ "Alle: Wertvalidierung überspringen"
+    assert html =~ "Alle: Validierung überspringen"
+  end
+
+  test "hides value bulk action when no objects support it" do
     html =
-      render_component(&DeviceScanRecovery.recovery_panel/1,
-        scan_errors: [],
-        scan_retrying: %{},
-        locale: "de",
-        locale_version: 0
+      render_recovery_panel(
+        scan_errors: [
+          %{
+            object: "analog_input:2",
+            object_id: %ObjectIdentifier{type: :analog_input, instance: 2},
+            message: "Eigenschaftswert hat einen ungültigen BACnet-Datentyp (present value).",
+            retry_modes: [true]
+          }
+        ]
       )
+
+    refute html =~ ~s/id="device-scan-recovery-bulk-value"/
+    assert html =~ ~s/id="device-scan-recovery-bulk-all"/
+  end
+
+  test "does not render when there are no scan errors" do
+    html = render_recovery_panel(scan_errors: [])
 
     refute html =~ ~s/id="device-scan-recovery-panel"/
   end

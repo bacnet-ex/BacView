@@ -1,6 +1,7 @@
 defmodule BacViewWeb.SubscriptionTable do
   @moduledoc false
 
+  alias BacViewWeb.SearchQuery
   alias BacViewWeb.TableSort
 
   @sort_columns ~w(object description property last_cov value remaining)
@@ -41,6 +42,26 @@ defmodule BacViewWeb.SubscriptionTable do
           |> Map.put(:object_name, nil)
           |> Map.put(:description, nil)
       end
+    end)
+  end
+
+  @spec list_subscriptions([map()], [map()], String.t(), String.t() | nil, :asc | :desc) :: [
+          map()
+        ]
+  def list_subscriptions(subscriptions, objects, search, sort_by, sort_dir)
+      when is_list(subscriptions) do
+    subscriptions
+    |> enrich_subscriptions(objects)
+    |> filtered_subscriptions(search)
+    |> sorted_subscriptions(sort_by, sort_dir)
+  end
+
+  @spec filtered_subscriptions([map()], String.t()) :: [map()]
+  def filtered_subscriptions(subscriptions, search) when is_list(subscriptions) do
+    query = SearchQuery.parse(search)
+
+    Enum.filter(subscriptions, fn sub ->
+      SearchQuery.matches?(query, subscription_search_haystack(sub))
     end)
   end
 
@@ -103,4 +124,21 @@ defmodule BacViewWeb.SubscriptionTable do
   end
 
   defp object_description(_object), do: nil
+
+  defp subscription_search_haystack(sub) when is_map(sub) do
+    %{type: type, instance: instance} = Map.get(sub, :object_id)
+    property = Map.get(sub, :property)
+
+    [
+      type,
+      instance,
+      Map.get(sub, :object_name),
+      Map.get(sub, :description),
+      property,
+      Map.get(sub, :last_value_formatted)
+    ]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.map_join(" ", &to_string/1)
+    |> String.downcase()
+  end
 end

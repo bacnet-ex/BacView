@@ -63,6 +63,41 @@ function formatChartValue(value) {
   return String(value)
 }
 
+function scaleById(scales) {
+  return new Map((scales || []).map((scale) => [scale.id, scale]))
+}
+
+function enumScaleMeta(scale) {
+  const ticks = scale.ticks || []
+  const values = ticks.map((tick) => tick.value).sort((a, b) => a - b)
+  const labelByValue = new Map(ticks.map((tick) => [tick.value, tick.label]))
+
+  return {values, labelByValue}
+}
+
+function enumScaleRange(values, dataMin, dataMax) {
+  const tickMin = values[0]
+  const tickMax = values[values.length - 1]
+  const min = Math.min(tickMin ?? dataMin ?? 0, dataMin ?? tickMin ?? 0)
+  const max = Math.max(tickMax ?? dataMax ?? 0, dataMax ?? tickMax ?? 0)
+
+  return [min - 0.5, max + 0.5]
+}
+
+function pointLabelLookup(points) {
+  return new Map(
+    (points || [])
+      .filter((point) => point.label)
+      .map((point) => [point.t, point.label]),
+  )
+}
+
+function steppedPaths(UPlot) {
+  if (typeof UPlot?.paths?.stepped !== "function") return null
+
+  return UPlot.paths.stepped({align: 1})
+}
+
 const TrendLogChart = {
   mounted() {
     this.visibleSeries = new Set()
@@ -154,15 +189,20 @@ const TrendLogChart = {
     const seconds = u.data[0][idx]
     const rows = []
 
+    const timestampMs = Math.round(seconds * 1000)
+
     this.activeSeriesMeta.forEach((meta, seriesIndex) => {
       const value = u.data[seriesIndex + 1][idx]
       if (value == null) return
 
+      const pointLabel = meta.labelLookup?.get(timestampMs)
+      const displayValue = pointLabel || formatChartValue(value)
+
       rows.push({
         color: palette[seriesIndex % palette.length],
         label: meta.label,
-        value: formatChartValue(value),
-        unit: meta.unit_label || "",
+        value: displayValue,
+        unit: pointLabel ? "" : meta.unit_label || "",
       })
     })
 
@@ -219,7 +259,12 @@ const TrendLogChart = {
     this.lastPayload = payload
 
     const activeSeries = payload.series.filter((series) => this.visibleSeries.has(series.id))
-    this.activeSeriesMeta = activeSeries
+    const scalesById = scaleById(payload.scales)
+
+    this.activeSeriesMeta = activeSeries.map((series) => ({
+      ...series,
+      labelLookup: pointLabelLookup(series.points),
+    }))
 
     if (activeSeries.length === 0) {
       this.destroyPlot()
@@ -245,9 +290,18 @@ const TrendLogChart = {
       const used = activeSeries.some((s) => s.scale_id === scale.id)
       if (!used) return
 
+      const isEnum = scale.kind === "enum"
+      const enumMeta = isEnum ? enumScaleMeta(scale) : null
+
       scales[scale.id] = {
-        auto: true,
+        auto: !isEnum,
         side: scale.side === "right" ? 1 : 3,
+        ...(isEnum
+          ? {
+              range: (_u, dataMin, dataMax) =>
+                enumScaleRange(enumMeta.values, dataMin, dataMax),
+            }
+          : {}),
       }
 
       axes.push({
@@ -255,19 +309,33 @@ const TrendLogChart = {
         stroke: palette[index % palette.length],
         grid: {show: index === 0},
         label: scale.label,
-        size: 56,
-        gap: 4,
+        size: isEnum ? 72 : 56,
+        gap: isEnum ? 8 : 4,
+        ...(isEnum
+          ? {
+              splits: () => enumMeta.values,
+              values: (_u, splits) =>
+                splits.map((value) => enumMeta.labelByValue.get(value) ?? String(value)),
+            }
+          : {}),
       })
     })
 
+    const UPlot = globalThis.__bacview_uplot__
+
     activeSeries.forEach((entry, index) => {
+      const scale = scalesById.get(entry.scale_id)
+      const isEnum = scale?.kind === "enum"
+      const stepped = entry.paths === "stepped" && steppedPaths(UPlot)
+
       series.push({
         scale: entry.scale_id,
         label: entry.label,
         stroke: palette[index % palette.length],
         width: 2,
         spanGaps: true,
-        value: (_, v) => formatChartValue(v),
+        value: (_, value) => formatChartValue(value),
+        ...(stepped ? {paths: stepped} : {}),
       })
     })
 

@@ -83,6 +83,57 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
     assert series.label == "Raumtemperatur EG (analog_input:1 present value)"
   end
 
+  test "build uses enum scale and state labels for multistate present_value trend log" do
+    ref = %DeviceObjectPropertyRef{
+      device_identifier: nil,
+      object_identifier: %ObjectIdentifier{type: :multi_state_value, instance: 1},
+      property_identifier: :present_value,
+      property_array_index: nil
+    }
+
+    records = [
+      %{
+        type: :log_record,
+        timestamp: datetime(2025, 3, 15, 10, 30, 0),
+        datum: 1,
+        status_flags: nil
+      },
+      %{
+        type: :log_record,
+        timestamp: datetime(2025, 3, 15, 10, 31, 0),
+        datum: 2,
+        status_flags: nil
+      }
+    ]
+
+    object_id = %ObjectIdentifier{type: :trend_log, instance: 1}
+
+    data =
+      TrendLogChart.build(records, object_id,
+        property_refs: [ref],
+        device_objects: [
+          %{
+            type: :multi_state_value,
+            instance: 1,
+            number_of_states: 3,
+            state_text: ["Aus", "Ein", "Störung"]
+          }
+        ],
+        start_dt: ~N[2025-03-15 10:00:00],
+        end_dt: ~N[2025-03-15 11:00:00]
+      )
+
+    assert [series] = data.series
+    assert series.scale_id == "states-multi_state_value-1"
+    assert series.paths == "stepped"
+    assert [%{v: 1, label: "1 (Aus)"}, %{v: 2, label: "2 (Ein)"}] = series.points
+
+    assert [scale] = data.scales
+    assert scale.kind == "enum"
+    assert scale.id == "states-multi_state_value-1"
+    assert Enum.at(scale.ticks, 0).label == "1 (Aus)"
+  end
+
   test "build groups multiple series by engineering unit" do
     ref_ai = %DeviceObjectPropertyRef{
       device_identifier: nil,
@@ -122,6 +173,62 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
     assert length(data.series) == 2
     assert Enum.any?(data.series, &(&1.scale_id == "degrees_celsius"))
     assert Enum.any?(data.series, &(&1.scale_id == "raw"))
+  end
+
+  test "build mixes multistate enum series with numeric series on trend log multiple" do
+    ref_msv = %DeviceObjectPropertyRef{
+      device_identifier: nil,
+      object_identifier: %ObjectIdentifier{type: :multi_state_value, instance: 1},
+      property_identifier: :present_value,
+      property_array_index: nil
+    }
+
+    ref_ai = %DeviceObjectPropertyRef{
+      device_identifier: nil,
+      object_identifier: %ObjectIdentifier{type: :analog_input, instance: 2},
+      property_identifier: :present_value,
+      property_array_index: nil
+    }
+
+    records = [
+      %{
+        type: :log_multiple_record,
+        timestamp: datetime(2025, 3, 15, 10, 30, 0),
+        data: [2, 21.5]
+      }
+    ]
+
+    object_id = %ObjectIdentifier{type: :trend_log_multiple, instance: 2}
+
+    data =
+      TrendLogChart.build(records, object_id,
+        property_refs: [ref_msv, ref_ai],
+        device_objects: [
+          %{
+            type: :multi_state_value,
+            instance: 1,
+            number_of_states: 2,
+            state_text: ["Aus", "Ein"]
+          },
+          %{type: :analog_input, instance: 2, units: :degrees_celsius}
+        ],
+        start_dt: ~N[2025-03-15 10:00:00],
+        end_dt: ~N[2025-03-15 11:00:00]
+      )
+
+    assert length(data.series) == 2
+
+    msv = Enum.find(data.series, &(&1.scale_id == "states-multi_state_value-1"))
+    ai = Enum.find(data.series, &(&1.scale_id == "degrees_celsius"))
+
+    assert msv.paths == "stepped"
+    assert [%{v: 2, label: "2 (Ein)"}] = msv.points
+
+    assert [%{v: 21.5}] = ai.points
+    refute Map.has_key?(hd(ai.points), :label)
+
+    assert Enum.any?(data.scales, &(&1.kind == "enum"))
+    assert Enum.any?(data.scales, &(&1.id == "degrees_celsius"))
   end
 
   test "range_from_records uses earliest and latest timestamps" do

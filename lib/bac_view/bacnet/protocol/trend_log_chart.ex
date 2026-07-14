@@ -6,6 +6,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   alias BACnet.Protocol.DeviceObjectPropertyRef
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Protocol.EngineeringUnits
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.TrendLogReader
   alias BacView.Timezone
 
@@ -89,6 +90,8 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
 
     scales = build_scales(series)
 
+    series = Enum.map(series, &Map.drop(&1, [:enum_object, :enum_ticks]))
+
     %{
       series: series,
       scales: scales,
@@ -109,7 +112,10 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
          unit: defn.unit,
          unit_label: defn.unit_label,
          scale_id: defn.scale_id,
-         points: []
+         points: [],
+         enum_object: Map.get(defn, :enum_object),
+         enum_ticks: Map.get(defn, :enum_ticks),
+         paths: Map.get(defn, :paths)
        }}
     end)
   end
@@ -135,16 +141,25 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   defp series_definitions(:trend_log_multiple, _trend_log, _series_definitions2, _objects), do: []
 
   defp series_def(index, ref, unit, objects) do
+    object = ref_object(ref, objects)
+    property = ref_property(ref)
+    enum_chart? = enum_chart?(object, property)
     resolved_unit = normalize_unit(unit || ref_unit(ref, objects))
-    scale_id = scale_id_for(resolved_unit)
 
-    %{
+    scale_id =
+      if enum_chart?, do: enum_scale_id(ref, index), else: scale_id_for(resolved_unit)
+
+    base = %{
       id: "s#{index}",
       label: ref_label(ref, objects, index),
       unit: resolved_unit,
       unit_label: unit_label(resolved_unit),
-      scale_id: scale_id
+      scale_id: scale_id,
+      enum_object: if(enum_chart?, do: object, else: nil),
+      enum_ticks: if(enum_chart?, do: enum_ticks(object), else: nil)
     }
+
+    if enum_chart?, do: Map.put(base, :paths, "stepped"), else: base
   end
 
   defp accumulate_record(
@@ -156,7 +171,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
     with {:ok, at} <- datetime_to_ms(timestamp),
          {:ok, value} <- TrendLogReader.numeric_value(datum),
          series when not is_nil(series) <- Map.get(series_acc, "s0") do
-      point = %{t: at, v: value}
+      point = build_chart_point(at, value, Map.get(series, :enum_object))
 
       {Map.update!(series_acc, "s0", &Map.update!(&1, :points, fn pts -> [point | pts] end)),
        maybe_marker(markers_acc, at, datum)}
@@ -186,7 +201,7 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
 
             case {Map.get(s_acc, id), TrendLogReader.numeric_value(datum)} do
               {series, {:ok, value}} when not is_nil(series) ->
-                point = %{t: at, v: value}
+                point = build_chart_point(at, value, Map.get(series, :enum_object))
 
                 {Map.update!(s_acc, id, &Map.update!(&1, :points, fn pts -> [point | pts] end)),
                  m_acc}
@@ -242,14 +257,79 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
     |> Enum.with_index()
     |> Enum.map(fn {scale_id, index} ->
       sample = Enum.find(series, &(&1.scale_id == scale_id))
-
-      %{
-        id: scale_id,
-        label: (sample && sample.unit_label) || scale_id,
-        side: if(rem(index, 2) == 0, do: "left", else: "right")
-      }
+      scale_entry(scale_id, sample, index)
     end)
   end
+
+  defp scale_entry(scale_id, sample, index) do
+    side = if(rem(index, 2) == 0, do: "left", else: "right")
+
+    case sample && Map.get(sample, :enum_ticks) do
+      ticks when is_list(ticks) and ticks != [] ->
+        %{
+          id: scale_id,
+          label: "—",
+          side: side,
+          kind: "enum",
+          ticks: ticks
+        }
+
+      _ticks ->
+        %{
+          id: scale_id,
+          label: (sample && sample.unit_label) || scale_id,
+          side: side
+        }
+    end
+  end
+
+  defp build_chart_point(at, value, enum_object) when is_map(enum_object) do
+    v = trunc(value)
+
+    case MultistateState.format_present_value(v, enum_object) do
+      label when is_binary(label) and label != "" -> %{t: at, v: v, label: label}
+      _label -> %{t: at, v: v}
+    end
+  end
+
+  defp build_chart_point(at, value, _enum_object), do: %{t: at, v: value}
+
+  defp enum_chart?(object, property) do
+    MultistateState.multistate_object?(object) and
+      MultistateState.state_value_property?(property) and
+      MultistateState.state_options(object) != []
+  end
+
+  defp enum_ticks(object) do
+    Enum.map(MultistateState.state_options(object), fn %{value: value, label: label} ->
+      %{value: value, label: label}
+    end)
+  end
+
+  defp enum_scale_id(
+         %DeviceObjectPropertyRef{
+           object_identifier: %ObjectIdentifier{type: type, instance: instance}
+         },
+         _index
+       ),
+       do: "states-#{type}-#{instance}"
+
+  defp enum_scale_id(_ref, index), do: "states-s#{index}"
+
+  defp ref_object(
+         %DeviceObjectPropertyRef{
+           object_identifier: %ObjectIdentifier{type: type, instance: instance}
+         },
+         objects
+       )
+       when is_list(objects) do
+    Enum.find(objects, &(&1.type == type and &1.instance == instance))
+  end
+
+  defp ref_object(_ref, _objects), do: nil
+
+  defp ref_property(%DeviceObjectPropertyRef{property_identifier: property}), do: property
+  defp ref_property(_ref), do: :present_value
 
   defp scale_id_for(nil), do: "raw"
   defp scale_id_for(unit) when is_atom(unit), do: Atom.to_string(unit)
@@ -283,7 +363,9 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   end
 
   defp ref_description(
-         %DeviceObjectPropertyRef{object_identifier: %{type: type, instance: instance}},
+         %DeviceObjectPropertyRef{
+           object_identifier: %ObjectIdentifier{type: type, instance: instance}
+         },
          objects
        )
        when is_list(objects) do
@@ -306,7 +388,9 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   defp ref_description(_ref_description, _ref_description2), do: nil
 
   defp ref_unit(
-         %DeviceObjectPropertyRef{object_identifier: %{type: type, instance: instance}},
+         %DeviceObjectPropertyRef{
+           object_identifier: %ObjectIdentifier{type: type, instance: instance}
+         },
          objects
        )
        when is_list(objects) do

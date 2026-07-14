@@ -92,6 +92,60 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     def read_property(_destination, _object, _property, _opts), do: {:error, :skipped}
   end
 
+  defmodule OptsCapturingClient do
+    @object (
+              {:ok, object} =
+                AnalogInput.create(1, "AI-1", %{present_value: 1.0, description: "test"})
+
+              object
+            )
+
+    def read_object(_destination, _object, opts) do
+      send(self(), {:read_object_opts, opts})
+      {:ok, @object}
+    end
+
+    def read_property_multiple(_destination, _object, properties, opts) do
+      send(self(), {:read_property_multiple_opts, opts})
+
+      known = %{
+        object_name: "AI-1",
+        present_value: 1.0,
+        description: "test"
+      }
+
+      values = Map.new(properties, fn prop -> {prop, Map.get(known, prop)} end)
+      {:ok, values}
+    end
+
+    def read_property(_destination, _object, _property, _opts), do: {:error, :skipped}
+  end
+
+  describe "read_result_from_object/2" do
+    test "formats BACnet object structs into property rows" do
+      {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0, description: "test"})
+      object_id = %ObjectIdentifier{type: :analog_input, instance: 1}
+
+      result = PropertyReader.read_result_from_object(object_id, object)
+
+      assert %{properties: rows, unknown_properties: []} = result
+      assert Enum.any?(rows, &(&1.property == :present_value and &1.value == 1.0))
+    end
+
+    test "formats plain scan maps into property rows" do
+      object_id = %ObjectIdentifier{type: :analog_input, instance: 1}
+
+      result =
+        PropertyReader.read_result_from_object(object_id, %{
+          object_name: "AI-1",
+          present_value: 1.0
+        })
+
+      assert %{properties: rows, unknown_properties: []} = result
+      assert Enum.any?(rows, &(&1.property == :present_value and &1.value == 1.0))
+    end
+  end
+
   describe "read_all/3" do
     test "lists only properties reported by the BACnet object" do
       {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0, description: "test"})
@@ -107,6 +161,30 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert Enum.map(rows, & &1.property) |> Enum.sort() == Enum.sort(expected)
       assert Enum.find(rows, &(&1.property == :present_value)).value == 1.0
       assert Enum.all?(rows, &Map.has_key?(&1, :value_display))
+    end
+
+    test "passes object_opts through to BACnet reads" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 1}
+
+      assert {:ok, %{properties: _rows, unknown_properties: []}} =
+               PropertyReader.read_all(
+                 OptsCapturingClient,
+                 :dest,
+                 object,
+                 object_opts: [skip_property_validation_remote_object: :value]
+               )
+
+      assert_receive {:read_object_opts, read_object_opts}
+
+      assert Keyword.get(read_object_opts, :object_opts) == [
+               skip_property_validation_remote_object: :value
+             ]
+
+      assert_receive {:read_property_multiple_opts, rpm_opts}
+
+      assert Keyword.get(rpm_opts, :object_opts) == [
+               skip_property_validation_remote_object: :value
+             ]
     end
 
     test "does not crash when RPM returns object identifiers" do

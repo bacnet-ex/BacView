@@ -81,6 +81,9 @@ msgstr "Subscription cancelled successfully."
 msgid "Abonnements"
 msgstr "Subscriptions"
 
+msgid "Abonnements suchen… (-Begriff zum Ausschliessen)"
+msgstr "Search subscriptions… (-term to exclude)"
+
 msgid "Actions"
 msgstr "Actions"
 
@@ -146,6 +149,12 @@ msgstr "Cancel all"
 
 msgid "Alle sichtbaren Einträge auswählen"
 msgstr "Select all visible entries"
+
+msgid "Alle: Validierung überspringen"
+msgstr "All: skip validation"
+
+msgid "Alle: Wertvalidierung überspringen"
+msgstr "All: skip value validation"
 
 msgid "Als Hex"
 msgstr "As hex"
@@ -653,6 +662,12 @@ msgstr "No notification classes found on this device."
 
 msgid "Keine Netzwerkschnittstelle für BACnet/IP verfügbar."
 msgstr "No network interface available for BACnet/IP."
+
+msgid "Keine Objekte konnten nachgelesen werden."
+msgstr "No objects could be re-read."
+
+msgid "Keine Objekte zum Nachlesen gefunden."
+msgstr "No objects found to re-read."
 
 msgid "Keine Objekttypen verfügbar."
 msgstr "No object types available."

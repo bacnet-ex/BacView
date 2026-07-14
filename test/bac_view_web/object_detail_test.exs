@@ -151,6 +151,58 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "2 (On)"
   end
 
+  test "renders out-of-range multistate values as text inputs instead of dropdowns" do
+    object = %{
+      name: "MSV-1",
+      type: :multi_state_value,
+      instance: 1,
+      writable: true,
+      commandable: false,
+      present_value: 0,
+      present_value_formatted: "0",
+      number_of_states: 2,
+      state_text: ["Off", "On"],
+      units: nil,
+      updated_at: nil
+    }
+
+    prop =
+      BacView.BACnet.Protocol.PropertyWriter.enrich_properties(
+        [
+          %{
+            property: :present_value,
+            property_name: "present value",
+            type: "INTEGER",
+            value: 0,
+            writable: true,
+            bac_type: :unsigned_integer,
+            value_display: %{kind: :scalar, formatted: "0", fields: [], items: []},
+            value_formatted: "0"
+          }
+        ],
+        object
+      )
+      |> List.first()
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          locale: "de",
+          locale_version: 0,
+          write_priority: 8,
+          writing_property: nil
+        }
+      )
+
+    refute html =~ ~s(<select)
+    assert html =~ ~s(type="text")
+    assert html =~ ~s(value="0")
+  end
+
   test "renders multistate relinquish_default with state text and dropdown options" do
     object = %{
       name: "MSV-1",

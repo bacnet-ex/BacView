@@ -93,6 +93,22 @@ defmodule BacView.BACnet.Protocol.MultistateState do
     end
   end
 
+  @spec valid_state_value?(map(), term()) :: boolean()
+  def valid_state_value?(object, value) when is_map(object) do
+    case number_of_states(object) do
+      n when is_integer(n) and n > 0 ->
+        case normalize_state_value(value) do
+          state when is_integer(state) -> state in 1..n
+          _other -> false
+        end
+
+      _number_of_states ->
+        false
+    end
+  end
+
+  def valid_state_value?(_object, _value), do: false
+
   @spec state_options(map()) :: [%{value: pos_integer(), label: String.t()}]
   def state_options(object) when is_map(object) do
     case number_of_states(object) do
@@ -129,12 +145,18 @@ defmodule BacView.BACnet.Protocol.MultistateState do
     end
   end
 
-  defp format_state_value(value) when is_integer(value), do: Integer.to_string(value)
+  defp format_state_value(value) do
+    case normalize_state_value(value) do
+      state when is_integer(state) -> Integer.to_string(state)
+      _other -> to_string(value)
+    end
+  end
 
-  defp format_state_value(value) when is_float(value),
-    do: value |> trunc() |> Integer.to_string()
+  defp normalize_state_value(value) when is_integer(value), do: value
 
-  defp format_state_value(value), do: to_string(value)
+  defp normalize_state_value(value) when is_float(value), do: trunc(value)
+
+  defp normalize_state_value(_value), do: nil
 
   defp normalize_state_index(value) when is_integer(value) and value >= 1, do: value - 1
 

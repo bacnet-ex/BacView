@@ -112,9 +112,20 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
     Text.sanitize_property_row(prop)
   end
 
-  @spec dropdown?(%{optional(:enum_options) => term()}) :: boolean()
-  def dropdown?(%{enum_options: options}) when is_list(options) and options != [], do: true
-  def dropdown?(_options), do: false
+  @spec dropdown?(map()) :: boolean()
+  def dropdown?(%{enum_options: options} = prop) when is_list(options) and options != [] do
+    enum_value_supported?(Map.get(prop, :value), options)
+  end
+
+  def dropdown?(_prop), do: false
+
+  @doc false
+  @spec enum_value_supported?(term(), [%{value: term()}]) :: boolean()
+  def enum_value_supported?(value, options) when is_list(options) and options != [] do
+    is_nil(value) or Enum.any?(options, &enum_option_matches?(value, &1.value))
+  end
+
+  def enum_value_supported?(_value, _options), do: false
 
   @spec parse_value(String.t(), atom()) :: {:ok, atom()} | {:error, term()}
   def parse_value(value, enum_type) when is_binary(value) and is_atom(enum_type) do
@@ -207,4 +218,21 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
     |> Atom.to_string()
     |> String.replace("_", " ")
   end
+
+  defp enum_option_matches?(value, option_value)
+       when is_integer(value) and is_integer(option_value),
+       do: value == option_value
+
+  defp enum_option_matches?(value, option_value)
+       when is_float(value) and is_integer(option_value),
+       do: trunc(value) == option_value
+
+  defp enum_option_matches?(value, option_value)
+       when is_integer(value) and is_float(option_value),
+       do: value == trunc(option_value)
+
+  defp enum_option_matches?(value, option_value) when is_float(value) and is_float(option_value),
+    do: trunc(value) == trunc(option_value)
+
+  defp enum_option_matches?(value, option_value), do: value == option_value
 end

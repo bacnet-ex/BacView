@@ -23,7 +23,8 @@ defmodule BacView.BACnet.Protocol.TrendLogExportTest do
 
     assert String.starts_with?(csv, "timestamp;")
     assert csv =~ "AI-1 (°C)"
-    assert csv =~ "BI-2 (—)"
+    assert csv =~ "BI-2"
+    refute csv =~ "BI-2 (—)"
     assert csv =~ "12.5"
   end
 
@@ -38,6 +39,36 @@ defmodule BacView.BACnet.Protocol.TrendLogExportTest do
 
     assert filename =~ "trend_log-7"
     assert String.ends_with?(filename, ".csv")
+  end
+
+  test "to_csv and to_json include multistate point labels when present" do
+    data = %{
+      series: [
+        %{
+          label: "MSV-1",
+          unit_label: "—",
+          points: [
+            %{t: 1_710_000_000_000, v: 1, label: "1 (Aus)"},
+            %{t: 1_710_000_060_000, v: 2, label: "2 (Ein)"}
+          ]
+        }
+      ]
+    }
+
+    csv = TrendLogExport.to_csv(data)
+    assert String.starts_with?(csv, "timestamp;\"MSV-1\"\n")
+    refute csv =~ "(—)"
+    assert csv =~ "1 (Aus)"
+    assert csv =~ "2 (Ein)"
+
+    json = TrendLogExport.to_json(data)
+    decoded = Jason.decode!(json)
+    [series] = decoded["series"]
+    [first, second] = series["points"]
+    assert first["value"] == 1
+    assert first["label"] == "1 (Aus)"
+    assert second["value"] == 2
+    assert second["label"] == "2 (Ein)"
   end
 
   test "to_json exports structured chart data" do

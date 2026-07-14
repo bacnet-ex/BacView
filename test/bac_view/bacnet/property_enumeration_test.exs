@@ -54,6 +54,35 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
     end
   end
 
+  describe "dropdown?/1" do
+    test "uses dropdown when value matches an enum option" do
+      prop = %{
+        value: :normal,
+        enum_options: PropertyEnumeration.options(:event_state)
+      }
+
+      assert PropertyEnumeration.dropdown?(prop)
+    end
+
+    test "falls back to text input when integer value is not in enum options" do
+      prop = %{
+        value: 99,
+        enum_options: PropertyEnumeration.options(:event_state)
+      }
+
+      refute PropertyEnumeration.dropdown?(prop)
+    end
+
+    test "uses dropdown when value is nil" do
+      prop = %{
+        value: nil,
+        enum_options: [%{value: 1, label: "1"}]
+      }
+
+      assert PropertyEnumeration.dropdown?(prop)
+    end
+  end
+
   describe "parse_value/2" do
     test "accepts valid enum atoms" do
       assert PropertyEnumeration.parse_value("normal", :event_state) == {:ok, :normal}

@@ -5,6 +5,7 @@ defmodule BacViewWeb.ObjectDetail do
 
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.ObjectTypes
+  alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyWriter
 
@@ -719,11 +720,11 @@ defmodule BacViewWeb.ObjectDetail do
 
   defp complex_property_display?(%{value_display: %{kind: kind}} = prop)
        when kind in [:struct, :array, :priority_array, :object_identifier] do
-    not enum_dropdown?(prop)
+    not PropertyEnumeration.dropdown?(prop)
   end
 
   defp complex_property_display?(%{value: %_prop{}} = prop),
-    do: not enum_dropdown?(prop)
+    do: not PropertyEnumeration.dropdown?(prop)
 
   defp complex_property_display?(_prop), do: false
 
@@ -740,14 +741,7 @@ defmodule BacViewWeb.ObjectDetail do
   defp boolean_property?(%{value: value}) when is_boolean(value), do: true
   defp boolean_property?(_value), do: false
 
-  defp enumeration_property?(prop), do: enum_dropdown?(prop)
-
-  defp enum_dropdown?(prop) when is_map(prop) do
-    case Map.get(prop, :enum_options) do
-      options when is_list(options) and options != [] -> true
-      _options -> false
-    end
-  end
+  defp enumeration_property?(prop), do: PropertyEnumeration.dropdown?(prop)
 
   defp enum_option_selected?(value, option_value)
        when is_integer(value) and is_integer(option_value),
