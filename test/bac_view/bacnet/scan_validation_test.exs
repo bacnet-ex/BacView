@@ -100,31 +100,24 @@ defmodule BacView.BACnet.ScanValidationTest do
     end
   end
 
-  describe "PropertyLoad.properties_scan_fallback_path?/3" do
-    test "uses scan fallback for skip mode reads" do
-      device_obj = %ObjectIdentifier{type: :device, instance: 12}
-      object = %ObjectIdentifier{type: :analog_input, instance: 1}
-
-      assert PropertyLoad.properties_scan_fallback_path?(object, :value, device_obj)
-      assert PropertyLoad.properties_scan_fallback_path?(object, true, device_obj)
-      refute PropertyLoad.properties_scan_fallback_path?(object, nil, device_obj)
-    end
-
-    test "uses scan fallback for the device object itself" do
-      device_obj = %ObjectIdentifier{type: :device, instance: 12}
-      object = %ObjectIdentifier{type: :device, instance: 12}
-
-      assert PropertyLoad.properties_scan_fallback_path?(object, nil, device_obj)
-      refute PropertyLoad.device_object?(object, %ObjectIdentifier{type: :device, instance: 99})
-    end
-  end
-
   describe "PropertyLoad.properties_scan_fallback_on_error?/1" do
     test "detects segmentation and property reader fallback errors" do
       assert PropertyLoad.properties_scan_fallback_on_error?(:segmentation_not_supported)
       assert PropertyLoad.properties_scan_fallback_on_error?(:buffer_overflow)
       assert PropertyLoad.properties_scan_fallback_on_error?(:object_unavailable)
       refute PropertyLoad.properties_scan_fallback_on_error?(:timeout)
+    end
+  end
+
+  describe "PropertyLoad skip mode does not force scan path" do
+    test "skip opts are applied without requiring upfront scan fallback" do
+      device_obj = %ObjectIdentifier{type: :device, instance: 12}
+
+      opts = PropertyLoad.property_read_opts(:value, device_obj)
+
+      assert Keyword.get(opts, :object_opts) == [
+               skip_property_validation_remote_object: :value
+             ]
     end
   end
 

@@ -48,8 +48,9 @@ defmodule BacView.BACnet.PropertyLoadSkipResolveTest do
       assert Keyword.get(read_opts, :remote_device_id) == device_id
       assert Keyword.get(read_opts, :allow_unknown_properties) == true
 
-      # Skip mode also forces the scan-fallback property path for non-device objects.
-      assert PropertyLoad.properties_scan_fallback_path?(object, effective_skip, device_obj)
+      # Skip mode is applied via object_opts; scan fallback remains error-driven only.
+      assert PropertyLoad.properties_scan_fallback_on_error?(:segmentation_not_supported)
+      refute PropertyLoad.properties_scan_fallback_on_error?(:timeout)
     end)
   end
 
@@ -67,6 +68,5 @@ defmodule BacView.BACnet.PropertyLoadSkipResolveTest do
 
     read_opts = PropertyLoad.property_read_opts(nil, device_obj)
     refute Keyword.has_key?(read_opts, :object_opts)
-    refute PropertyLoad.properties_scan_fallback_path?(object, nil, device_obj)
   end
 end

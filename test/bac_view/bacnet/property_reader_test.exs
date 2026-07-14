@@ -259,6 +259,21 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       refute :property_list in properties
     end
 
+    test "does not index property_list when full array fails with unknown_property" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+      __MODULE__.PropertyListUnknownNoIndexClient.reset()
+
+      assert {:ok, %{properties: rows}} =
+               PropertyReader.read_all(
+                 __MODULE__.PropertyListUnknownNoIndexClient,
+                 :dest,
+                 object
+               )
+
+      assert :present_value in Enum.map(rows, & &1.property)
+      assert __MODULE__.PropertyListUnknownNoIndexClient.indexed_count() == 0
+    end
+
     test "reads device object from schema when property_list is unavailable" do
       object = %ObjectIdentifier{type: :device, instance: 100_111}
 
@@ -293,6 +308,33 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert :vendor_name in properties
       assert :model_name in properties
       refute :object_list in properties
+    end
+  end
+
+  describe "property_read_concurrency/0" do
+    test "defaults to historical healthy concurrency of 8" do
+      previous = Application.get_env(:bacview, :property_read_concurrency)
+
+      try do
+        Application.delete_env(:bacview, :property_read_concurrency)
+        assert PropertyReader.property_read_concurrency() == 8
+      after
+        restore_property_read_concurrency(previous)
+      end
+    end
+
+    test "reads positive concurrency from application env" do
+      previous = Application.get_env(:bacview, :property_read_concurrency)
+
+      try do
+        Application.put_env(:bacview, :property_read_concurrency, 1)
+        assert PropertyReader.property_read_concurrency() == 1
+
+        Application.put_env(:bacview, :property_read_concurrency, 0)
+        assert PropertyReader.property_read_concurrency() == 8
+      after
+        restore_property_read_concurrency(previous)
+      end
     end
   end
 
@@ -535,6 +577,82 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       end
     end
   end
+
+  defmodule PropertyListUnknownNoIndexClient do
+    @table :bacview_property_list_index_probe
+
+    def reset do
+      ensure_table()
+      :ets.insert(@table, {:indexed, 0})
+      :ok
+    end
+
+    def indexed_count do
+      ensure_table()
+
+      case :ets.lookup(@table, :indexed) do
+        [{:indexed, n}] -> n
+        [] -> 0
+      end
+    end
+
+    def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :segmentation_not_supported}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "AI-197"}
+
+    def read_property(_destination, _object, :property_list, opts) do
+      case Keyword.get(opts, :array_index) do
+        nil ->
+          {:error, :unknown_property}
+
+        _index ->
+          bump_indexed()
+          {:error, :unknown_property}
+      end
+    end
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        present_value: 42.0,
+        description: "test input",
+        status_flags: [false, false, false, false],
+        event_state: :normal,
+        out_of_service: false,
+        units: :degrees_celsius
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :unknown_property}
+      end
+    end
+
+    defp bump_indexed do
+      ensure_table()
+
+      case :ets.lookup(@table, :indexed) do
+        [{:indexed, n}] -> :ets.insert(@table, {:indexed, n + 1})
+        [] -> :ets.insert(@table, {:indexed, 1})
+      end
+    end
+
+    defp ensure_table do
+      if :ets.whereis(@table) == :undefined do
+        :ets.new(@table, [:named_table, :public, :set])
+      end
+
+      :ok
+    end
+  end
+
+  defp restore_property_read_concurrency(nil),
+    do: Application.delete_env(:bacview, :property_read_concurrency)
+
+  defp restore_property_read_concurrency(value),
+    do: Application.put_env(:bacview, :property_read_concurrency, value)
 
   defmodule PropertyListUnavailableDeviceClient do
     def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}

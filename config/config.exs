@@ -80,6 +80,10 @@ config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
 config :bacview, :timezone, default_timezone
 config :bacstack, :default_timezone, default_timezone
 
+# Parallel individual ReadProperty streams (object open / scan fallback).
+# Historical healthy default is 8. Lower (e.g. 1) if old devices are overwhelmed.
+config :bacview, :property_read_concurrency, 8
+
 # WAGO proprietary properties
 config :bacstack, :additional_property_identifiers,
   device_uuid: 507,

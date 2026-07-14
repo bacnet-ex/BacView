@@ -39,7 +39,9 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     :configuration_files
   ]
 
-  @scan_property_read_concurrency 1
+  # Historical healthy default; override via config :bacview, :property_read_concurrency
+  # (lower for devices overwhelmed by parallel ReadProperty — was temporarily 1).
+  @default_property_read_concurrency 8
 
   @type read_result :: %{
           properties: [map()],
@@ -91,6 +93,24 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     Keyword.merge(@read_opts, Keyword.take(opts, [:object_opts, :remote_device_id]))
   end
 
+  @doc """
+  Non-RPM property load: resolve property identifiers (full list / indexed / schema),
+  skip heavy properties, then ReadProperty each into a raw value map.
+
+  Used by scan/fallback paths that need a map for hierarchy/`summarize_object`,
+  not UI property rows.
+  """
+  @spec read_properties_map(module(), term(), ObjectIdentifier.t(), keyword()) ::
+          {:ok, map()} | {:error, term()}
+  def read_properties_map(client, destination, %ObjectIdentifier{} = object, opts \\ []) do
+    read_opts = build_read_opts(opts)
+
+    with {:ok, properties} <- list_property_identifiers(client, destination, object, read_opts) do
+      readable = skip_heavy_properties(properties, object)
+      {:ok, read_properties_individually(client, destination, object, readable, read_opts)}
+    end
+  end
+
   @doc false
   @spec read_result_from_object(ObjectIdentifier.t(), term()) :: read_result()
   def read_result_from_object(%ObjectIdentifier{} = object_id, obj) do
@@ -133,9 +153,23 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     Enum.reject(properties, &(&1 in skip))
   end
 
-  @doc false
-  @spec scan_property_read_concurrency() :: pos_integer()
-  def scan_property_read_concurrency(), do: @scan_property_read_concurrency
+  @doc """
+  Max concurrency for individual property ReadProperty streams.
+
+  Configured via `config :bacview, :property_read_concurrency, n` (default 8).
+  Set lower (e.g. 1) if old devices are overwhelmed by parallel reads.
+  """
+  @spec property_read_concurrency() :: pos_integer()
+  def property_read_concurrency() do
+    case Application.get_env(
+           :bacview,
+           :property_read_concurrency,
+           @default_property_read_concurrency
+         ) do
+      n when is_integer(n) and n > 0 -> n
+      _invalid -> @default_property_read_concurrency
+    end
+  end
 
   @doc false
   @spec heavy_properties_for(ObjectIdentifier.t()) :: [atom()]
@@ -260,6 +294,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   end
 
   defp properties_without_rpm(client, destination, object, read_opts) do
+    list_property_identifiers(client, destination, object, read_opts)
+  end
+
+  defp list_property_identifiers(client, destination, object, read_opts) do
     case read_property_list(client, destination, object, read_opts) do
       {:ok, property_list} ->
         {:ok, normalize_properties(property_list)}
@@ -312,8 +350,12 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       {:ok, property_list} ->
         {:ok, unwrap_property_list(property_list)}
 
-      {:error, _reason} ->
-        read_property_list_indexed(client, destination, object, read_opts)
+      {:error, _reason} = err ->
+        if Segmentation.array_fallback_error?(err) do
+          read_property_list_indexed(client, destination, object, read_opts)
+        else
+          err
+        end
     end
   end
 
@@ -340,7 +382,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
                 {:error, _reason} -> nil
               end
             end,
-            max_concurrency: 8,
+            max_concurrency: property_read_concurrency(),
             timeout: :infinity,
             ordered: false
           )
@@ -455,7 +497,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
           {:error, _client} -> nil
         end
       end,
-      max_concurrency: @scan_property_read_concurrency,
+      max_concurrency: property_read_concurrency(),
       timeout: :infinity,
       ordered: true
     )

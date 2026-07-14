@@ -4,6 +4,9 @@ defmodule BacView.BACnet.PropertyLoad do
 
   Session code resolves skip modes and caches results; this module only performs
   the BACnet reads and formats a PropertyReader result map.
+
+  Always tries PropertyReader (RPM / individual with skip opts) first. Falls back
+  to ObjectScanRead only on segmentation-style or object-unavailable errors.
   """
 
   alias BACnet.Protocol.ObjectIdentifier
@@ -41,15 +44,14 @@ defmodule BacView.BACnet.PropertyLoad do
 
   @doc """
   Reads all properties for `object` with optional skip_mode and device context.
+
+  Skip mode is applied via `object_opts` on the normal RPM/individual path; it
+  does **not** force the scan fallback path up front.
   """
   @spec read(term(), ObjectIdentifier.t(), :value | true | nil, ObjectIdentifier.t() | nil) ::
           {:ok, PropertyReader.read_result()} | {:error, term()}
   def read(address, %ObjectIdentifier{} = object, skip_mode, device_obj) do
-    if properties_scan_fallback_path?(object, skip_mode, device_obj) do
-      read_via_scan_fallback(address, object, device_obj, skip_mode)
-    else
-      read_via_property_reader(address, object, skip_mode, device_obj)
-    end
+    read_via_property_reader(address, object, skip_mode, device_obj)
   rescue
     exception ->
       {:error, {:property_read_failed, exception}}
@@ -59,32 +61,11 @@ defmodule BacView.BACnet.PropertyLoad do
   end
 
   @doc false
-  @spec properties_scan_fallback_path?(
-          ObjectIdentifier.t(),
-          :value | true | nil,
-          ObjectIdentifier.t() | nil
-        ) :: boolean()
-  def properties_scan_fallback_path?(object, skip_mode, device_obj) do
-    (skip_mode in [:value, true] and match?(%ObjectIdentifier{}, device_obj)) or
-      device_object?(object, device_obj)
-  end
-
-  @doc false
   @spec properties_scan_fallback_on_error?(term()) :: boolean()
   def properties_scan_fallback_on_error?(reason) do
     Segmentation.fallback_error?({:error, reason}) or
       reason in [:object_unavailable, :property_list_not_readable]
   end
-
-  @doc false
-  @spec device_object?(ObjectIdentifier.t(), ObjectIdentifier.t() | nil) :: boolean()
-  def device_object?(
-        %ObjectIdentifier{type: :device, instance: instance},
-        %ObjectIdentifier{type: :device, instance: instance}
-      ),
-      do: true
-
-  def device_object?(_object, _device_obj), do: false
 
   defp read_via_property_reader(address, object, skip_mode, device_obj) do
     opts = property_read_opts(skip_mode, device_obj)

@@ -7,6 +7,20 @@ timezone =
 config :bacview, :timezone, timezone
 config :bacstack, :default_timezone, timezone
 
+property_read_concurrency =
+  case System.get_env("BACVIEW_PROPERTY_READ_CONCURRENCY") do
+    nil ->
+      Application.get_env(:bacview, :property_read_concurrency, 8)
+
+    raw ->
+      case Integer.parse(raw) do
+        {n, ""} when n > 0 -> n
+        _invalid -> Application.get_env(:bacview, :property_read_concurrency, 8)
+      end
+  end
+
+config :bacview, :property_read_concurrency, property_read_concurrency
+
 if Application.get_env(:bacview, :desktop_mode) do
   config :bacview,
          :runtime_settings_path,

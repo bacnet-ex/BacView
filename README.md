@@ -81,12 +81,13 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PORT` | `4000` | HTTP port |
 | `PHX_SERVER` | — | Set `true` to start HTTP in releases |
+| `PORT` | `4000` | HTTP port |
 | `SECRET_KEY_BASE` | — | Required in production (see `mix phx.gen.secret`) |
 | `BACVIEW_BACSTACK_DEBUG` | — | Enable verbose bacstack debug logs (`1` / `true`) |
 | `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
 | `BACVIEW_DESKTOP` | — | Set to `1` at compile time to build the desktop app (see above) |
+| `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback. Lower (e.g. `1`) if old devices are overwhelmed |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 | `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
 

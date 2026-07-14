@@ -48,4 +48,18 @@ defmodule BacView.BACnet.SegmentationTest do
 
     refute Segmentation.fallback_error?({:error, {:bacnet_reject, service_reject}})
   end
+
+  test "array_fallback_error? includes segmentation and property_not_readable" do
+    assert Segmentation.array_fallback_error?({:error, :segmentation_not_supported})
+    assert Segmentation.array_fallback_error?({:error, :buffer_overflow})
+    assert Segmentation.array_fallback_error?({:error, :property_not_readable})
+    assert Segmentation.array_fallback_error?(:property_not_readable)
+    assert Segmentation.array_fallback_error?({:error, {:property_not_readable, :oid}})
+  end
+
+  test "array_fallback_error? excludes unknown_property and timeout" do
+    refute Segmentation.array_fallback_error?({:error, :unknown_property})
+    refute Segmentation.array_fallback_error?({:error, :timeout})
+    refute Segmentation.array_fallback_error?(:timeout)
+  end
 end
