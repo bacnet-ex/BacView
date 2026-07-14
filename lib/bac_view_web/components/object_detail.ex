@@ -22,7 +22,7 @@ defmodule BacViewWeb.ObjectDetail do
 
   attr(:device, :map, required: true)
   attr(:return_tab, :string, default: "hierarchy")
-  attr(:return_alarm_view, :string, default: "event_information")
+  attr(:return_alarm_view, :string, default: "active_alarms")
   attr(:return_cov_view, :string, default: "subscriptions")
   attr(:return_hierarchy_view, :string, default: "explorer")
   attr(:return_hierarchy_path, :list, default: [])

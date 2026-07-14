@@ -49,6 +49,16 @@ defmodule BacView.BACnet.AlarmEvent do
     end
   end
 
+  @spec list_active_events(integer()) :: [map()]
+  def list_active_events(device_id) do
+    Enum.filter(latest_event_states(device_id), &EventRecord.active?/1)
+  end
+
+  @spec list_all_active_events() :: [map()]
+  def list_all_active_events() do
+    Enum.flat_map(device_ids(), &list_active_events/1)
+  end
+
   @spec list_polled_events(integer()) :: [map()]
   def list_polled_events(device_id) do
     if :ets.whereis(@table) == :undefined do
@@ -88,20 +98,12 @@ defmodule BacView.BACnet.AlarmEvent do
 
   @spec summary(integer()) :: map()
   def summary(device_id) do
-    device_id |> list_polled_events() |> EventRecord.summary()
+    EventRecord.summary(list_active_events(device_id))
   end
 
   @spec global_summary() :: map()
   def global_summary() do
-    if :ets.whereis(@table) == :undefined do
-      EventRecord.summary([])
-    else
-      @table
-      |> :ets.tab2list()
-      |> Enum.map(fn {_key, event} -> event end)
-      |> Enum.filter(&(&1.source == :poll))
-      |> EventRecord.summary()
-    end
+    EventRecord.summary(list_all_active_events())
   end
 
   @spec export(integer(), :json | :csv) :: {:ok, String.t()} | {:error, term()}
@@ -261,7 +263,7 @@ defmodule BacView.BACnet.AlarmEvent do
       |> Map.put(:received_at, received_at)
 
     :ets.insert(@notification_log, {key, log_entry})
-    NotificationLogLimit.prune(@notification_log, device_id)
+    NotificationLogLimit.prune_device(@notification_log, device_id)
     log_entry
   end
 
@@ -299,4 +301,62 @@ defmodule BacView.BACnet.AlarmEvent do
   end
 
   defp device_topic(device_id), do: "device:#{device_id}:alarms"
+
+  defp latest_event_states(device_id) do
+    polled = Map.new(list_polled_events(device_id), &{object_event_key(&1), &1})
+
+    device_id
+    |> latest_notifications()
+    |> Enum.reduce(polled, &merge_notification_state/2)
+    |> Map.values()
+  end
+
+  defp merge_notification_state(notification, acc) do
+    key = object_event_key(notification)
+
+    Map.update(acc, key, notification, fn existing ->
+      prefer_newer_event(existing, notification)
+    end)
+  end
+
+  defp latest_notifications(device_id) do
+    device_id
+    |> list_notifications()
+    |> Enum.uniq_by(&object_event_key/1)
+  end
+
+  defp prefer_newer_event(left, right) do
+    if DateTime.compare(event_timestamp(left), event_timestamp(right)) != :lt,
+      do: left,
+      else: right
+  end
+
+  defp event_timestamp(%{received_at: %DateTime{} = received_at}), do: received_at
+  defp event_timestamp(%{updated_at: %DateTime{} = updated_at}), do: updated_at
+  defp event_timestamp(_event), do: ~U[1970-01-01 00:00:00.000000Z]
+
+  defp object_event_key(%{object_id: %ObjectIdentifier{type: type, instance: instance}}),
+    do: {type, instance}
+
+  defp device_ids() do
+    polled_ids =
+      if :ets.whereis(@table) == :undefined do
+        []
+      else
+        @table
+        |> :ets.tab2list()
+        |> Enum.map(fn {{device_id, _type, _instance}, _event} -> device_id end)
+      end
+
+    notification_ids =
+      if :ets.whereis(@notification_log) == :undefined do
+        []
+      else
+        @notification_log
+        |> :ets.tab2list()
+        |> Enum.map(fn {{device_id, _neg_micro, _seq}, _entry} -> device_id end)
+      end
+
+    Enum.uniq(polled_ids ++ notification_ids)
+  end
 end

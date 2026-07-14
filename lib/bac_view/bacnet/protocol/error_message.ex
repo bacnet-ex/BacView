@@ -168,6 +168,18 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:device_not_found), do: gettext("Gerät nicht gefunden.")
   def format_reason(:device_not_loaded), do: gettext("Gerätedaten sind noch nicht geladen.")
 
+  def format_reason(:object_unavailable),
+    do: gettext("Das Objekt konnte nicht gelesen werden.")
+
+  def format_reason(:property_list_not_readable),
+    do: gettext("Die Eigenschaftsliste des Objekts konnte nicht gelesen werden.")
+
+  def format_reason({:property_read_failed, reason}),
+    do:
+      gettext("Eigenschaftenlesen fehlgeschlagen: %{detail}",
+        detail: format_reason(reason)
+      )
+
   def format_reason(:enrollment_failed),
     do: gettext("Eintrag in die Empfängerliste fehlgeschlagen.")
 

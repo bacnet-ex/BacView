@@ -39,14 +39,6 @@ defmodule BacViewWeb.AlarmsPanel do
     <div class="space-y-5">
       <div class="bac-tabs">
         <.link
-          patch={@alarm_view_paths["event_information"]}
-          class={["bac-tab", @alarm_view == "event_information" && "bac-tab-active"]}
-          id="alarm-subtab-event-information"
-        >
-          <.icon name="hero-information-circle" class="size-4" />
-          {t(@locale, @locale_version, "Ereignisinformation")}
-        </.link>
-        <.link
           patch={@alarm_view_paths["active_alarms"]}
           class={["bac-tab", @alarm_view == "active_alarms" && "bac-tab-active"]}
           id="alarm-subtab-active-alarms"
@@ -59,6 +51,14 @@ defmodule BacViewWeb.AlarmsPanel do
           >
             {length(@active_alarm_objects)}
           </span>
+        </.link>
+        <.link
+          patch={@alarm_view_paths["event_information"]}
+          class={["bac-tab", @alarm_view == "event_information" && "bac-tab-active"]}
+          id="alarm-subtab-event-information"
+        >
+          <.icon name="hero-information-circle" class="size-4" />
+          {t(@locale, @locale_version, "Ereignisinformation")}
         </.link>
         <.link
           patch={@alarm_view_paths["notifications"]}
@@ -421,6 +421,16 @@ defmodule BacViewWeb.AlarmsPanel do
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
+                  column="alarm_since"
+                  label={t(@locale, @locale_version, "Aktiv seit")}
+                  sort_by={@sort_by}
+                  sort_dir={@sort_dir}
+                />
+              </th>
+              <th>
+                <SortHeader.sort_header
+                  event="sort_active_alarms"
+                  id_prefix="active-alarm-sort"
                   column="updated_at"
                   label={t(@locale, @locale_version, "Aktualisiert")}
                   sort_by={@sort_by}
@@ -452,6 +462,9 @@ defmodule BacViewWeb.AlarmsPanel do
                   locale={@locale}
                   locale_version={@locale_version}
                 />
+              </td>
+              <td class="bac-text-faint whitespace-nowrap">
+                {Map.get(obj, :alarm_since_label, "—")}
               </td>
               <td class="bac-text-faint">{format_time(Map.get(obj, :updated_at))}</td>
             </tr>

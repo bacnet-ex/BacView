@@ -31,6 +31,10 @@ defmodule BacViewWeb.ObjectLive do
 
   alias BacViewWeb.ActiveAlarmsAssigns
   alias BacViewWeb.ActiveAlarmsPopup
+  alias BacViewWeb.ActiveCovSubscriptionsAssigns
+  alias BacViewWeb.ActiveCovSubscriptionsPopup
+  alias BacViewWeb.CovNotificationChartLive
+  alias BacViewWeb.CovNotificationChartModal
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.LiveFlash
   alias BacViewWeb.ObjectDetail
@@ -73,6 +77,9 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:loading, true)
            |> assign(:properties_loading, true)
            |> assign(:subscribed_keys, MapSet.new())
+           |> assign(:subscriptions, [])
+           |> assign(:cov_count, 0)
+           |> assign(:cov_notifications, [])
            |> assign(:write_priority, PropertyWriter.default_priority())
            |> assign(:writing_property, nil)
            |> assign(:write_property_modal, nil)
@@ -121,6 +128,8 @@ defmodule BacViewWeb.ObjectLive do
              auto_upload: true
            )
            |> ActiveAlarmsAssigns.init()
+           |> ActiveCovSubscriptionsAssigns.init()
+           |> CovNotificationChartLive.init_assigns()
            |> refresh_cov_state()
            |> refresh_alarm_state()}
 
@@ -197,10 +206,7 @@ defmodule BacViewWeb.ObjectLive do
     object =
       case device_result do
         {:ok, loaded} ->
-          Enum.find(loaded.objects, fn obj ->
-            obj.type == socket.assigns.object_id.type and
-              obj.instance == socket.assigns.object_id.instance
-          end)
+          find_object_summary(loaded, socket.assigns.object_id)
 
         _load_object ->
           nil
@@ -246,12 +252,14 @@ defmodule BacViewWeb.ObjectLive do
       |> assign(:unknown_property_hex_keys, MapSet.new())
       |> assign(:properties_loading, properties_loading)
       |> assign(:page_title, page_title)
-      |> assign(:device_objects, device_objects)
+      |> assign(:device_objects, Enum.map(device_objects, &Text.sanitize_object/1))
       |> assign(:file_metadata, file_metadata)
       |> assign(:file_content, nil)
       |> assign_object_nav_targets(object, properties, device_objects)
       |> maybe_refresh_object_summary(properties, object)
       |> refresh_alarm_state()
+      |> refresh_cov_state()
+      |> refresh_alarm_popup()
 
     socket =
       case props_result do
@@ -417,7 +425,11 @@ defmodule BacViewWeb.ObjectLive do
         socket
       end
 
-    {:noreply, refresh_alarm_state(socket)}
+    {:noreply,
+     socket
+     |> refresh_cov_state()
+     |> refresh_alarm_state()
+     |> refresh_alarm_popup()}
   end
 
   @impl true
@@ -427,12 +439,27 @@ defmodule BacViewWeb.ObjectLive do
 
   @impl true
   def handle_info({:cov_notification, _entry}, socket) do
+    socket =
+      socket
+      |> refresh_cov_notifications()
+      |> CovNotificationChartLive.maybe_reload_on_notification()
+
     {:noreply, socket}
   end
 
   @impl true
   def handle_info(:cov_updated, socket) do
     {:noreply, refresh_cov_state(socket)}
+  end
+
+  @impl true
+  def handle_info(:load_cov_chart, socket) do
+    CovNotificationChartLive.handle_load_info(socket, socket.assigns.device_objects)
+  end
+
+  @impl true
+  def handle_info({:cov_chart_loaded, result}, socket) do
+    CovNotificationChartLive.handle_loaded(socket, result)
   end
 
   @impl true
@@ -1120,6 +1147,46 @@ defmodule BacViewWeb.ObjectLive do
     {:noreply, ActiveAlarmsAssigns.close(socket)}
   end
 
+  @impl true
+  def handle_event("toggle_cov_popup", _params, socket) do
+    {:noreply, ActiveCovSubscriptionsAssigns.toggle(socket)}
+  end
+
+  @impl true
+  def handle_event("close_cov_popup", _params, socket) do
+    {:noreply, ActiveCovSubscriptionsAssigns.close(socket)}
+  end
+
+  @impl true
+  def handle_event("open_cov_chart_modal", params, socket) do
+    CovNotificationChartLive.open_modal(socket, params, socket.assigns.device_objects)
+  end
+
+  @impl true
+  def handle_event("close_cov_chart_modal", _params, socket) do
+    CovNotificationChartLive.close_modal(socket)
+  end
+
+  @impl true
+  def handle_event("cov_chart_change_range", params, socket) do
+    CovNotificationChartLive.change_range(socket, params)
+  end
+
+  @impl true
+  def handle_event("cov_chart_load", params, socket) do
+    CovNotificationChartLive.load_chart(socket, params)
+  end
+
+  @impl true
+  def handle_event("cov_chart_export_csv", _params, socket) do
+    CovNotificationChartLive.download(socket, :csv)
+  end
+
+  @impl true
+  def handle_event("cov_chart_export_json", _params, socket) do
+    CovNotificationChartLive.download(socket, :json)
+  end
+
   defp update_present_value_property(socket, update) do
     object = socket.assigns.object
     value = update.value
@@ -1177,7 +1244,24 @@ defmodule BacViewWeb.ObjectLive do
       end)
       |> MapSet.new()
 
-    assign(socket, :subscribed_keys, keys)
+    socket
+    |> assign(:subscriptions, subs)
+    |> assign(:subscribed_keys, keys)
+    |> assign(:cov_count, length(subs))
+    |> refresh_cov_notifications()
+    |> refresh_cov_popup()
+  end
+
+  defp refresh_cov_notifications(socket) do
+    assign(
+      socket,
+      :cov_notifications,
+      SubscriptionManager.list_notifications(socket.assigns.device_id)
+    )
+  end
+
+  defp refresh_cov_popup(socket) do
+    ActiveCovSubscriptionsAssigns.refresh(socket)
   end
 
   defp parse_type(type) when is_binary(type) do
@@ -1814,12 +1898,10 @@ defmodule BacViewWeb.ObjectLive do
 
   defp refresh_alarm_state(socket) do
     device_id = socket.assigns.device_id
-    summary = AlarmEvent.summary(device_id)
-    active_alarm_objects = active_alarm_objects(socket.assigns.device_objects)
 
     socket
-    |> assign(:alarm_summary, summary)
-    |> assign(:alarm_tab_count, alarm_tab_count(summary, active_alarm_objects))
+    |> assign(:alarm_summary, AlarmEvent.summary(device_id))
+    |> assign(:alarm_tab_count, alarm_tab_count(device_id, socket.assigns.device_objects))
   end
 
   defp active_alarm_objects(objects) when is_list(objects) do
@@ -1835,8 +1917,20 @@ defmodule BacViewWeb.ObjectLive do
       end)
   end
 
-  defp alarm_tab_count(summary, active_alarm_objects) do
-    max(summary.active_count, length(active_alarm_objects))
+  defp alarm_tab_count(device_id, objects) do
+    event_keys =
+      device_id
+      |> AlarmEvent.list_active_events()
+      |> Enum.map(fn event -> {event.object_id.type, event.object_id.instance} end)
+      |> MapSet.new()
+
+    status_keys =
+      objects
+      |> active_alarm_objects()
+      |> Enum.map(fn obj -> {obj.type, obj.instance} end)
+      |> MapSet.new()
+
+    MapSet.size(MapSet.union(event_keys, status_keys))
   end
 
   defp sync_device_object_flags(socket, object, flags, at) when is_map(object) do
@@ -1892,6 +1986,12 @@ defmodule BacViewWeb.ObjectLive do
     ]
   end
 
+  defp find_object_summary(loaded, object_id) do
+    Enum.find(loaded.objects, fn obj ->
+      obj.type == object_id.type and obj.instance == object_id.instance
+    end) || DeviceSession.device_object_summary(loaded, object_id)
+  end
+
   defp cached_device_objects(device_id) do
     if :ets.whereis(:bacview_objects) == :undefined do
       []
@@ -1918,6 +2018,12 @@ defmodule BacViewWeb.ObjectLive do
           <ActiveAlarmsPopup.active_alarms_badge
             count={@alarm_tab_count}
             open={@alarm_popup_open}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
+          <ActiveCovSubscriptionsPopup.active_cov_badge
+            count={@cov_count}
+            open={@cov_popup_open}
             locale={@locale}
             locale_version={@locale_version}
           />
@@ -1967,6 +2073,27 @@ defmodule BacViewWeb.ObjectLive do
       open={@alarm_popup_open}
       entries={@active_alarm_entries}
       show_device={false}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <ActiveCovSubscriptionsPopup.active_cov_panel
+      open={@cov_popup_open}
+      entries={@active_cov_entries}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <CovNotificationChartModal.modal
+      :if={@cov_chart_modal_open && @cov_chart_subscription}
+      subscription={@cov_chart_subscription}
+      object={@cov_chart_object}
+      loading={@cov_chart_loading}
+      error={@cov_chart_error}
+      start_value={@cov_chart_start}
+      end_value={@cov_chart_end}
+      has_data={@cov_chart_has_data}
+      record_count={@cov_chart_record_count}
       locale={@locale}
       locale_version={@locale_version}
     />

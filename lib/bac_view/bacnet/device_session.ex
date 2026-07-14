@@ -26,6 +26,7 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.Protocol.TrendLogNavigation
   alias BacView.BACnet.Segmentation
   alias BacView.BACnet.Stack
+  alias BacView.Text
 
   @objects_table :bacview_objects
   @properties_table :bacview_properties
@@ -380,7 +381,7 @@ defmodule BacView.BACnet.DeviceSession do
 
             {{:ok, result}, state}
 
-          {:error, _load} = err ->
+          {:error, _reason} = err ->
             {err, state}
         end
       else
@@ -497,22 +498,114 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   defp safe_read_properties(address, object, skip_mode, device_obj) do
-    if skip_mode in [:value, true] and match?(%ObjectIdentifier{}, device_obj) do
-      device_obj
-      |> scan_read_opts(skip_mode)
-      |> then(&read_object_fallback(address, object, &1))
-      |> case do
-        {:ok, obj} -> {:ok, PropertyReader.read_result_from_object(object, obj)}
-        {:error, _reason} = err -> err
-      end
+    if properties_scan_fallback_path?(object, skip_mode, device_obj) do
+      read_properties_via_scan_fallback(address, object, device_obj, skip_mode)
     else
-      PropertyReader.read_all(Client, address, object, property_read_opts(skip_mode, device_obj))
+      read_properties_via_property_reader(address, object, skip_mode, device_obj)
     end
   rescue
-    exception -> {:error, {:property_read_failed, exception}}
+    exception ->
+      {:error, {:property_read_failed, exception}}
   catch
-    :exit, reason -> {:error, {:property_read_failed, reason}}
+    :exit, reason ->
+      {:error, {:property_read_failed, reason}}
   end
+
+  defp read_properties_via_property_reader(address, object, skip_mode, device_obj) do
+    opts = property_read_opts(skip_mode, device_obj)
+
+    case PropertyReader.read_all(Client, address, object, opts) do
+      {:ok, _result} = ok ->
+        ok
+
+      {:error, reason} = err ->
+        if properties_scan_fallback_on_error?(reason) do
+          case read_properties_via_scan_fallback(address, object, device_obj, skip_mode) do
+            {:ok, _fallback_result} = fallback_ok -> fallback_ok
+            {:error, _fallback_err} -> err
+          end
+        else
+          err
+        end
+    end
+  end
+
+  defp read_properties_via_scan_fallback(address, object, device_obj, skip_mode) do
+    fallback_opts = scan_fallback_read_opts(device_obj, skip_mode)
+
+    case read_object_fallback(address, object, fallback_opts) do
+      {:ok, obj} ->
+        {:ok, PropertyReader.read_result_from_object(object, obj)}
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  defp scan_fallback_read_opts(%ObjectIdentifier{} = device_obj, skip_mode),
+    do: scan_read_opts(device_obj, skip_mode)
+
+  defp scan_fallback_read_opts(device_obj, skip_mode),
+    do: property_read_opts(skip_mode, device_obj)
+
+  @doc false
+  @spec properties_scan_fallback_path?(
+          ObjectIdentifier.t(),
+          :value | true | nil,
+          ObjectIdentifier.t() | nil
+        ) :: boolean()
+  def properties_scan_fallback_path?(object, skip_mode, device_obj) do
+    (skip_mode in [:value, true] and match?(%ObjectIdentifier{}, device_obj)) or
+      device_object?(object, device_obj)
+  end
+
+  @doc false
+  @spec properties_scan_fallback_on_error?(term()) :: boolean()
+  def properties_scan_fallback_on_error?(reason) do
+    Segmentation.fallback_error?({:error, reason}) or
+      reason in [:object_unavailable, :property_list_not_readable]
+  end
+
+  @doc false
+  @spec device_object?(ObjectIdentifier.t(), ObjectIdentifier.t() | nil) :: boolean()
+  def device_object?(
+        %ObjectIdentifier{type: :device, instance: instance},
+        %ObjectIdentifier{type: :device, instance: instance}
+      ),
+      do: true
+
+  def device_object?(_object, _device_obj), do: false
+
+  @doc false
+  @spec device_object_summary(map(), ObjectIdentifier.t()) :: map() | nil
+  def device_object_summary(loaded, %ObjectIdentifier{type: :device, instance: instance}) do
+    case loaded do
+      %{id: ^instance} ->
+        device_object_summary_fields(loaded, instance)
+
+      %{instance: ^instance} ->
+        device_object_summary_fields(loaded, instance)
+
+      _loaded ->
+        nil
+    end
+  end
+
+  def device_object_summary(_loaded, _object), do: nil
+
+  defp device_object_summary_fields(loaded, instance) do
+    %{
+      type: :device,
+      instance: instance,
+      type_label: ObjectTypes.short_label(:device),
+      name: summary_string(Map.get(loaded, :name)),
+      description: summary_string(Map.get(loaded, :description)),
+      updated_at: DateTime.utc_now()
+    }
+  end
+
+  defp summary_string(value) when is_binary(value), do: Text.sanitize_utf8(value)
+  defp summary_string(value), do: value
 
   defp load_device(%{id: device_id, address: address, object: device_obj} = discovered) do
     if Stack.running?() do
@@ -536,6 +629,7 @@ defmodule BacView.BACnet.DeviceSession do
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
          {:ok, scanned, scan_errors} <-
            scan_object_list(device_id, address, device_obj, object_ids) do
+      scanned = upsert_device_object_scan(scanned, device_obj, device)
       scanned_len = length(scanned)
 
       report_progress(device_id, %{
@@ -557,7 +651,12 @@ defmodule BacView.BACnet.DeviceSession do
 
       loaded =
         Map.merge(discovered, %{
-          name: Map.get(device, :object_name),
+          name:
+            object_name(device) ||
+              Map.get(discovered, :name),
+          description:
+            object_description(device) ||
+              Map.get(discovered, :description),
           object_count: length(objects),
           status: :loaded,
           loaded_at: DateTime.utc_now(),
@@ -831,7 +930,7 @@ defmodule BacView.BACnet.DeviceSession do
       {:error, :unsupported_object_type} = err ->
         err
 
-      {:error, _address} = err ->
+      {:error, _reason} = err ->
         if Segmentation.fallback_error?(err) do
           read_properties_for_scan(address, object, opts)
         else
@@ -850,54 +949,90 @@ defmodule BacView.BACnet.DeviceSession do
       |> Keyword.take([:allow_unknown_properties, :remote_device_id])
       |> maybe_merge_object_opts(opts)
 
-    props =
-      case read_property_list_for_scan(address, object_id, read_opts) do
-        {:ok, property_list} ->
-          scan_readable_properties(property_list, object_id)
+    case read_property_list_for_scan(address, object_id, read_opts) do
+      {:ok, property_list} ->
+        props = scan_readable_properties(property_list, object_id)
 
-        {:error, _reason} ->
-          scan_fallback_properties()
-      end
+        read_scanned_properties(address, object_id, props, read_opts)
 
-    props
-    |> Task.async_stream(
-      fn prop ->
-        case Client.read_property(address, object_id, prop, read_opts) do
-          {:ok, value} -> {prop, value}
-          _address -> nil
-        end
-      end,
-      max_concurrency: 6,
-      timeout: :infinity,
-      ordered: false
-    )
-    |> Enum.reduce(%{}, fn
-      {:ok, {prop, value}}, acc -> Map.put(acc, prop, value)
-      _address, acc -> acc
-    end)
-    |> then(&{:ok, &1})
+      {:error, _reason} ->
+        read_properties_for_scan_from_schema(address, object_id, read_opts)
+    end
+  end
+
+  defp read_properties_for_scan_from_schema(address, object_id, read_opts) do
+    case PropertyReader.schema_properties(object_id) do
+      {:ok, schema_props} ->
+        props = scan_readable_properties(schema_props, object_id)
+
+        read_scanned_properties(address, object_id, props, read_opts)
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  defp read_scanned_properties(address, object_id, props, read_opts) do
+    {result, _failures} =
+      props
+      |> Task.async_stream(
+        fn prop ->
+          case debug_read_property(
+                 address,
+                 object_id,
+                 prop,
+                 read_opts,
+                 "read_properties_for_scan"
+               ) do
+            {:ok, value} -> {:ok, {prop, value}}
+            {:error, reason} -> {:error, {prop, reason}}
+          end
+        end,
+        max_concurrency: PropertyReader.scan_property_read_concurrency(),
+        timeout: :infinity,
+        ordered: false
+      )
+      |> Enum.reduce({%{}, []}, fn
+        {:ok, {:ok, {prop, value}}}, {acc, failed} ->
+          {Map.put(acc, prop, value), failed}
+
+        {:ok, {:error, {prop, reason}}}, {acc, failed} ->
+          {acc, [{prop, reason} | failed]}
+
+        _other, {acc, failed} ->
+          {acc, failed}
+      end)
+
+    {:ok, result}
   end
 
   defp read_property_list_for_scan(address, object_id, read_opts) do
-    case Client.read_property(address, object_id, :property_list, read_opts) do
+    case debug_read_property(
+           address,
+           object_id,
+           :property_list,
+           read_opts,
+           "read_property_list_for_scan"
+         ) do
       {:ok, property_list} ->
-        {:ok, PropertyReader.normalize_properties(unwrap_property_list(property_list))}
+        normalized = PropertyReader.normalize_properties(unwrap_property_list(property_list))
 
-      {:error, _address} = err ->
-        if Segmentation.fallback_error?(err) do
-          read_property_list_indexed_for_scan(address, object_id, read_opts)
-        else
-          err
-        end
+        {:ok, normalized}
+
+      {:error, _reason} ->
+        read_property_list_indexed_for_scan(address, object_id, read_opts)
     end
   end
 
   defp read_property_list_indexed_for_scan(address, object_id, read_opts) do
-    case Client.read_property(
+    length_opts = Keyword.put(read_opts, :array_index, 0)
+
+    case debug_read_property(
            address,
            object_id,
            :property_list,
-           Keyword.put(read_opts, :array_index, 0)
+           length_opts,
+           "read_property_list_indexed_for_scan.length"
          ) do
       {:ok, 0} ->
         {:ok, []}
@@ -907,17 +1042,17 @@ defmodule BacView.BACnet.DeviceSession do
           1..count
           |> Task.async_stream(
             fn idx ->
-              case Client.read_property(
+              case debug_read_property(
                      address,
                      object_id,
                      :property_list,
-                     Keyword.merge(read_opts, array_index: idx)
+                     Keyword.merge(read_opts, array_index: idx),
+                     "read_property_list_indexed_for_scan.element"
                    ) do
                 {:ok, prop} ->
                   prop
 
-                {:error, reason} ->
-                  Logger.warning("Failed to read property_list index #{idx}: #{inspect(reason)}")
+                {:error, _reason} ->
                   nil
               end
             end,
@@ -929,12 +1064,10 @@ defmodule BacView.BACnet.DeviceSession do
             {:ok, prop}, acc when not is_nil(prop) ->
               [prop | acc]
 
-            {:exit, reason}, acc ->
-              Logger.warning("property_list index read exited: #{inspect(reason)}")
+            {:exit, _reason}, acc ->
               acc
 
-            other, acc ->
-              Logger.warning("Unexpected property_list stream result: #{inspect(other)}")
+            _other, acc ->
               acc
           end)
           |> Enum.reverse()
@@ -942,7 +1075,7 @@ defmodule BacView.BACnet.DeviceSession do
 
         {:ok, props}
 
-      {:error, _address} = err ->
+      {:error, _reason} = err ->
         err
 
       _other ->
@@ -955,35 +1088,8 @@ defmodule BacView.BACnet.DeviceSession do
   defp unwrap_property_list(%Encoding{value: value}), do: unwrap_property_list(value)
   defp unwrap_property_list(value), do: [value]
 
-  defp scan_readable_properties(properties, %ObjectIdentifier{type: type})
-       when type in [:trend_log, :trend_log_multiple] do
-    Enum.reject(properties, &(&1 in [:property_list, :log_buffer]))
-  end
-
-  defp scan_readable_properties(properties, _object_id) do
-    Enum.reject(properties, &(&1 == :property_list))
-  end
-
-  defp scan_fallback_properties() do
-    [
-      :object_name,
-      :present_value,
-      :description,
-      :units,
-      :status_flags,
-      :event_state,
-      :event_timestamps,
-      :priority_array,
-      :number_of_states,
-      :state_text,
-      :resolution,
-      :out_of_service,
-      :subordinate_list,
-      :subordinate_annotations,
-      :node_type,
-      :node_subtype,
-      :object_identifier
-    ]
+  defp scan_readable_properties(properties, object_id) do
+    PropertyReader.skip_heavy_properties(properties, object_id)
   end
 
   defp bump_scan_progress(
@@ -1106,6 +1212,19 @@ defmodule BacView.BACnet.DeviceSession do
       end)
 
     {:ok, %{succeeded: succeeded, failed: failed}, state}
+  end
+
+  defp upsert_device_object_scan(scanned, %ObjectIdentifier{} = device_obj, device)
+       when is_list(scanned) do
+    key = {device_obj.type, device_obj.instance}
+
+    if Enum.any?(scanned, fn {%ObjectIdentifier{type: type, instance: instance}, _obj} ->
+         {type, instance} == key
+       end) do
+      scanned
+    else
+      [{device_obj, device} | scanned]
+    end
   end
 
   defp upsert_scanned(scanned, {object, obj}) do
@@ -1304,14 +1423,17 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   defp object_name(obj) when is_map(obj) do
-    Map.get(obj, :object_name) || Map.get(obj, :name)
+    case Map.get(obj, :object_name) || Map.get(obj, :name) do
+      name when is_binary(name) and name != "" -> Text.sanitize_utf8(name)
+      _name -> nil
+    end
   end
 
   defp object_name(_obj), do: nil
 
   defp object_description(obj) when is_map(obj) do
     case Map.get(obj, :description) do
-      desc when is_binary(desc) and desc != "" -> desc
+      desc when is_binary(desc) and desc != "" -> Text.sanitize_utf8(desc)
       _obj -> nil
     end
   end
@@ -1672,6 +1794,7 @@ defmodule BacView.BACnet.DeviceSession do
           device_id,
           Map.merge(device, %{
             name: loaded.name,
+            description: Map.get(loaded, :description),
             object_count: loaded.object_count,
             status: :loaded,
             loaded_at: loaded.loaded_at
@@ -1691,5 +1814,9 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp property_key(device_id, %ObjectIdentifier{type: type, instance: instance}) do
     {device_id, type, instance}
+  end
+
+  defp debug_read_property(address, object_id, property, read_opts, _context) do
+    PropertyReader.read_property_value(Client, address, object_id, property, read_opts)
   end
 end

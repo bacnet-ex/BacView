@@ -117,17 +117,20 @@ defmodule BacViewWeb.DeviceUrlTest do
   end
 
   test "normalize_alarm_view" do
-    assert DeviceUrl.normalize_alarm_view(nil) == "event_information"
-    assert DeviceUrl.normalize_alarm_view("active_alarms") == "active_alarms"
-    assert DeviceUrl.normalize_alarm_view("invalid") == "event_information"
+    assert DeviceUrl.normalize_alarm_view(nil) == "active_alarms"
+    assert DeviceUrl.normalize_alarm_view("event_information") == "event_information"
+    assert DeviceUrl.normalize_alarm_view("invalid") == "active_alarms"
   end
 
   test "device_path with alarm_view on alarms tab" do
     assert DeviceUrl.device_path(42, tab: "alarms", alarm_view: "notifications") ==
              "/devices/42?tab=alarms&alarm_view=notifications"
 
-    assert DeviceUrl.device_path(42, tab: "alarms", alarm_view: "event_information") ==
+    assert DeviceUrl.device_path(42, tab: "alarms", alarm_view: "active_alarms") ==
              "/devices/42?tab=alarms"
+
+    assert DeviceUrl.device_path(42, tab: "alarms", alarm_view: "event_information") ==
+             "/devices/42?tab=alarms&alarm_view=event_information"
   end
 
   test "normalize_cov_view" do

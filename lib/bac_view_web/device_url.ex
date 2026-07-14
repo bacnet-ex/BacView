@@ -7,11 +7,11 @@ defmodule BacViewWeb.DeviceUrl do
   alias BacViewWeb.ObjectTable
 
   @default_tab "hierarchy"
-  @default_alarm_view "event_information"
+  @default_alarm_view "active_alarms"
   @default_cov_view "subscriptions"
   @default_hierarchy_view "explorer"
   @valid_tabs ~w(hierarchy objects subscriptions alarms)
-  @valid_alarm_views ~w(event_information active_alarms notifications)
+  @valid_alarm_views ~w(active_alarms event_information notifications)
   @valid_cov_views ~w(subscriptions notifications)
   @valid_hierarchy_views ~w(explorer tree)
 

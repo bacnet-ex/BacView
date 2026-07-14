@@ -6,6 +6,7 @@ defmodule BacViewWeb.DeviceList do
   alias BacView.BACnet.Address
   alias BacView.BACnet.VendorNames
   alias BacView.NaturalSort
+  alias BacViewWeb.DeviceBadgeCounts
   alias BacViewWeb.DeviceServicesMenu
   alias BacViewWeb.SearchQuery
 
@@ -19,6 +20,7 @@ defmodule BacViewWeb.DeviceList do
   attr(:sort_by, :string, default: nil)
   attr(:sort_dir, :atom, default: :asc)
   attr(:device_service_menu, :map, default: nil)
+  attr(:device_badge_counts, :map, default: DeviceBadgeCounts.empty())
 
   def device_list(assigns) do
     assigns =
@@ -112,6 +114,7 @@ defmodule BacViewWeb.DeviceList do
           device={device}
           vendor_names={@vendor_names}
           device_service_menu={@device_service_menu}
+          device_badge_counts={@device_badge_counts}
           locale={@locale}
           locale_version={@locale_version}
         />
@@ -134,10 +137,25 @@ defmodule BacViewWeb.DeviceList do
   attr(:device, :map, required: true)
   attr(:vendor_names, :map, required: true)
   attr(:device_service_menu, :map, default: nil)
+  attr(:device_badge_counts, :map, default: DeviceBadgeCounts.empty())
   attr(:locale, :string, default: "de")
   attr(:locale_version, :integer, default: 0)
 
   defp device_card(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :alarm_count,
+        DeviceBadgeCounts.alarm_count(assigns.device_badge_counts, assigns.device.id)
+      )
+
+    assigns =
+      assign(
+        assigns,
+        :cov_count,
+        DeviceBadgeCounts.cov_count(assigns.device_badge_counts, assigns.device.id)
+      )
+
     ~H"""
     <div id={"device-card-#{@device.id}"} class="bac-device-card">
       <div class="bac-device-card-header">
@@ -149,6 +167,9 @@ defmodule BacViewWeb.DeviceList do
           <h3 class="bac-device-card-title truncate">
             {device_name(@device)}
           </h3>
+          <p :if={device_description(@device)} class="text-xs bac-text-muted truncate mt-0.5">
+            {device_description(@device)}
+          </p>
         </.link>
         <div class="flex items-center gap-1 shrink-0 self-start">
           <span class={status_badge_class(@device.status)}>
@@ -176,6 +197,22 @@ defmodule BacViewWeb.DeviceList do
           </span>
           <span :if={@device.object_count} class="bac-badge bac-badge-sm">
             {@device.object_count} {t(@locale, @locale_version, "Objekte")}
+          </span>
+          <span
+            :if={@alarm_count > 0}
+            class="bac-badge bac-badge-sm bac-badge-error"
+            title={t(@locale, @locale_version, "%{count} aktive Alarme", count: @alarm_count)}
+          >
+            <.icon name="hero-bell-alert" class="size-3" />
+            {@alarm_count}
+          </span>
+          <span
+            :if={@cov_count > 0}
+            class="bac-badge bac-badge-sm bac-badge-success"
+            title={t(@locale, @locale_version, "%{count} COV aktiv", count: @cov_count)}
+          >
+            <.icon name="hero-signal" class="size-3" />
+            {@cov_count}
           </span>
         </div>
       </.link>
@@ -436,6 +473,12 @@ defmodule BacViewWeb.DeviceList do
     device.name ||
       dgettext(BacViewWeb.Gettext, "default", "Gerät %{id}", %{id: device.instance})
   end
+
+  defp device_description(%{description: description})
+       when is_binary(description) and description != "",
+       do: description
+
+  defp device_description(_device), do: nil
 
   defp object_count_label(nil), do: "—"
   defp object_count_label(count) when is_integer(count), do: Integer.to_string(count)

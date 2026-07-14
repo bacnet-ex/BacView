@@ -28,13 +28,16 @@ defmodule BacViewWeb.KeyboardShortcuts do
             <.shortcut_row keys="?" desc={t(@locale, @locale_version, "Diese Hilfe ein-/ausblenden")} />
             <.shortcut_row keys="/" desc={t(@locale, @locale_version, "Suche fokussieren")} />
             <.shortcut_row keys="r" desc={refresh_label(@context, @locale, @locale_version)} />
-            <li :if={@context == :device}>
-              <.shortcut_row keys="1 – 4" desc={t(@locale, @locale_version, "Tabs wechseln (Hierarchie, Objekte, …)")} />
-              <.shortcut_row
-                keys="Shift + 1 – 3"
-                desc={t(@locale, @locale_version, "Untertabs im Alarm-Tab wechseln")}
-              />
-            </li>
+            <.shortcut_row
+              :if={@context == :device}
+              keys="1 – 4"
+              desc={t(@locale, @locale_version, "Tabs wechseln (Hierarchie, Objekte, …)")}
+            />
+            <.shortcut_row
+              :if={@context == :device}
+              keys="Shift + 1 – 3"
+              desc={t(@locale, @locale_version, "Untertabs im Alarm-Tab wechseln")}
+            />
             <.shortcut_row
               :if={@context in [:device, :object]}
               keys="0"
@@ -43,6 +46,12 @@ defmodule BacViewWeb.KeyboardShortcuts do
             <.shortcut_row keys="Esc" desc={t(@locale, @locale_version, "Hilfe schliessen")} />
           </ul>
 
+          <.device_list_shortcuts
+            :if={@context == :device}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
+
           <div class="flex justify-end pt-2">
             <button type="button" phx-click="toggle_shortcuts" class="bac-btn bac-btn-primary bac-btn-sm">
               {t(@locale, @locale_version, "Schliessen")}
@@ -50,6 +59,89 @@ defmodule BacViewWeb.KeyboardShortcuts do
           </div>
         </div>
       </div>
+    </div>
+    """
+  end
+
+  attr(:locale, :string, required: true)
+  attr(:locale_version, :integer, required: true)
+
+  defp device_list_shortcuts(assigns) do
+    ~H"""
+    <div class="space-y-3 border-t border-[var(--bac-border)] pt-4">
+      <h3 class="text-xs font-semibold uppercase tracking-wide bac-text-faint">
+        {t(@locale, @locale_version, "Listen-Aktionen")}
+      </h3>
+
+      <.shortcut_group
+        title={t(@locale, @locale_version, "Objektliste")}
+        rows={[
+          %{
+            keys: "c",
+            desc: t(@locale, @locale_version, "COV abonnieren (Auswahl)")
+          },
+          %{
+            keys: "Shift + c",
+            desc: t(@locale, @locale_version, "Alle PV abonnieren")
+          },
+          %{
+            keys: "u",
+            desc: t(@locale, @locale_version, "COV kündigen (Auswahl)")
+          }
+        ]}
+      />
+
+      <.shortcut_group
+        title={t(@locale, @locale_version, "Abonnements")}
+        rows={[
+          %{
+            keys: "c",
+            desc: t(@locale, @locale_version, "Erneut abonnieren (Auswahl)")
+          },
+          %{
+            keys: "u",
+            desc: t(@locale, @locale_version, "Ausgewählte kündigen")
+          }
+        ]}
+      />
+
+      <.shortcut_group
+        title={t(@locale, @locale_version, "Aktive Alarme")}
+        rows={[
+          %{
+            keys: "c",
+            desc: t(@locale, @locale_version, "Empfängerliste eintragen")
+          },
+          %{
+            keys: "u",
+            desc: t(@locale, @locale_version, "Empfängerliste entfernen")
+          }
+        ]}
+      />
+
+      <.shortcut_group
+        title={t(@locale, @locale_version, "Ereignisinformation")}
+        rows={[
+          %{
+            keys: "e",
+            desc: t(@locale, @locale_version, "Ereignisse abrufen")
+          }
+        ]}
+      />
+    </div>
+    """
+  end
+
+  attr(:title, :string, required: true)
+  attr(:rows, :list, required: true)
+
+  defp shortcut_group(assigns) do
+    ~H"""
+    <div class="space-y-2">
+      <p class="text-xs font-medium text-[var(--bac-text)]">{@title}</p>
+      <ul class="space-y-2">
+        <.shortcut_row :for={row <- @rows} keys={row.keys} desc={row.desc} />
+      </ul>
     </div>
     """
   end

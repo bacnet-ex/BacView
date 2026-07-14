@@ -1,6 +1,8 @@
 defmodule BacViewWeb.DeviceListTest do
   use ExUnit.Case, async: true
 
+  import Phoenix.LiveViewTest
+
   alias BacViewWeb.DeviceList
 
   @vendor_names %{5 => "Example Vendor"}
@@ -64,5 +66,49 @@ defmodule BacViewWeb.DeviceListTest do
     assert DeviceList.normalize_view("table") == :table
     assert DeviceList.normalize_view("grid") == :grid
     assert DeviceList.normalize_view("invalid") == :grid
+  end
+
+  test "device cards show device description under object name" do
+    devices = [
+      Map.put(Enum.at(@devices, 0), :description, "Main air handler")
+    ]
+
+    html =
+      render_component(&DeviceList.device_list/1,
+        devices: devices,
+        vendor_names: @vendor_names,
+        view: :grid,
+        locale: "de",
+        locale_version: 0
+      )
+
+    assert html =~ "AHU-1"
+    assert html =~ "Main air handler"
+  end
+
+  test "device cards show alarm and cov badges only when count is positive" do
+    html =
+      render_component(&DeviceList.device_list/1,
+        devices: @devices,
+        vendor_names: @vendor_names,
+        view: :grid,
+        device_badge_counts: %{alarms: %{1 => 2}, cov: %{1 => 3}},
+        locale: "de",
+        locale_version: 0
+      )
+
+    document = LazyHTML.from_fragment(html)
+
+    assert Enum.count(LazyHTML.query(document, "#device-card-1 .bac-badge-error")) == 1
+
+    assert Enum.count(
+             LazyHTML.query(document, "#device-card-1 .bac-device-card-meta .bac-badge-success")
+           ) == 1
+
+    assert Enum.count(LazyHTML.query(document, "#device-card-2 .bac-badge-error")) == 0
+
+    assert Enum.count(
+             LazyHTML.query(document, "#device-card-2 .bac-device-card-meta .bac-badge-success")
+           ) == 0
   end
 end

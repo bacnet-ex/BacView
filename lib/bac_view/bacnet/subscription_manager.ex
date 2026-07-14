@@ -68,11 +68,13 @@ defmodule BacView.BACnet.SubscriptionManager do
     else
       @notification_log
       |> :ets.tab2list()
-      |> Enum.filter(fn {{dev_id, _device_id, _list_notifications2}, _list_notifications3} ->
+      |> Enum.filter(fn {{dev_id, _type, _instance, _property, _neg_micro, _seq}, _entry} ->
         dev_id == device_id
       end)
       |> Enum.sort_by(
-        fn {{_device_id, neg_micro, seq}, _list_notifications2} -> {neg_micro, seq} end,
+        fn {{_device_id, _type, _instance, _property, neg_micro, seq}, _entry} ->
+          {neg_micro, seq}
+        end,
         :asc
       )
       |> Enum.map(fn {_key, entry} -> entry end)
@@ -484,15 +486,21 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   defp append_notification(attrs) do
     device_id = Map.fetch!(attrs, :device_id)
+    object_id = Map.fetch!(attrs, :object_id)
+    property = Map.fetch!(attrs, :property)
     received_at = Map.fetch!(attrs, :received_at)
     seq = next_notification_seq(device_id)
     micro = DateTime.to_unix(received_at, :microsecond)
-    key = {device_id, -micro, seq}
+    key = {device_id, object_id.type, object_id.instance, property, -micro, seq}
 
     log_entry = Map.put(attrs, :log_id, seq)
 
     :ets.insert(@notification_log, {key, log_entry})
-    NotificationLogLimit.prune(@notification_log, device_id)
+
+    subscription_key = Subscription.key(device_id, object_id, property)
+    NotificationLogLimit.prune_cov_subscription(@notification_log, subscription_key)
+    NotificationLogLimit.prune_cov_device(@notification_log, device_id)
+
     log_entry
   end
 

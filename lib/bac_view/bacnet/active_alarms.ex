@@ -6,7 +6,6 @@ defmodule BacView.BACnet.ActiveAlarms do
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.StatusFlags
   alias BacView.BACnet.AlarmEvent
-  alias BacView.BACnet.EventRecord
   alias BacView.BACnet.Protocol.EventTimestamp
 
   @objects_table :bacview_objects
@@ -25,6 +24,40 @@ defmodule BacView.BACnet.ActiveAlarms do
           object_path: String.t()
         }
 
+  @type device_group :: %{
+          device_id: non_neg_integer(),
+          device_label: String.t(),
+          device_description: String.t() | nil,
+          count: non_neg_integer(),
+          sort_key: integer(),
+          device_path: String.t()
+        }
+
+  @spec object_alarm_since(map()) :: %{
+          at: DateTime.t() | nil,
+          label: String.t(),
+          sort_key: integer()
+        }
+  def object_alarm_since(obj) when is_map(obj) do
+    event_state = object_event_state(obj)
+    event_timestamps = Map.get(obj, :event_timestamps)
+    since = EventTimestamp.alarm_since(event_timestamps, event_state)
+    sort_key = fallback_sort_key(since.sort_key, %{updated_at: Map.get(obj, :updated_at)})
+
+    %{since | sort_key: sort_key}
+  end
+
+  @spec device_groups([integer()]) :: [device_group()]
+  def device_groups(device_ids) when is_list(device_ids) do
+    device_ids
+    |> Enum.map(fn device_id ->
+      entries = list(device_id: device_id)
+      build_device_group(device_id, entries)
+    end)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.sort_by(& &1.sort_key, :desc)
+  end
+
   @spec list(keyword()) :: [entry()]
   def list(opts \\ []) do
     device_id = Keyword.get(opts, :device_id)
@@ -37,17 +70,14 @@ defmodule BacView.BACnet.ActiveAlarms do
   end
 
   defp collect_events(nil, _objects_override) do
-    AlarmEvent.list_all_active_polled_events()
+    AlarmEvent.list_all_active_events()
   end
 
   defp collect_events(device_id, objects_override) do
-    polled =
-      device_id
-      |> AlarmEvent.list_polled_events()
-      |> Enum.filter(&EventRecord.active?/1)
+    active_events = AlarmEvent.list_active_events(device_id)
 
-    polled_keys =
-      MapSet.new(polled, fn event ->
+    active_keys =
+      MapSet.new(active_events, fn event ->
         {event.object_id.type, event.object_id.instance}
       end)
 
@@ -55,10 +85,10 @@ defmodule BacView.BACnet.ActiveAlarms do
       device_id
       |> cached_objects(objects_override)
       |> Enum.filter(&status_flag_alarm?/1)
-      |> Enum.reject(fn obj -> MapSet.member?(polled_keys, {obj.type, obj.instance}) end)
+      |> Enum.reject(fn obj -> MapSet.member?(active_keys, {obj.type, obj.instance}) end)
       |> Enum.map(&synthetic_event(device_id, &1))
 
-    polled ++ status_events
+    active_events ++ status_events
   end
 
   defp build_entry(event, objects_override) do
@@ -68,15 +98,36 @@ defmodule BacView.BACnet.ActiveAlarms do
 
     description =
       cached_description(cached) ||
-        Map.get(event, :description)
+        Map.get(event, :description) ||
+        string_value(Map.get(event, :message_text))
 
     event_timestamps =
-      Map.get(cached, :event_timestamps) ||
+      cached_event_timestamps(cached) ||
         cached_property_value(device_id, object_id, :event_timestamps)
 
     since = EventTimestamp.alarm_since(event_timestamps, event.event_state)
     sort_key = fallback_sort_key(since.sort_key, event)
 
+    build_entry_map(device_id, object_id, cached, event, description, since, sort_key)
+  end
+
+  defp build_device_group(_device_id, []), do: nil
+
+  defp build_device_group(device_id, entries) do
+    device = device_info(device_id)
+    sort_key = entries |> Enum.map(& &1.sort_key) |> Enum.max()
+
+    %{
+      device_id: device_id,
+      device_label: device_label(device) || Integer.to_string(device_id),
+      device_description: device_description(device),
+      count: length(entries),
+      sort_key: sort_key,
+      device_path: device_path(device_id)
+    }
+  end
+
+  defp build_entry_map(device_id, object_id, _cached, _event, description, since, sort_key) do
     device = device_info(device_id)
 
     %{
@@ -151,19 +202,23 @@ defmodule BacView.BACnet.ActiveAlarms do
   defp cached_description(%{description: description}), do: string_value(description)
   defp cached_description(_cached_description), do: nil
 
+  defp cached_event_timestamps(%{event_timestamps: event_timestamps}), do: event_timestamps
+  defp cached_event_timestamps(_cached), do: nil
+
   defp status_flag_alarm?(%{status_flags: %StatusFlags{in_alarm: true}}), do: true
   defp status_flag_alarm?(%{status_flags: %StatusFlags{fault: true}}), do: true
   defp status_flag_alarm?(_status_flag_alarm), do: false
 
-  defp synthetic_event(device_id, obj) do
-    event_state =
-      Map.get(obj, :event_state) ||
-        if(fault_state?(obj), do: :fault, else: :offnormal)
+  defp object_event_state(obj) do
+    Map.get(obj, :event_state) ||
+      if(fault_state?(obj), do: :fault, else: :offnormal)
+  end
 
+  defp synthetic_event(device_id, obj) do
     %{
       device_id: device_id,
       object_id: %ObjectIdentifier{type: obj.type, instance: obj.instance},
-      event_state: event_state,
+      event_state: object_event_state(obj),
       description: cached_description(obj),
       updated_at: Map.get(obj, :updated_at)
     }
@@ -186,6 +241,9 @@ defmodule BacView.BACnet.ActiveAlarms do
   defp device_label(%{name: name}) when is_binary(name) and name != "", do: name
   defp device_label(%{instance: instance}), do: "Device #{instance}"
   defp device_label(_name), do: nil
+
+  defp device_description(%{description: description}), do: string_value(description)
+  defp device_description(_device), do: nil
 
   defp device_path(device_id), do: "/devices/#{device_id}"
 

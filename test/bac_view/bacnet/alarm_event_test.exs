@@ -154,4 +154,92 @@ defmodule BacView.BACnet.AlarmEventTest do
   test "export returns error when device is not known" do
     assert AlarmEvent.export(99_999, :csv) == {:error, :device_not_found}
   end
+
+  test "list_active_events prefers newer NC notification over stale poll" do
+    BacnetEtsLock.with_tables(@tables, fn ->
+      device_id = 90_201
+      object_id = %ObjectIdentifier{type: :analog_input, instance: 3}
+
+      polled =
+        EventRecord.from_alarm_summary(device_id, %BACnet.Protocol.AlarmSummary{
+          object_identifier: object_id,
+          alarm_state: :normal,
+          acknowledged_transitions: %EventTransitionBits{
+            to_offnormal: true,
+            to_fault: true,
+            to_normal: true
+          }
+        })
+        |> Map.put(:updated_at, ~U[2026-01-01 08:00:00Z])
+
+      notification =
+        EventRecord.from_notification(
+          device_id,
+          sample_notification(
+            event_object: object_id,
+            to_state: :offnormal,
+            from_state: :normal,
+            message_text: "NC alarm"
+          )
+        )
+        |> Map.put(:log_id, 1)
+        |> Map.put(:received_at, ~U[2026-01-02 10:00:00Z])
+        |> Map.put(:updated_at, ~U[2026-01-02 10:00:00Z])
+
+      :ets.insert(:bacview_events, {EventRecord.key(device_id, object_id), polled})
+
+      :ets.insert(
+        :bacview_notification_log,
+        {{device_id, -DateTime.to_unix(notification.received_at, :microsecond), 1}, notification}
+      )
+
+      [active] = AlarmEvent.list_active_events(device_id)
+      assert active.event_state == :offnormal
+      assert active.source == :notification
+      assert %{active_count: 1} = AlarmEvent.summary(device_id)
+    end)
+  end
+
+  test "list_active_events clears alarm when newer NC notification returns to normal" do
+    BacnetEtsLock.with_tables(@tables, fn ->
+      device_id = 90_202
+      object_id = %ObjectIdentifier{type: :binary_input, instance: 4}
+
+      polled =
+        EventRecord.from_alarm_summary(device_id, %BACnet.Protocol.AlarmSummary{
+          object_identifier: object_id,
+          alarm_state: :offnormal,
+          acknowledged_transitions: %EventTransitionBits{
+            to_offnormal: false,
+            to_fault: true,
+            to_normal: true
+          }
+        })
+        |> Map.put(:updated_at, ~U[2026-01-02 10:00:00Z])
+
+      notification =
+        EventRecord.from_notification(
+          device_id,
+          sample_notification(
+            event_object: object_id,
+            to_state: :normal,
+            from_state: :offnormal,
+            message_text: "Cleared"
+          )
+        )
+        |> Map.put(:log_id, 1)
+        |> Map.put(:received_at, ~U[2026-01-03 10:00:00Z])
+        |> Map.put(:updated_at, ~U[2026-01-03 10:00:00Z])
+
+      :ets.insert(:bacview_events, {EventRecord.key(device_id, object_id), polled})
+
+      :ets.insert(
+        :bacview_notification_log,
+        {{device_id, -DateTime.to_unix(notification.received_at, :microsecond), 1}, notification}
+      )
+
+      assert AlarmEvent.list_active_events(device_id) == []
+      assert %{active_count: 0} = AlarmEvent.summary(device_id)
+    end)
+  end
 end

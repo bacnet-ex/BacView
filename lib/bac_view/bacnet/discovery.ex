@@ -15,6 +15,7 @@ defmodule BacView.BACnet.Discovery do
   alias BacView.BACnet.Client
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.IAmCollector
+  alias BacView.BACnet.Protocol.PropertyReader
   alias BacView.Settings
   alias BacView.Text
 
@@ -116,6 +117,10 @@ defmodule BacView.BACnet.Discovery do
   @doc false
   @spec normalize_device_name(term()) :: String.t() | nil
   def normalize_device_name(value), do: do_normalize_device_name(value)
+
+  @doc false
+  @spec normalize_device_description(term()) :: String.t() | nil
+  def normalize_device_description(value), do: do_normalize_device_name(value)
 
   @doc false
   @spec upsert_iam_device(IAm.t(), term()) :: map() | nil
@@ -255,18 +260,23 @@ defmodule BacView.BACnet.Discovery do
   end
 
   @impl true
-  def handle_cast({:device_name_ready, device_id, name}, state) do
+  def handle_cast({:device_metadata_ready, device_id, name, description}, state) do
     state = %{state | pending_name_fetches: MapSet.delete(state.pending_name_fetches, device_id)}
 
-    if is_binary(name) and name != "" do
-      case get_device(device_id) do
-        {:ok, device} ->
-          :ets.insert(@table, {device_id, Map.put(device, :name, name)})
-          broadcast_devices()
+    case get_device(device_id) do
+      {:ok, device} ->
+        updated =
+          device
+          |> maybe_put_metadata(:name, name)
+          |> maybe_put_metadata(:description, description)
 
-        :error ->
-          :ok
-      end
+        if updated != device do
+          :ets.insert(@table, {device_id, updated})
+          broadcast_devices()
+        end
+
+      :error ->
+        :ok
     end
 
     {:noreply, state}
@@ -449,6 +459,7 @@ defmodule BacView.BACnet.Discovery do
       status: :discovered,
       object_count: nil,
       name: nil,
+      description: nil,
       loaded_at: nil
     })
   end
@@ -458,6 +469,7 @@ defmodule BacView.BACnet.Discovery do
       Map.merge(incoming, %{
         status: :loaded,
         name: existing.name,
+        description: Map.get(existing, :description),
         object_count: existing.object_count,
         loaded_at: existing.loaded_at
       })
@@ -627,23 +639,34 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp fetch_device_name_async(device) do
-    name = read_device_object_name(device)
-    GenServer.cast(__MODULE__, {:device_name_ready, device.id, name})
+    name = read_device_object_property(device, :object_name, &do_normalize_device_name/1)
+    description = read_device_object_property(device, :description, &do_normalize_device_name/1)
+    GenServer.cast(__MODULE__, {:device_metadata_ready, device.id, name, description})
   end
 
-  defp read_device_object_name(%{id: device_id, address: address, object: object}) do
-    case Client.read_property(address, object, :object_name) do
+  defp read_device_object_property(
+         %{id: device_id, address: address, object: object},
+         property,
+         normalize
+       ) do
+    case PropertyReader.read_property_value(Client, address, object, property, []) do
       {:ok, value} ->
-        do_normalize_device_name(value)
+        normalize.(value)
 
       {:error, reason} ->
         Logger.debug(
-          "Discovery could not read object_name for device #{device_id}: #{inspect(reason)}"
+          "Discovery could not read #{property} for device #{device_id}: #{inspect(reason)}"
         )
 
         nil
     end
   end
+
+  defp maybe_put_metadata(device, _key, nil), do: device
+  defp maybe_put_metadata(device, _key, ""), do: device
+
+  defp maybe_put_metadata(device, key, value) when is_binary(value),
+    do: Map.put(device, key, value)
 
   defp do_normalize_device_name(%Encoding{value: value}), do: do_normalize_device_name(value)
 

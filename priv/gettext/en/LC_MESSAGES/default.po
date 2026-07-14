@@ -96,8 +96,14 @@ msgstr "Actions"
 msgid "Aktiv"
 msgstr "Active"
 
+msgid "Aktiv seit"
+msgstr "Active since"
+
 msgid "Aktive Alarme"
 msgstr "Active alarms"
+
+msgid "Aktive COV-Abonnements"
+msgstr "Active COV subscriptions"
 
 msgid "Aktive Priorität"
 msgstr "Active priority"
@@ -276,6 +282,9 @@ msgstr "COV"
 msgid "COV abonnieren"
 msgstr "Subscribe COV"
 
+msgid "COV abonnieren (Auswahl)"
+msgstr "Subscribe COV (selection)"
+
 msgid "COV abonnieren erfolgreich."
 msgstr "COV subscription successful."
 
@@ -284,6 +293,9 @@ msgstr "COV confirmed"
 
 msgid "COV kündigen"
 msgstr "Cancel COV"
+
+msgid "COV kündigen (Auswahl)"
+msgstr "Cancel COV (selection)"
 
 msgid "COV-Abonnement fehlgeschlagen: %{detail}"
 msgstr "COV subscription failed: %{detail}"
@@ -488,6 +500,9 @@ msgstr "Events updated."
 
 msgid "Erneut abonnieren"
 msgstr "Resubscribe"
+
+msgid "Erneut abonnieren (Auswahl)"
+msgstr "Resubscribe (selection)"
 
 msgid "Erweitert"
 msgstr "Advanced"
@@ -753,6 +768,9 @@ msgstr "Last scan"
 msgid "Liste"
 msgstr "List"
 
+msgid "Listen-Aktionen"
+msgstr "List actions"
+
 msgid "Live"
 msgstr "Live"
 
@@ -905,6 +923,9 @@ msgstr "Open object properties"
 
 msgid "Objektfehler"
 msgstr "Object error"
+
+msgid "Objektliste"
+msgstr "Object list"
 
 msgid "Objekttypen"
 msgstr "Object types"

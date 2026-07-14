@@ -23,6 +23,34 @@ defmodule BacViewWeb.AlarmTableTest do
     assert [^newer, ^older] = AlarmTable.sorted_events([older, newer], "updated_at", :desc)
   end
 
+  test "sorted_active_alarms sorts by alarm since" do
+    flags = %StatusFlags{
+      in_alarm: false,
+      fault: false,
+      overridden: false,
+      out_of_service: false
+    }
+
+    older = %{
+      type: :analog_input,
+      instance: 1,
+      name: "A",
+      status_flags: flags,
+      alarm_since_sort_key: 100
+    }
+
+    newer = %{
+      type: :analog_input,
+      instance: 2,
+      name: "B",
+      status_flags: flags,
+      alarm_since_sort_key: 200
+    }
+
+    assert [^newer, ^older] =
+             AlarmTable.sorted_active_alarms([older, newer], "alarm_since", :desc)
+  end
+
   test "sorted_active_alarms sorts by object id" do
     flags = %StatusFlags{
       in_alarm: false,

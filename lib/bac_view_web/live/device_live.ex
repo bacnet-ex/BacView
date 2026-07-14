@@ -26,6 +26,8 @@ defmodule BacViewWeb.DeviceLive do
 
   alias BacViewWeb.ActiveAlarmsAssigns
   alias BacViewWeb.ActiveAlarmsPopup
+  alias BacViewWeb.ActiveCovSubscriptionsAssigns
+  alias BacViewWeb.ActiveCovSubscriptionsPopup
   alias BacViewWeb.AlarmsPanel
   alias BacViewWeb.CovNotificationChartModal
   alias BacViewWeb.DeviceLoadProgress
@@ -106,7 +108,7 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:cov_count, 0)
          |> assign(:bulk_subscribing, false)
          |> assign(:bulk_progress, %{done: 0, total: 0})
-         |> assign(:alarm_view, "event_information")
+         |> assign(:alarm_view, "active_alarms")
          |> assign(:events, [])
          |> assign(:notifications, [])
          |> assign(:active_alarm_objects, [])
@@ -157,6 +159,7 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:ede_export_form, ede_export_form())
          |> DeviceServicesHandlers.init_assigns()
          |> ActiveAlarmsAssigns.init()
+         |> ActiveCovSubscriptionsAssigns.init()
          |> refresh_alarm_state()
          |> refresh_notification_class_counts()}
 
@@ -1473,8 +1476,8 @@ defmodule BacViewWeb.DeviceLive do
   }
 
   @alarm_sub_tabs %{
-    1 => "event_information",
-    2 => "active_alarms",
+    1 => "active_alarms",
+    2 => "event_information",
     3 => "notifications"
   }
 
@@ -1565,7 +1568,10 @@ defmodule BacViewWeb.DeviceLive do
         {:noreply, start_device_reload(socket)}
 
       true ->
-        BacViewWeb.Shortcuts.handle(params, socket)
+        case BacViewWeb.Shortcuts.device_action(params, socket.assigns) do
+          {:event, event} -> handle_event(event, %{}, socket)
+          :none -> BacViewWeb.Shortcuts.handle(params, socket)
+        end
     end
   end
 
@@ -1586,6 +1592,16 @@ defmodule BacViewWeb.DeviceLive do
   @impl true
   def handle_event("close_alarm_popup", _params, socket) do
     {:noreply, ActiveAlarmsAssigns.close(socket)}
+  end
+
+  @impl true
+  def handle_event("toggle_cov_popup", _params, socket) do
+    {:noreply, ActiveCovSubscriptionsAssigns.toggle(socket)}
+  end
+
+  @impl true
+  def handle_event("close_cov_popup", _params, socket) do
+    {:noreply, ActiveCovSubscriptionsAssigns.close(socket)}
   end
 
   @impl true
@@ -1652,6 +1668,10 @@ defmodule BacViewWeb.DeviceLive do
     )
   end
 
+  defp refresh_cov_popup(socket) do
+    ActiveCovSubscriptionsAssigns.refresh(socket)
+  end
+
   defp refresh_alarm_state(socket) do
     device_id = socket.assigns.device_id
     events = AlarmEvent.list_polled_events(device_id)
@@ -1664,7 +1684,7 @@ defmodule BacViewWeb.DeviceLive do
     |> assign(:notifications, notifications)
     |> assign(:active_alarm_objects, active_alarm_objects)
     |> assign(:alarm_summary, summary)
-    |> assign(:alarm_tab_count, alarm_tab_count(summary, active_alarm_objects))
+    |> assign(:alarm_tab_count, alarm_tab_count(device_id, socket.assigns.objects))
   end
 
   defp refresh_active_alarm_objects(socket) do
@@ -1674,14 +1694,23 @@ defmodule BacViewWeb.DeviceLive do
     |> assign(:active_alarm_objects, active_alarm_objects)
     |> assign(
       :alarm_tab_count,
-      alarm_tab_count(socket.assigns.alarm_summary, active_alarm_objects)
+      alarm_tab_count(socket.assigns.device_id, socket.assigns.objects)
     )
   end
 
   defp active_alarm_objects(objects) when is_list(objects) do
     objects
     |> Enum.filter(&object_in_active_alarm?/1)
+    |> Enum.map(&enrich_active_alarm_object/1)
     |> Enum.sort_by(fn obj -> {obj.type, obj.instance} end, :asc)
+  end
+
+  defp enrich_active_alarm_object(obj) do
+    since = BacView.BACnet.ActiveAlarms.object_alarm_since(obj)
+
+    obj
+    |> Map.put(:alarm_since_label, since.label)
+    |> Map.put(:alarm_since_sort_key, since.sort_key)
   end
 
   defp object_in_active_alarm?(obj) do
@@ -1693,8 +1722,20 @@ defmodule BacViewWeb.DeviceLive do
       end)
   end
 
-  defp alarm_tab_count(summary, active_alarm_objects) do
-    max(summary.active_count, length(active_alarm_objects))
+  defp alarm_tab_count(device_id, objects) do
+    event_keys =
+      device_id
+      |> AlarmEvent.list_active_events()
+      |> Enum.map(fn event -> {event.object_id.type, event.object_id.instance} end)
+      |> MapSet.new()
+
+    status_keys =
+      objects
+      |> active_alarm_objects()
+      |> Enum.map(fn obj -> {obj.type, obj.instance} end)
+      |> MapSet.new()
+
+    MapSet.size(MapSet.union(event_keys, status_keys))
   end
 
   defp alarm_view_paths(device_id, opts) do
@@ -1722,6 +1763,7 @@ defmodule BacViewWeb.DeviceLive do
     |> assign(:subscriptions, subs)
     |> assign(:subscribed_keys, keys)
     |> assign(:cov_count, length(subs))
+    |> refresh_cov_popup()
   end
 
   defp refresh_cov_notifications(socket) do
@@ -2784,10 +2826,12 @@ defmodule BacViewWeb.DeviceLive do
             locale={@locale}
             locale_version={@locale_version}
           />
-          <span :if={@cov_count > 0} class="bac-badge bac-badge-success">
-            <.icon name="hero-signal" class="size-3" />
-            {@cov_count} COV
-          </span>
+          <ActiveCovSubscriptionsPopup.active_cov_badge
+            count={@cov_count}
+            open={@cov_popup_open}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
         <% end %>
       </:topbar_end>
 
@@ -3106,6 +3150,13 @@ defmodule BacViewWeb.DeviceLive do
       open={@alarm_popup_open}
       entries={@active_alarm_entries}
       show_device={false}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <ActiveCovSubscriptionsPopup.active_cov_panel
+      open={@cov_popup_open}
+      entries={@active_cov_entries}
       locale={@locale}
       locale_version={@locale_version}
     />

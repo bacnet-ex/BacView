@@ -23,6 +23,15 @@ defmodule BacView.BACnet.DiscoveryTest do
     assert Discovery.normalize_device_name(nil) == nil
   end
 
+  test "normalize_device_description converts Latin-1 bytes to UTF-8" do
+    latin1 = <<"K\xE4ltemaschine 1 / RHOSS FP ECO-E VFD TCAITE 1325 RH00376802">>
+
+    assert Discovery.normalize_device_description(latin1) ==
+             "Kältemaschine 1 / RHOSS FP ECO-E VFD TCAITE 1325 RH00376802"
+
+    assert String.valid?(Discovery.normalize_device_description(latin1))
+  end
+
   describe "cancel_scan/0" do
     setup do
       if :ets.whereis(:bacview_devices) == :undefined do

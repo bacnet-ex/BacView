@@ -104,6 +104,12 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
     assert ErrorMessage.format_reason(:einval) =~ "einval"
   end
 
+  test "formats property read fallback errors" do
+    assert ErrorMessage.format_reason(:object_unavailable) =~ "Objekt"
+    assert ErrorMessage.format_reason(:property_list_not_readable) =~ "Eigenschaftsliste"
+    assert ErrorMessage.format_reason({:property_read_failed, :timeout}) =~ "Zeitüberschreitung"
+  end
+
   test "formats IPv4 transport interface startup failures with interface name" do
     interface = ~S"\DEVICE\TCPIP_{8D7A9EC4-3DCD-4969-ACFB-5BF7E4115340}"
 

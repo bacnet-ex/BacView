@@ -7,6 +7,18 @@ defmodule BacView.TextTest do
     assert Text.sanitize_utf8("Cov Increment: —") == "Cov Increment: —"
   end
 
+  test "sanitize_utf8 converts Latin-1 CharacterString bytes to UTF-8" do
+    latin1 = <<"K\xE4ltemaschine 1">>
+
+    refute String.valid?(latin1)
+
+    sanitized = Text.sanitize_utf8(latin1)
+
+    assert sanitized == "Kältemaschine 1"
+    assert String.valid?(sanitized)
+    assert Jason.encode!(sanitized)
+  end
+
   test "sanitize_utf8 fixes invalid UTF-8 bytes for JSON encoding" do
     invalid = <<"Cov Increment: ", 226, 128, 148, ", text ", 192, " rest">>
 

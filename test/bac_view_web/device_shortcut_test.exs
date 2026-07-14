@@ -48,4 +48,13 @@ defmodule BacViewWeb.DeviceShortcutTest do
     assert html =~ "disabled"
     assert html =~ "animate-spin"
   end
+
+  test "shift+c on objects tab starts subscribe all PV", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/devices/42?tab=objects")
+
+    html =
+      render_click(view, "global_keydown", %{"key" => "C", "code" => "KeyC", "shift" => true})
+
+    assert html =~ ~s(class="bac-progress")
+  end
 end

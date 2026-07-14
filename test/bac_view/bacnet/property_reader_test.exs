@@ -231,6 +231,163 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       assert expected_fallback_rows(rows)
     end
+
+    test "reads property_list by index when the full array read fails" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(__MODULE__.PropertyListIndexedOnlyClient, :dest, object)
+
+      assert expected_fallback_rows(rows)
+    end
+
+    test "falls back to object schema when property_list is unavailable" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(
+                 __MODULE__.PropertyListUnavailableClient,
+                 :dest,
+                 object
+               )
+
+      properties = Enum.map(rows, & &1.property)
+
+      assert :object_name in properties
+      assert :present_value in properties
+      assert :description in properties
+      refute :property_list in properties
+    end
+
+    test "reads device object from schema when property_list is unavailable" do
+      object = %ObjectIdentifier{type: :device, instance: 100_111}
+
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(
+                 __MODULE__.PropertyListUnavailableDeviceClient,
+                 :dest,
+                 object
+               )
+
+      properties = Enum.map(rows, & &1.property)
+
+      assert :object_name in properties
+      assert :vendor_name in properties
+      refute :object_list in properties
+      refute :property_list in properties
+      assert length(properties) > 10
+    end
+
+    test "reads device metadata without object_list during schema fallback" do
+      object = %ObjectIdentifier{type: :device, instance: 100_111}
+
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(
+                 __MODULE__.DeviceObjectListIndexedClient,
+                 :dest,
+                 object
+               )
+
+      properties = Enum.map(rows, & &1.property)
+
+      assert :vendor_name in properties
+      assert :model_name in properties
+      refute :object_list in properties
+    end
+  end
+
+  describe "schema_properties/1" do
+    test "returns BACnet object definition properties for device" do
+      object = %ObjectIdentifier{type: :device, instance: 1}
+
+      assert {:ok, props} = PropertyReader.schema_properties(object)
+
+      assert :object_name in props
+      assert :vendor_name in props
+      assert :object_list in props
+      refute :property_list in props
+      assert length(props) >= 50
+      refute :engineering_units in props
+    end
+
+    test "returns error for unsupported object types" do
+      assert {:error, :unsupported_object_type} =
+               PropertyReader.schema_properties(%ObjectIdentifier{
+                 type: :invalid_type,
+                 instance: 1
+               })
+    end
+  end
+
+  describe "skip_heavy_properties/2" do
+    test "drops large device properties from schema reads" do
+      object = %ObjectIdentifier{type: :device, instance: 1}
+      props = [:object_name, :object_list, :vendor_name, :active_cov_subscriptions]
+
+      assert PropertyReader.skip_heavy_properties(props, object) == [:object_name, :vendor_name]
+    end
+
+    test "still drops property_list for non-device objects" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 1}
+      props = [:object_name, :property_list, :present_value]
+
+      assert PropertyReader.skip_heavy_properties(props, object) == [:object_name, :present_value]
+    end
+  end
+
+  describe "read_property_value/5" do
+    test "accepts raw value when bacstack rejects decoded description" do
+      object = %ObjectIdentifier{type: :device, instance: 1}
+      raw = "Kältemaschine 1"
+
+      assert {:ok, ^raw} =
+               PropertyReader.read_property_value(
+                 __MODULE__.InvalidDescriptionClient,
+                 :dest,
+                 object,
+                 :description,
+                 []
+               )
+    end
+
+    test "sanitizes Latin-1 description bytes for JSON serialization" do
+      object = %ObjectIdentifier{type: :device, instance: 1}
+
+      assert {:ok, sanitized} =
+               PropertyReader.read_property_value(
+                 __MODULE__.Latin1DescriptionClient,
+                 :dest,
+                 object,
+                 :description,
+                 []
+               )
+
+      assert sanitized == "Kältemaschine 1 / RHOSS FP ECO-E VFD TCAITE 1325 RH00376802"
+      assert String.valid?(sanitized)
+      assert Jason.encode!(sanitized)
+    end
+
+    test "reads array properties by index on segmentation errors" do
+      object = %ObjectIdentifier{type: :device, instance: 100_111}
+
+      assert {:ok, [%ObjectIdentifier{type: :device, instance: 100_111}]} =
+               PropertyReader.read_property_value(
+                 __MODULE__.DeviceObjectListIndexedClient,
+                 :dest,
+                 object,
+                 :object_list,
+                 []
+               )
+    end
+  end
+
+  describe "array_property?/2" do
+    test "detects array properties from object type definition" do
+      object = %ObjectIdentifier{type: :device, instance: 1}
+
+      assert PropertyReader.array_property?(object, :object_list)
+      refute PropertyReader.array_property?(object, :vendor_name)
+    end
   end
 
   defp expected_fallback_rows(rows) do
@@ -290,6 +447,154 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       case Map.fetch(values, property) do
         {:ok, value} -> {:ok, value}
         :error -> {:error, :property_not_found}
+      end
+    end
+  end
+
+  defmodule PropertyListIndexedOnlyClient do
+    @property_list [
+      :object_identifier,
+      :object_name,
+      :object_type,
+      :present_value,
+      :description,
+      :status_flags,
+      :event_state,
+      :out_of_service,
+      :units
+    ]
+
+    def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :segmentation_not_supported}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "AI-197"}
+
+    def read_property(_destination, _object, :property_list, opts) do
+      case Keyword.get(opts, :array_index) do
+        nil -> {:error, :property_not_readable}
+        0 -> {:ok, length(@property_list)}
+        idx when is_integer(idx) -> {:ok, Enum.at(@property_list, idx - 1)}
+      end
+    end
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        present_value: 42.0,
+        description: "test input",
+        status_flags: [false, false, false, false],
+        event_state: :normal,
+        out_of_service: false,
+        units: :degrees_celsius
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :property_not_found}
+      end
+    end
+  end
+
+  defmodule InvalidDescriptionClient do
+    def read_property(_destination, _object, :description, _opts),
+      do: {:error, {:invalid_property_value, {:description, "Kältemaschine 1"}}}
+  end
+
+  defmodule Latin1DescriptionClient do
+    def read_property(_destination, _object, :description, _opts) do
+      latin1 = <<"K\xE4ltemaschine 1 / RHOSS FP ECO-E VFD TCAITE 1325 RH00376802">>
+      {:error, {:invalid_property_value, {:description, latin1}}}
+    end
+  end
+
+  defmodule PropertyListUnavailableClient do
+    def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :segmentation_not_supported}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "AI-197"}
+
+    def read_property(_destination, _object, :property_list, _opts),
+      do: {:error, :unknown_property}
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        present_value: 42.0,
+        description: "test input",
+        status_flags: [false, false, false, false],
+        event_state: :normal,
+        out_of_service: false,
+        units: :degrees_celsius
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :unknown_property}
+      end
+    end
+  end
+
+  defmodule PropertyListUnavailableDeviceClient do
+    def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :segmentation_not_supported}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "Device-100111"}
+
+    def read_property(_destination, _object, :property_list, _opts),
+      do: {:error, :unknown_property}
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        vendor_name: "Test Vendor",
+        model_name: "Test Model",
+        firmware_revision: "1.0",
+        application_software_version: "2.0",
+        protocol_version: 1,
+        protocol_revision: 14,
+        max_apdu_length_accepted: 480,
+        segmentation_supported: :no_segmentation,
+        object_list: [%ObjectIdentifier{type: :device, instance: 100_111}]
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :unknown_property}
+      end
+    end
+  end
+
+  defmodule DeviceObjectListIndexedClient do
+    def read_object(_destination, _object, _opts), do: {:error, :segmentation_not_supported}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :segmentation_not_supported}
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "Device-100111"}
+
+    def read_property(_destination, _object, :property_list, _opts),
+      do: {:error, :unknown_property}
+
+    def read_property(_destination, _object, :object_list, opts) do
+      case Keyword.get(opts, :array_index) do
+        nil -> {:error, :segmentation_not_supported}
+        0 -> {:ok, 1}
+        1 -> {:ok, %ObjectIdentifier{type: :device, instance: 100_111}}
+      end
+    end
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        vendor_name: "Test Vendor",
+        model_name: "Test Model"
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :unknown_property}
       end
     end
   end

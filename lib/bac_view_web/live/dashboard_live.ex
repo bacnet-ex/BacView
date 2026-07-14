@@ -2,7 +2,6 @@ defmodule BacViewWeb.DashboardLive do
   @moduledoc false
   use BacViewWeb, :live_view
 
-  alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.InterfaceSelection
@@ -16,6 +15,8 @@ defmodule BacViewWeb.DashboardLive do
 
   alias BacViewWeb.ActiveAlarmsAssigns
   alias BacViewWeb.ActiveAlarmsPopup
+  alias BacViewWeb.ActiveCovSubscriptionsAssigns
+  alias BacViewWeb.ActiveCovSubscriptionsPopup
   alias BacViewWeb.BBMDPanel
   alias BacViewWeb.DeviceList
   alias BacViewWeb.DeviceServiceModals
@@ -25,6 +26,7 @@ defmodule BacViewWeb.DashboardLive do
   alias BacViewWeb.StackSettingsPanel
   alias BacViewWeb.StackStatusPolling
 
+  alias BacViewWeb.DeviceBadgeCounts
   alias BacViewWeb.DeviceServicesHandlers
 
   @impl true
@@ -32,6 +34,7 @@ defmodule BacViewWeb.DashboardLive do
     if connected?(socket) do
       Phoenix.PubSub.subscribe(BacView.PubSub, "devices")
       Phoenix.PubSub.subscribe(BacView.PubSub, "alarms:updates")
+      Phoenix.PubSub.subscribe(BacView.PubSub, "cov:updates")
       Phoenix.PubSub.subscribe(BacView.PubSub, "bbmd:updates")
       Process.send_after(self(), :refresh_stack_status, StackStatusPolling.normal_poll_ms())
     end
@@ -46,7 +49,6 @@ defmodule BacViewWeb.DashboardLive do
      |> assign(:scanning, false)
      |> assign(:last_scan_at, nil)
      |> assign(:scan_form, scan_form())
-     |> assign(:alarm_summary, AlarmEvent.global_summary())
      |> assign(:show_shortcuts, false)
      |> assign(:bbmd_status, bbmd_status)
      |> assign(:bbmd_form, bbmd_form(bbmd_status))
@@ -60,8 +62,11 @@ defmodule BacViewWeb.DashboardLive do
      |> assign(:device_search, "")
      |> assign(:device_sort_by, nil)
      |> assign(:device_sort_dir, :asc)
+     |> assign(:device_badge_counts, DeviceBadgeCounts.empty())
      |> DeviceServicesHandlers.init_assigns()
-     |> ActiveAlarmsAssigns.init()}
+     |> ActiveAlarmsAssigns.init()
+     |> ActiveCovSubscriptionsAssigns.init()
+     |> DeviceBadgeCounts.assign_counts()}
   end
 
   @impl true
@@ -229,12 +234,38 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_event("toggle_alarm_popup", _params, socket) do
-    {:noreply, ActiveAlarmsAssigns.toggle(socket)}
+    {:noreply, ActiveAlarmsAssigns.toggle(socket, grouped_alarm_opts(socket))}
+  end
+
+  @impl true
+  def handle_event("select_alarm_popup_device", %{"device_id" => device_id}, socket) do
+    case Integer.parse(device_id) do
+      {id, ""} ->
+        {:noreply, ActiveAlarmsAssigns.select_device(socket, id, grouped_alarm_opts(socket))}
+
+      _invalid ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("back_alarm_popup_devices", _params, socket) do
+    {:noreply, ActiveAlarmsAssigns.back_to_devices(socket, grouped_alarm_opts(socket))}
   end
 
   @impl true
   def handle_event("close_alarm_popup", _params, socket) do
     {:noreply, ActiveAlarmsAssigns.close(socket)}
+  end
+
+  @impl true
+  def handle_event("toggle_cov_popup", _params, socket) do
+    {:noreply, ActiveCovSubscriptionsAssigns.toggle(socket, grouped_cov_opts(socket))}
+  end
+
+  @impl true
+  def handle_event("close_cov_popup", _params, socket) do
+    {:noreply, ActiveCovSubscriptionsAssigns.close(socket)}
   end
 
   @impl true
@@ -325,7 +356,10 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_info({:devices_updated, devices}, socket) do
-    {:noreply, assign(socket, :devices, devices)}
+    {:noreply,
+     socket
+     |> assign(:devices, devices)
+     |> refresh_dashboard_badge_state()}
   end
 
   @impl true
@@ -335,6 +369,7 @@ defmodule BacViewWeb.DashboardLive do
      |> assign(:devices, devices)
      |> assign(:scanning, false)
      |> assign(:last_scan_at, DateTime.utc_now())
+     |> DeviceBadgeCounts.assign_counts()
      |> put_flash(:info, gt("Netzwerkscan abgeschlossen."))}
   end
 
@@ -377,10 +412,12 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_info(:alarms_updated, socket) do
-    {:noreply,
-     socket
-     |> assign(:alarm_summary, AlarmEvent.global_summary())
-     |> ActiveAlarmsAssigns.refresh()}
+    {:noreply, refresh_dashboard_badge_state(socket)}
+  end
+
+  @impl true
+  def handle_info(:cov_updated, socket) do
+    {:noreply, refresh_dashboard_badge_state(socket)}
   end
 
   @impl true
@@ -422,9 +459,15 @@ defmodule BacViewWeb.DashboardLive do
       <:topbar_end>
         <%= for _ <- [@locale_version] do %>
           <ActiveAlarmsPopup.active_alarms_badge
-            count={@alarm_summary.active_count}
+            count={DeviceBadgeCounts.total_alarm_count(@device_badge_counts)}
             open={@alarm_popup_open}
             show_device_label={true}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
+          <ActiveCovSubscriptionsPopup.active_cov_badge
+            count={DeviceBadgeCounts.total_cov_count(@device_badge_counts)}
+            open={@cov_popup_open}
             locale={@locale}
             locale_version={@locale_version}
           />
@@ -505,6 +548,7 @@ defmodule BacViewWeb.DashboardLive do
               sort_by={@device_sort_by}
               sort_dir={@device_sort_dir}
               device_service_menu={@device_service_menu}
+              device_badge_counts={@device_badge_counts}
               locale={@locale}
               locale_version={@locale_version}
             />
@@ -528,8 +572,21 @@ defmodule BacViewWeb.DashboardLive do
 
     <ActiveAlarmsPopup.active_alarms_panel
       open={@alarm_popup_open}
+      grouped?={@alarm_popup_grouped?}
+      level={@alarm_popup_level}
+      device_groups={@active_alarm_device_groups}
+      selected_device_id={@alarm_popup_device_id}
       entries={@active_alarm_entries}
-      show_device={true}
+      show_device={false}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <ActiveCovSubscriptionsPopup.active_cov_panel
+      open={@cov_popup_open}
+      grouped?={@cov_popup_grouped?}
+      device_groups={@active_cov_device_groups}
+      total_count={DeviceBadgeCounts.total_cov_count(@device_badge_counts)}
       locale={@locale}
       locale_version={@locale_version}
     />
@@ -568,6 +625,25 @@ defmodule BacViewWeb.DashboardLive do
       true ->
         gt("%{shown} von %{total} Geräten", shown: length(filtered), total: length(devices))
     end
+  end
+
+  defp refresh_dashboard_badge_state(socket) do
+    socket = DeviceBadgeCounts.assign_counts(socket)
+
+    socket
+    |> ActiveAlarmsAssigns.refresh(grouped_alarm_opts(socket))
+    |> ActiveCovSubscriptionsAssigns.refresh(grouped_cov_opts(socket))
+  end
+
+  defp grouped_alarm_opts(socket) do
+    [grouped_device_ids: Enum.map(socket.assigns.devices, & &1.id)]
+  end
+
+  defp grouped_cov_opts(socket) do
+    [
+      grouped_devices: socket.assigns.devices,
+      device_badge_counts: socket.assigns.device_badge_counts
+    ]
   end
 
   defp scan_form(params \\ %{}) do

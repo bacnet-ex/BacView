@@ -39,6 +39,7 @@ defmodule BacView.Text do
       &sanitize_display/1
     )
     |> Map.update(:value, nil, &sanitize_property_value/1)
+    |> Map.update(:raw_binary, nil, &sanitize_utf8/1)
     |> Map.update(:enum_options, nil, &sanitize_enum_options/1)
   end
 
@@ -76,6 +77,7 @@ defmodule BacView.Text do
     field
     |> Map.update(:label, nil, &sanitize_utf8/1)
     |> Map.update!(:formatted, &sanitize_utf8/1)
+    |> Map.update(:value, nil, &sanitize_property_value/1)
     |> Map.update(:fields, [], &sanitize_fields/1)
     |> Map.update(:items, [], &sanitize_items/1)
   end

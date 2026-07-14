@@ -7,7 +7,7 @@ defmodule BacViewWeb.AlarmTable do
   alias BacViewWeb.TableSort
 
   @event_columns ~w(object state type ack updated_at)
-  @active_alarm_columns ~w(object_id type name description status updated_at)
+  @active_alarm_columns ~w(object_id type name description status alarm_since updated_at)
   @notification_columns ~w(received object type state priority message)
 
   @spec event_sort_columns() :: [String.t()]
@@ -102,6 +102,9 @@ defmodule BacViewWeb.AlarmTable do
 
   defp active_alarm_sort_key(obj, "status"),
     do: length(StatusFlagsIcons.active_flags(Map.get(obj, :status_flags)))
+
+  defp active_alarm_sort_key(obj, "alarm_since"),
+    do: Map.get(obj, :alarm_since_sort_key, 0)
 
   defp active_alarm_sort_key(obj, "updated_at"),
     do: TableSort.datetime_key(Map.get(obj, :updated_at))
