@@ -23,19 +23,24 @@ defmodule BacView.BACnet.IAmCollectorTest do
     assert {:ok, %IAm{device: %{instance: 42}}} = IAmCollector.parse_iam(@iam_apdu)
   end
 
-  test "device_address prefers originating address from forwarded NPDU" do
+  test "device_address and source_address prefer originating address from forwarded NPDU" do
+    # BBMD hop on the wire vs real BACnet/IP originator in Forwarded-NPDU.
+    bbmd = {{192, 168, 100, 31}, 47_808}
+
     bvlc = %BvlcForwardedNPDU{
-      originating_ip: {10, 0, 0, 5},
+      originating_ip: {192, 168, 100, 111},
       originating_port: 47_808
     }
 
-    assert IAmCollector.device_address({{192, 168, 1, 79}, 47_808}, bvlc) ==
-             {{10, 0, 0, 5}, 47_808}
+    assert IAmCollector.device_address(bbmd, bvlc) == {{192, 168, 100, 111}, 47_808}
+    assert IAmCollector.source_address(bbmd, bvlc) == {{192, 168, 100, 111}, 47_808}
   end
 
-  test "device_address falls back to transport source" do
-    assert IAmCollector.device_address({{192, 168, 1, 79}, 47_808}, :original_unicast) ==
-             {{192, 168, 1, 79}, 47_808}
+  test "device_address and source_address fall back to transport source" do
+    source = {{192, 168, 1, 79}, 47_808}
+
+    assert IAmCollector.device_address(source, :original_unicast) == source
+    assert IAmCollector.source_address(source, :original_unicast) == source
   end
 
   test "npci_source_from extracts NPCI source target" do
@@ -101,5 +106,34 @@ defmodule BacView.BACnet.IAmCollectorTest do
       end)
 
     assert Task.await(task) == {{{192, 168, 1, 79}, 47_808}, 42, {{192, 168, 1, 79}, 47_808}}
+  end
+
+  test "collect uses Forwarded-NPDU originator as source_address, not BBMD hop" do
+    task =
+      Task.async(fn ->
+        bbmd = {{192, 168, 100, 31}, 47_808}
+
+        bvlc = %BvlcForwardedNPDU{
+          originating_ip: {192, 168, 100, 111},
+          originating_port: 47_808
+        }
+
+        npci = %BACnet.Protocol.NPCI{
+          priority: :normal,
+          expects_reply: false,
+          destination: nil,
+          source: nil,
+          hopcount: nil,
+          is_network_message: false
+        }
+
+        send(self(), {:bacnet_client, make_ref(), @iam_apdu, {bbmd, bvlc, npci}, self()})
+
+        [{address, iam, _npci_source, source_address}] = IAmCollector.collect(200)
+        {address, iam.device.instance, source_address}
+      end)
+
+    origin = {{192, 168, 100, 111}, 47_808}
+    assert Task.await(task) == {origin, 42, origin}
   end
 end

@@ -155,7 +155,7 @@ defmodule BacView.BACnet.DiscoverySniffer do
       {:ok, %IAm{device: %{instance: instance}} = iam} ->
         address = IAmCollector.device_address(source, bvlc)
         npci_source = IAmCollector.npci_source_from(npci)
-        source_address = IAmCollector.source_address(source)
+        source_address = IAmCollector.source_address(source, bvlc)
 
         Logger.info("DiscoverySniffer: I-Am device #{instance} at #{format_address(address)}")
 

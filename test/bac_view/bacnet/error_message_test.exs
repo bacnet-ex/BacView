@@ -57,6 +57,13 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
     assert ErrorMessage.format_reason(:stack_not_started) =~ "nicht gestartet"
   end
 
+  test "formats GenServer.call timeout exits" do
+    reason = {:timeout, {GenServer, :call, [self(), :load, 120_000]}}
+
+    assert ErrorMessage.format_reason(reason) =~ "Zeitüberschreitung"
+    refute ErrorMessage.format_reason(reason) =~ "unerwarteter"
+  end
+
   test "formats stack restart action" do
     message = ErrorMessage.for_action(:stack_restart, :stack_not_started)
 

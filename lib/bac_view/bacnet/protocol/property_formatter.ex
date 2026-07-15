@@ -3,7 +3,6 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   Formats BACnet property values for display.
   """
 
-  alias BACnet.Protocol.ApplicationTags
   alias BACnet.Protocol.ApplicationTags.Encoding
 
   alias BACnet.Protocol.BACnetArray
@@ -16,7 +15,6 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   alias BACnet.Protocol.Recipient
   alias BACnet.Protocol.RecipientAddress
 
-  alias BacView.BACnet.FileTransfer
   alias BacView.BACnet.Protocol.BacnetCalendarFormat
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.MultistateState
@@ -297,125 +295,6 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   def property_type(%Encoding{type: type}), do: encoding_type_label(type)
   def property_type(value) when is_tuple(value), do: property_type_for_tuple(value)
   def property_type(_value), do: "STRUCT"
-
-  @doc false
-  @spec unknown_property_type(term()) :: String.t()
-  def unknown_property_type(value) when is_list(value) do
-    if unknown_property_encoding_list?(value), do: "PROPRIETARY", else: property_type(value)
-  end
-
-  def unknown_property_type(value), do: property_type(value)
-
-  @doc false
-  @spec unknown_property_string_value?(term()) :: boolean()
-  def unknown_property_string_value?(value) when is_list(value),
-    do: unknown_property_encoding_list?(value)
-
-  def unknown_property_string_value?(%Encoding{type: type, value: inner})
-      when type in [:octet_string, :character_string] and is_binary(inner),
-      do: true
-
-  def unknown_property_string_value?(%Encoding{value: inner}) when is_binary(inner), do: true
-  def unknown_property_string_value?(value) when is_binary(value), do: true
-  def unknown_property_string_value?(_value), do: false
-
-  @doc false
-  @spec unknown_property_raw_binary(term()) :: binary() | nil
-  def unknown_property_raw_binary(value) when is_list(value) do
-    if unknown_property_encoding_list?(value) do
-      case unknown_property_encoding_list_binary(value) do
-        {:ok, binary} -> binary
-        _other -> nil
-      end
-    else
-      nil
-    end
-  end
-
-  def unknown_property_raw_binary(value) when is_binary(value), do: value
-
-  def unknown_property_raw_binary(%Encoding{value: inner}) when is_binary(inner),
-    do: unknown_property_raw_binary(inner)
-
-  def unknown_property_raw_binary(_value), do: nil
-
-  @doc false
-  @spec unknown_property_hex_toggle?(term()) :: boolean()
-  def unknown_property_hex_toggle?(value) when is_list(value), do: false
-
-  def unknown_property_hex_toggle?(value) do
-    case unknown_property_raw_binary(value) do
-      binary when is_binary(binary) -> not FileTransfer.printable_text?(binary)
-      _other -> false
-    end
-  end
-
-  @doc false
-  @spec unknown_property_display_value(term()) :: term()
-  def unknown_property_display_value(value) when is_list(value) do
-    if unknown_property_encoding_list?(value) do
-      case unknown_property_encoding_list_binary(value) do
-        {:ok, binary} -> binary
-        _other -> value
-      end
-    else
-      value
-    end
-  end
-
-  def unknown_property_display_value(%Encoding{encoding: :primitive, value: inner}), do: inner
-  def unknown_property_display_value(value), do: value
-
-  @doc false
-  @spec unknown_property_formatted(term(), map() | nil) :: String.t()
-  def unknown_property_formatted(value, _display) when is_list(value) do
-    if unknown_property_encoding_list?(value) do
-      case unknown_property_encoding_list_binary(value) do
-        {:ok, binary} -> format_binary_hex(binary)
-        _other -> "—"
-      end
-    else
-      format_value(value, nil)
-    end
-  end
-
-  def unknown_property_formatted(%Encoding{type: :character_string, value: inner}, _display)
-      when is_binary(inner),
-      do: Text.sanitize_utf8(inner)
-
-  def unknown_property_formatted(%Encoding{type: :octet_string, value: inner}, _display)
-      when is_binary(inner),
-      do: format_binary_hex(inner)
-
-  def unknown_property_formatted(%Encoding{encoding: :primitive, value: inner}, _display),
-    do: format_value(inner, nil)
-
-  def unknown_property_formatted(_value, %{formatted: formatted}) when is_binary(formatted),
-    do: formatted
-
-  def unknown_property_formatted(value, _display), do: format_value(value, nil)
-
-  @spec unknown_property_encoding_list?(term()) :: boolean()
-  defp unknown_property_encoding_list?(value) when is_list(value) do
-    value != [] and Enum.all?(value, &match?(%Encoding{}, &1))
-  end
-
-  defp unknown_property_encoding_list?(_value), do: false
-
-  defp unknown_property_encoding_list_binary(value) when is_list(value) do
-    if unknown_property_encoding_list?(value) do
-      Enum.reduce_while(value, {:ok, <<>>}, fn %Encoding{} = encoding, {:ok, acc} ->
-        with {:ok, raw} <- Encoding.to_encoding(encoding),
-             {:ok, bytes} <- ApplicationTags.encode(raw) do
-          {:cont, {:ok, acc <> bytes}}
-        else
-          {:error, _reason} = err -> {:halt, err}
-        end
-      end)
-    else
-      {:error, :not_encoding_list}
-    end
-  end
 
   @doc false
   @spec integer_bac_type_label(term()) :: String.t() | nil

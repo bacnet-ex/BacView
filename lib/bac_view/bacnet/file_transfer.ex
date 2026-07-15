@@ -5,6 +5,7 @@ defmodule BacView.BACnet.FileTransfer do
 
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Client
+  alias BacView.Text
 
   @default_chunk_size 512
   @max_chunk_size 1024
@@ -246,11 +247,7 @@ defmodule BacView.BACnet.FileTransfer do
 
   @doc "Returns true when file bytes are safe to show as text in the browser."
   @spec printable_text?(binary()) :: boolean()
-  def printable_text?(<<>>), do: true
-
-  def printable_text?(data) when is_binary(data) do
-    String.valid?(data) and :binary.match(data, <<0>>) == :nomatch and String.printable?(data)
-  end
+  def printable_text?(data) when is_binary(data), do: Text.printable_text?(data)
 
   @doc "MIME type for downloaded file content."
   @spec content_mime(boolean()) :: String.t()

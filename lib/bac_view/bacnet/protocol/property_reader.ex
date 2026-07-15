@@ -15,6 +15,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
+  alias BacView.BACnet.Protocol.UnknownProperty
   alias BacView.BACnet.Segmentation
   alias BacView.Text
 
@@ -103,11 +104,8 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     end
   end
 
-  defp client_opts(read_opts) when is_list(read_opts) do
-    read_opts
-    |> Keyword.drop([:on_property_progress])
-    |> Keyword.put_new(:log_read_error, false)
-  end
+  defp client_opts(read_opts) when is_list(read_opts),
+    do: Keyword.drop(read_opts, [:on_property_progress, :log_errors])
 
   @doc """
   Non-RPM property load: resolve property identifiers (full list / indexed / schema),
@@ -179,8 +177,8 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   Set lower (e.g. 1) if old devices are overwhelmed by parallel reads.
 
   When `opts` includes `:device_id` or `:remote_device_id`, a per-device
-  `:max_concurrency` from discovery (e.g. shared router source) overrides the
-  global default when set.
+  `:max_concurrency` from discovery (shared request destination, e.g. gateway)
+  overrides the global default when set.
   """
   @spec property_read_concurrency(keyword()) :: pos_integer()
   def property_read_concurrency(opts \\ []) do
@@ -297,20 +295,22 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       {:error, {:invalid_property_value, {^property, raw}}} ->
         {:ok, sanitize_loose_property_value(raw)}
 
-      {:error, _reason} = err ->
+      {:error, reason} = err ->
         if is_nil(Keyword.get(client_opts, :array_index)) and array_property?(object, property) and
              Segmentation.fallback_error?(err) do
-          read_property_array_indexed(client, destination, object, property, client_opts)
-        else
-          Client.log_read_error(
+          maybe_log_read_error(
+            read_opts,
             :read_property,
             destination,
             object,
             property,
-            elem(err, 1),
-            Keyword.put(client_opts, :log_read_error, true)
+            reason,
+            level: :debug
           )
 
+          read_property_array_indexed(client, destination, object, property, client_opts)
+        else
+          maybe_log_read_error(read_opts, :read_property, destination, object, property, reason)
           err
         end
     end
@@ -338,15 +338,42 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       {:ok, obj} when is_object(obj) ->
         {:ok, obj, :rpm}
 
-      {:error, _reason} = error ->
+      {:error, reason} = error ->
         if Segmentation.rpm_fallback_error?(error) do
+          maybe_log_read_error(
+            read_opts,
+            :read_object,
+            destination,
+            object,
+            nil,
+            reason,
+            level: :debug
+          )
+
           fetch_bacnet_object_without_rpm(client, destination, object, read_opts)
         else
+          maybe_log_read_error(read_opts, :read_object, destination, object, nil, reason)
           error
         end
 
       _other ->
         {:error, :object_unavailable}
+    end
+  end
+
+  defp maybe_log_read_error(
+         read_opts,
+         operation,
+         destination,
+         object,
+         property,
+         reason,
+         opts \\ []
+       ) do
+    if Keyword.get(read_opts, :log_errors, true) do
+      Client.log_read_error(operation, destination, object, property, reason, opts)
+    else
+      :ok
     end
   end
 
@@ -562,12 +589,15 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp read_properties_individually(client, destination, object, properties, read_opts) do
     total = length(properties)
     on_progress = Keyword.get(read_opts, :on_property_progress)
+    # Bulk individual reads often hit expected misses (unknown_property, etc.).
+    # Log once at debug here; suppress per-call warnings inside read_property_value/5.
+    quiet_opts = Keyword.put(read_opts, :log_errors, false)
     report_property_progress(on_progress, 0, total)
 
     properties
     |> Task.async_stream(
       fn prop ->
-        case read_property_value(client, destination, object, prop, read_opts) do
+        case read_property_value(client, destination, object, prop, quiet_opts) do
           {:ok, value} ->
             {prop, value}
 
@@ -650,19 +680,19 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     bacnet_object
     |> Map.get(:_unknown_properties, %{})
     |> Enum.map(fn {property, value} ->
-      display_value = PropertyFormatter.unknown_property_display_value(value)
-      display = PropertyDisplay.build(display_value)
+      presented = UnknownProperty.present(value)
+      display = PropertyDisplay.build(presented.display_value)
 
       Text.sanitize_property_row(%{
         property: property,
         property_name: property_name(property),
         value: value,
         value_display: display,
-        value_formatted: PropertyFormatter.unknown_property_formatted(value, display),
-        type: PropertyFormatter.unknown_property_type(value),
-        string_value?: PropertyFormatter.unknown_property_string_value?(value),
-        hex_toggle?: PropertyFormatter.unknown_property_hex_toggle?(value),
-        raw_binary: PropertyFormatter.unknown_property_raw_binary(value)
+        value_formatted: presented.formatted,
+        type: presented.type,
+        string_value?: presented.string_value?,
+        hex_toggle?: presented.hex_toggle?,
+        raw_binary: presented.raw_binary
       })
     end)
     |> Enum.sort_by(& &1.property_name)

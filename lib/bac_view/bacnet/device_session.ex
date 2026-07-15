@@ -39,10 +39,18 @@ defmodule BacView.BACnet.DeviceSession do
     GenServer.start_link(__MODULE__, device_id, name: DeviceSessionSupervisor.via(device_id))
   end
 
+  # Full device scans (especially non-RPM devices that fall back to per-property
+  # ReadProperty) can exceed several minutes. Callers such as DeviceLive already
+  # run load/reload off the LiveView process and receive progress via PubSub, so
+  # we must not cap the GenServer.call with a wall-clock timeout.
+  # We are currently keeping a timeout of 2mins.
+  # We may want to raise this or use :infinity, if needed.
+  @load_call_timeout 120_000
+
   @spec load(integer()) :: {:ok, map()} | {:error, term()}
   def load(device_id) do
     with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-      GenServer.call(pid, :load, 120_000)
+      GenServer.call(pid, :load, @load_call_timeout)
     end
   end
 
@@ -50,7 +58,7 @@ defmodule BacView.BACnet.DeviceSession do
   @spec reload(integer()) :: {:ok, map()} | {:error, term()}
   def reload(device_id) do
     with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-      GenServer.call(pid, :reload, 120_000)
+      GenServer.call(pid, :reload, @load_call_timeout)
     end
   end
 

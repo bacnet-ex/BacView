@@ -26,6 +26,16 @@ defmodule BacView.Text do
   end
 
   @doc """
+  Returns true when bytes are safe to show as text (valid UTF-8, no NUL, printable).
+  """
+  @spec printable_text?(binary()) :: boolean()
+  def printable_text?(<<>>), do: true
+
+  def printable_text?(data) when is_binary(data) do
+    String.valid?(data) and :binary.match(data, <<0>>) == :nomatch and String.printable?(data)
+  end
+
+  @doc """
   Sanitizes string fields in a property row used by LiveView assigns.
   """
   @spec sanitize_property_row(map()) :: map()

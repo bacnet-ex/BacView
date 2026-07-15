@@ -187,6 +187,11 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
     do: gettext("Ungültiger Zeitraum. Bitte Start- und Endzeit prüfen.")
 
   def format_reason(:timeout), do: gettext("Zeitüberschreitung bei der Gerätekommunikation.")
+
+  # GenServer.call exit shapes, e.g. {:timeout, {GenServer, :call, [pid, :load, 120_000]}}
+  def format_reason({:timeout, _call}),
+    do: gettext("Zeitüberschreitung bei der Gerätekommunikation.")
+
   def format_reason(:noproc), do: gettext("Keine Verbindung zum BACnet-Stack.")
 
   def format_reason(:stack_not_started),

@@ -45,8 +45,9 @@ defmodule BacView.BACnet.IAmCollector do
   Returns a list of `{address, %IAm{}, npci_source, source_address}` tuples,
   deduplicated by device instance. `npci_source` is a `NpciTarget` when the I-Am
   NPCI carried a source target (typical for BACnet routers), otherwise `nil`.
-  `source_address` is the normalized BACnet/IP or MS/TP transport source that
-  delivered the I-Am.
+  `source_address` is the originating peer: for BBMD-forwarded frames
+  (`BvlcForwardedNPDU`) the originating IP/port, otherwise the UDP/MS/TP
+  transport source.
 
   Options:
     * `:on_iam` - optional
@@ -110,7 +111,9 @@ defmodule BacView.BACnet.IAmCollector do
       {:ok, %IAm{device: %{instance: instance}} = iam} ->
         address = device_address(source, bvlc)
         npci_source = npci_source_from(npci)
-        source_address = source_address(source)
+        # Prefer BvlcForwardedNPDU originating peer over the BBMD hop that
+        # delivered the frame on the wire.
+        source_address = source_address(source, bvlc)
 
         Logger.info(
           "IAmCollector: device #{instance} at #{format_address(address)} " <>
@@ -141,16 +144,18 @@ defmodule BacView.BACnet.IAmCollector do
   def parse_iam(_iam), do: {:error, :not_i_am}
 
   @doc false
-  @spec source_address(term()) :: term()
-  def source_address(source), do: Address.normalize_destination(source)
+  @spec source_address(term(), term()) :: term()
+  def source_address(source, bvlc), do: device_address(source, bvlc)
 
-  @spec device_address(term(), term()) :: {term(), term()}
+  @doc false
+  @spec device_address(term(), term()) :: term()
   def device_address(source, bvlc) do
     case bvlc do
       %BvlcForwardedNPDU{originating_ip: ip, originating_port: port} ->
-        {ip, port}
+        # BBMD Forwarded-NPDU: use the originating device, not the BBMD hop.
+        normalize_address({ip, port})
 
-      _source ->
+      _bvlc ->
         normalize_address(source)
     end
   end

@@ -6,6 +6,7 @@ defmodule BacView.BACnet.Cache do
 
   @tables [
     :bacview_devices,
+    :bacview_device_share,
     :bacview_objects,
     :bacview_properties,
     :bacview_subscriptions,

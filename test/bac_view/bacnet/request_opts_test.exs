@@ -6,21 +6,29 @@ defmodule BacView.BACnet.RequestOptsTest do
   alias BACnet.Protocol.Services.IAm
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.RequestOpts
-  alias BacView.Test.BacnetEtsLock
 
   @table :bacview_devices
+  @share_table :bacview_device_share
   @address {{10, 0, 0, 5}, 47_808}
 
   setup do
-    BacnetEtsLock.with_tables([@table], fn ->
-      if :ets.whereis(@table) == :undefined do
-        :ets.new(@table, [:named_table, :set, :public])
+    for table <- [@table, @share_table] do
+      if :ets.whereis(table) == :undefined do
+        :ets.new(table, [:named_table, :set, :public])
       else
-        :ets.delete_all_objects(@table)
+        :ets.delete_all_objects(table)
       end
+    end
 
-      :ok
+    on_exit(fn ->
+      for table <- [@table, @share_table] do
+        if :ets.whereis(table) != :undefined do
+          :ets.delete_all_objects(table)
+        end
+      end
     end)
+
+    :ok
   end
 
   defp iam(instance) do
@@ -49,31 +57,39 @@ defmodule BacView.BACnet.RequestOptsTest do
     assert RequestOpts.shared_address?(@address)
   end
 
-  test "merge leaves opts unchanged for a unique address" do
+  test "for_device fills remote_device_id without adding invoke id when there is no NPCI source" do
     store(100)
 
-    assert RequestOpts.merge(device_id: 100) == [device_id: 100]
+    merged = RequestOpts.for_device(100, [])
+    assert merged[:remote_device_id] == 100
+    refute Keyword.has_key?(merged, :device_id)
+    refute Keyword.has_key?(merged, :destination)
   end
 
-  test "merge adds npci destination but not invoke device_id on shared addresses" do
+  test "merge leaves bare opts when device is unknown" do
+    assert RequestOpts.merge(device_id: 404) == [device_id: 404]
+  end
+
+  test "for_device adds npci destination but not invoke device_id on shared addresses" do
     npci_source = %NpciTarget{net: 3, address: 200}
 
     store(100)
     store(200, npci_source)
 
-    merged = RequestOpts.merge(remote_device_id: 200)
+    merged = RequestOpts.for_device(200, remote_device_id: 200)
     assert merged[:remote_device_id] == 200
     assert merged[:destination] == npci_source
     refute Keyword.has_key?(merged, :device_id)
   end
 
-  test "merge adds npci destination for a routed device at a unique address" do
+  test "for_device adds npci destination and invoke device_id for a routed unique address" do
     npci_source = %NpciTarget{net: 3, address: 200}
 
     store(200, npci_source)
 
-    merged = RequestOpts.merge(device_id: 200)
+    merged = RequestOpts.for_device(200, [])
     assert merged[:device_id] == 200
+    assert merged[:remote_device_id] == 200
     assert merged[:destination] == npci_source
   end
 

@@ -20,6 +20,7 @@ defmodule BacView.BACnet.Discovery do
   alias BacView.Text
 
   @table :bacview_devices
+  @share_table :bacview_device_share
   @topic "devices"
   @bbmd_collect_extra_ms 8_000
   @min_timeout 500
@@ -130,29 +131,29 @@ defmodule BacView.BACnet.Discovery do
   @doc false
   @spec apply_shared_source_max_concurrency() :: :ok
   def apply_shared_source_max_concurrency() do
-    if :ets.whereis(@table) == :undefined do
-      :ok
-    else
-      devices = list_devices()
+    rebuild_share_indexes()
+  end
 
-      shared_sources =
-        devices
-        |> Enum.map(&Map.get(&1, :source_address))
-        |> Enum.reject(&is_nil/1)
-        |> Enum.frequencies()
-        |> Enum.filter(fn {_source, count} -> count > 1 end)
-        |> Map.new()
+  @doc false
+  @spec shared_destination?(term()) :: boolean()
+  def shared_destination?(address) do
+    normalized = Address.normalize_destination(address)
 
-      Enum.each(devices, &update_device_max_concurrency(&1, shared_sources))
-      :ok
+    case share_ids(:address, normalized) do
+      ids when is_map(ids) -> MapSet.size(ids) > 1
+      _missing -> false
     end
   end
 
   @spec get_device(integer()) :: {:ok, map()} | :error
   def get_device(device_id) do
-    case :ets.lookup(@table, device_id) do
-      [{^device_id, device}] -> {:ok, device}
-      [] -> :error
+    if :ets.whereis(@table) == :undefined do
+      :error
+    else
+      case :ets.lookup(@table, device_id) do
+        [{^device_id, device}] -> {:ok, device}
+        [] -> :error
+      end
     end
   end
 
@@ -363,8 +364,6 @@ defmodule BacView.BACnet.Discovery do
             end)
             |> Enum.reject(&is_nil/1)
 
-          apply_shared_source_max_concurrency()
-
           Logger.info("Discovery scan finished with #{length(devices)} device(s)")
 
           broadcast_devices()
@@ -482,14 +481,20 @@ defmodule BacView.BACnet.Discovery do
       |> maybe_put_npci_source(npci_source)
       |> maybe_put_source_address(source_address)
 
-    device =
+    previous =
       case :ets.lookup(@table, instance) do
-        [{^instance, existing}] -> merge_discovered_device(existing, incoming)
-        [] -> new_discovered_device(incoming)
+        [{^instance, existing}] -> existing
+        [] -> nil
+      end
+
+    device =
+      case previous do
+        nil -> new_discovered_device(incoming)
+        existing -> merge_discovered_device(existing, incoming)
       end
 
     :ets.insert(@table, {instance, device})
-    apply_shared_source_max_concurrency()
+    update_share_indexes(previous, device)
     GenServer.cast(__MODULE__, {:schedule_name_fetch, instance})
     device
   end
@@ -541,17 +546,93 @@ defmodule BacView.BACnet.Discovery do
 
   defp maybe_put_source_address(device, _source_address), do: device
 
-  defp update_device_max_concurrency(device, shared_sources) do
-    source = Map.get(device, :source_address)
+  defp update_share_indexes(previous, device) do
+    ensure_share_table()
 
-    max_concurrency =
-      if source && Map.get(shared_sources, source, 0) > 0, do: 1, else: nil
+    id = device.id
+    prev_address = previous && Map.get(previous, :address)
+    next_address = Map.get(device, :address)
 
-    updated = put_device_max_concurrency(device, max_concurrency)
-
-    if updated != device do
-      :ets.insert(@table, {device.id, updated})
+    # Concurrency / invoke-id sharing is based on the *request destination*
+    # (device.address), not the I-Am UDP source. BBMD discovery delivers every
+    # I-Am from the BBMD IP, which must not serialize independent BACnet/IP peers.
+    if prev_address != next_address do
+      share_delete(:address, prev_address, id)
+      share_put(:address, next_address, id)
+    else
+      share_put(:address, next_address, id)
     end
+
+    [prev_address, next_address]
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> Enum.each(&refresh_shared_destination/1)
+  end
+
+  defp rebuild_share_indexes() do
+    if :ets.whereis(@table) == :undefined do
+      :ok
+    else
+      ensure_share_table()
+      :ets.delete_all_objects(@share_table)
+
+      devices = list_devices()
+
+      Enum.each(devices, fn device ->
+        share_put(:address, Map.get(device, :address), device.id)
+      end)
+
+      devices
+      |> Enum.map(&Map.get(&1, :address))
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+      |> Enum.each(&refresh_shared_destination/1)
+
+      :ok
+    end
+  end
+
+  defp refresh_shared_destination(address) do
+    ids = prune_share_ids(:address, address)
+    shared? = MapSet.size(ids) > 1
+    # Serialize property/object scan concurrency only when multiple devices are
+    # addressed at the same transport destination (e.g. MS/TP gateway IP).
+    max_concurrency = if shared?, do: 1, else: nil
+
+    Enum.each(ids, fn id ->
+      case get_device(id) do
+        {:ok, device} ->
+          updated =
+            device
+            |> put_shared_destination(shared?)
+            |> put_device_max_concurrency(max_concurrency)
+
+          if updated != device do
+            :ets.insert(@table, {id, updated})
+          end
+
+        :error ->
+          :ok
+      end
+    end)
+  end
+
+  defp prune_share_ids(kind, key) do
+    ids =
+      kind
+      |> share_ids(key)
+      |> Enum.filter(fn id -> match?({:ok, _device}, get_device(id)) end)
+      |> MapSet.new()
+
+    map_key = {kind, key}
+
+    if MapSet.size(ids) == 0 do
+      if :ets.whereis(@share_table) != :undefined, do: :ets.delete(@share_table, map_key)
+    else
+      :ets.insert(@share_table, {map_key, ids})
+    end
+
+    ids
   end
 
   defp put_device_max_concurrency(device, nil), do: Map.delete(device, :max_concurrency)
@@ -559,9 +640,58 @@ defmodule BacView.BACnet.Discovery do
   defp put_device_max_concurrency(device, max_concurrency),
     do: Map.put(device, :max_concurrency, max_concurrency)
 
+  defp put_shared_destination(device, true), do: Map.put(device, :shared_destination?, true)
+  defp put_shared_destination(device, false), do: Map.delete(device, :shared_destination?)
+
+  defp ensure_share_table() do
+    if :ets.whereis(@share_table) == :undefined do
+      :ets.new(@share_table, [:named_table, :set, :public, read_concurrency: true])
+    end
+
+    :ok
+  end
+
+  defp share_put(_kind, nil, _id), do: :ok
+
+  defp share_put(kind, key, id) do
+    ensure_share_table()
+    map_key = {kind, key}
+    ids = share_ids(kind, key)
+    :ets.insert(@share_table, {map_key, MapSet.put(ids, id)})
+  end
+
+  defp share_delete(_kind, nil, _id), do: :ok
+
+  defp share_delete(kind, key, id) do
+    ensure_share_table()
+    map_key = {kind, key}
+    ids = MapSet.delete(share_ids(kind, key), id)
+
+    if MapSet.size(ids) == 0 do
+      :ets.delete(@share_table, map_key)
+    else
+      :ets.insert(@share_table, {map_key, ids})
+    end
+  end
+
+  defp share_ids(kind, key) do
+    if :ets.whereis(@share_table) == :undefined do
+      MapSet.new()
+    else
+      case :ets.lookup(@share_table, {kind, key}) do
+        [{_key, ids}] -> ids
+        [] -> MapSet.new()
+      end
+    end
+  end
+
   defp do_clear_devices() do
     if :ets.whereis(@table) != :undefined do
       :ets.delete_all_objects(@table)
+    end
+
+    if :ets.whereis(@share_table) != :undefined do
+      :ets.delete_all_objects(@share_table)
     end
 
     broadcast_devices()
@@ -729,7 +859,7 @@ defmodule BacView.BACnet.Discovery do
            object,
            property,
            remote_device_id: device_id,
-           log_read_error: false
+           log_errors: false
          ) do
       {:ok, value} ->
         normalize.(value)

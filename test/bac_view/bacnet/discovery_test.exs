@@ -78,46 +78,86 @@ defmodule BacView.BACnet.DiscoveryTest do
     end
   end
 
-  describe "apply_shared_source_max_concurrency/0" do
+  describe "shared destination max_concurrency" do
     setup do
-      if :ets.whereis(:bacview_devices) == :undefined do
-        :ets.new(:bacview_devices, [:named_table, :set, :public])
+      for table <- [:bacview_devices, :bacview_device_share] do
+        if :ets.whereis(table) == :undefined do
+          :ets.new(table, [:named_table, :set, :public])
+        else
+          :ets.delete_all_objects(table)
+        end
       end
 
       on_exit(fn ->
-        if :ets.whereis(:bacview_devices) != :undefined do
-          :ets.delete(:bacview_devices)
+        for table <- [:bacview_devices, :bacview_device_share] do
+          if :ets.whereis(table) != :undefined do
+            :ets.delete_all_objects(table)
+          end
         end
       end)
 
       {:ok, iam: elem(IAmCollector.parse_iam(@iam_apdu), 1)}
     end
 
-    test "sets max_concurrency to 1 when multiple devices share a source address", %{iam: iam} do
-      router_source = {{192, 168, 1, 1}, 47_808}
+    test "does not set max_concurrency when only I-Am UDP source is shared (BBMD)", %{iam: iam} do
+      # Who-Is via BBMD: every I-Am arrives from the BBMD IP, but each device has
+      # its own BACnet/IP address for subsequent requests.
+      bbmd_source = {{192, 168, 100, 31}, 47_808}
       iam_100 = %{iam | device: %{iam.device | instance: 100}}
       iam_200 = %{iam | device: %{iam.device | instance: 200}}
 
-      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808}, nil, router_source)
-      Discovery.upsert_iam_device(iam_200, {{10, 0, 0, 6}, 47_808}, nil, router_source)
+      Discovery.upsert_iam_device(iam_100, {{192, 168, 100, 111}, 47_808}, nil, bbmd_source)
+      Discovery.upsert_iam_device(iam_200, {{192, 168, 100, 112}, 47_808}, nil, bbmd_source)
 
-      assert {:ok, %{max_concurrency: 1}} = Discovery.get_device(100)
-      assert {:ok, %{max_concurrency: 1}} = Discovery.get_device(200)
+      assert {:ok, device_100} = Discovery.get_device(100)
+      assert {:ok, device_200} = Discovery.get_device(200)
+      refute Map.has_key?(device_100, :max_concurrency)
+      refute Map.has_key?(device_200, :max_concurrency)
+      refute Map.get(device_100, :shared_destination?)
     end
 
-    test "clears max_concurrency when only one device remains on a source address", %{iam: iam} do
-      router_source = {{192, 168, 1, 1}, 47_808}
+    test "sets max_concurrency to 1 when multiple devices share a request destination", %{
+      iam: iam
+    } do
+      gateway = {{10, 0, 0, 1}, 47_808}
       iam_100 = %{iam | device: %{iam.device | instance: 100}}
       iam_200 = %{iam | device: %{iam.device | instance: 200}}
 
-      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808}, nil, router_source)
-      Discovery.upsert_iam_device(iam_200, {{10, 0, 0, 6}, 47_808}, nil, router_source)
+      Discovery.upsert_iam_device(iam_100, gateway)
+      Discovery.upsert_iam_device(iam_200, gateway)
+
+      assert {:ok, %{max_concurrency: 1, shared_destination?: true}} = Discovery.get_device(100)
+      assert {:ok, %{max_concurrency: 1, shared_destination?: true}} = Discovery.get_device(200)
+      assert Discovery.shared_destination?(gateway)
+    end
+
+    test "clears max_concurrency when only one device remains on a destination", %{iam: iam} do
+      gateway = {{10, 0, 0, 1}, 47_808}
+      iam_100 = %{iam | device: %{iam.device | instance: 100}}
+      iam_200 = %{iam | device: %{iam.device | instance: 200}}
+
+      Discovery.upsert_iam_device(iam_100, gateway)
+      Discovery.upsert_iam_device(iam_200, gateway)
 
       :ets.delete_all_objects(:bacview_devices)
-      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808}, nil, router_source)
+      Discovery.upsert_iam_device(iam_100, gateway)
 
       assert {:ok, device} = Discovery.get_device(100)
       refute Map.has_key?(device, :max_concurrency)
+      refute Map.get(device, :shared_destination?)
+    end
+
+    test "does not set max_concurrency for distinct destinations", %{iam: iam} do
+      iam_100 = %{iam | device: %{iam.device | instance: 100}}
+      iam_200 = %{iam | device: %{iam.device | instance: 200}}
+
+      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808})
+      Discovery.upsert_iam_device(iam_200, {{10, 0, 0, 6}, 47_808})
+
+      assert {:ok, device_100} = Discovery.get_device(100)
+      assert {:ok, device_200} = Discovery.get_device(200)
+      refute Map.has_key?(device_100, :max_concurrency)
+      refute Map.has_key?(device_200, :max_concurrency)
     end
   end
 

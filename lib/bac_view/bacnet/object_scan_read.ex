@@ -19,9 +19,7 @@ defmodule BacView.BACnet.ObjectScanRead do
   @spec read_object_fallback(term(), ObjectIdentifier.t(), keyword()) ::
           {:ok, term()} | {:error, term()}
   def read_object_fallback(address, %ObjectIdentifier{} = object, opts) do
-    read_opts = Keyword.put_new(opts, :log_read_error, false)
-
-    case Client.read_object(address, object, read_opts) do
+    case Client.read_object(address, object, opts) do
       {:ok, obj} ->
         {:ok, obj}
 
@@ -30,9 +28,10 @@ defmodule BacView.BACnet.ObjectScanRead do
 
       {:error, reason} = err ->
         if Segmentation.rpm_fallback_error?(err) do
+          Client.log_read_error(:read_object, address, object, nil, reason, level: :debug)
           PropertyReader.read_properties_map(Client, address, object, opts)
         else
-          Client.log_read_error(:read_object, address, object, nil, reason, opts)
+          Client.log_read_error(:read_object, address, object, nil, reason)
           err
         end
     end
