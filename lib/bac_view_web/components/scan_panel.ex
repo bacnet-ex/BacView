@@ -15,6 +15,7 @@ defmodule BacViewWeb.ScanPanel do
     <.form
       for={@form}
       id={@id}
+      phx-hook="ScanFormPersist"
       phx-change="scan_form_change"
       phx-submit="scan_network"
       class={[

@@ -49,6 +49,28 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     assert has_element?(view, "#scan_timeout_ms[disabled]")
   end
 
+  test "scan form restore event restores persisted values", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#scan-network-form")
+    |> render_hook("scan_form_restore", %{
+      "scan" => %{
+        "timeout_ms" => "8000",
+        "target_ip" => "10.0.0.1",
+        "device_id_low" => "100",
+        "device_id_high" => "200",
+        "vendor_id" => "42"
+      }
+    })
+
+    assert has_element?(view, "#scan_timeout_ms[value='8000']")
+    assert has_element?(view, "#scan_target_ip[value='10.0.0.1']")
+    assert has_element?(view, "#scan_device_id_low[value='100']")
+    assert has_element?(view, "#scan_device_id_high[value='200']")
+    assert has_element?(view, "#scan_vendor_id[value='42']")
+  end
+
   test "scan submit via form enter still works", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 

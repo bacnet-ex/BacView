@@ -165,6 +165,10 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("scan_form_restore", %{"scan" => scan_params}, socket) do
+    {:noreply, assign(socket, :scan_form, scan_form(scan_params))}
+  end
+
   def handle_event("scan_form_change", %{"scan" => scan_params}, socket) do
     {:noreply, assign(socket, :scan_form, scan_form(scan_params))}
   end
