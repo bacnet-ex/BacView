@@ -133,7 +133,7 @@ defmodule BacView.MixProject do
         "cmd#{cmd_prefix} #{env_desktop} mix deps.compile",
         "assets.setup",
         "cmd#{cmd_prefix} #{env_desktop} mix compile",
-        "cmd#{cmd_prefix} cd src-tauri && cargo install tauri-cli --version \"^2.11.4\" --locked -Z install-upgrade",
+        "cmd#{cmd_prefix} cd src-tauri && cargo install tauri-cli --version \"^2.11.4\" --locked || true",
         "cmd#{cmd_prefix} cd src-tauri && cargo tauri icon ../priv/static/icon.png"
       ],
       "desktop.server": [
