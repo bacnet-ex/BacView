@@ -1,0 +1,117 @@
+name: Desktop Release Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+concurrency:
+  group: desktop-release-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: ${{ matrix.platform }}-${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: linux
+            arch: amd64
+            runner: ubuntu-latest
+          - platform: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - platform: windows
+            arch: amd64
+            runner: windows-latest
+          - platform: windows
+            arch: arm64
+            runner: windows-11-arm
+
+    env:
+      MIX_ENV: prod
+      # Compile-time flag for elixir-desktop / Tauri (see mix.exs and README).
+      BACVIEW_DESKTOP: "1"
+      CARGO_TERM_COLOR: always
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.platform == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential curl git pkg-config file patchelf xdg-utils \
+            libssl-dev libdbus-1-dev libgtk-3-dev libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev librsvg2-dev libxdo-dev \
+            squashfs-tools rpm
+          # AppImage bundling: package name differs on Ubuntu 22.04 vs 24.04.
+          sudo apt-get install -y --no-install-recommends libfuse2t64 \
+            || sudo apt-get install -y --no-install-recommends libfuse2
+
+      - name: Set up Elixir
+        uses: erlef/setup-beam@v1
+        with:
+          elixir-version: "1.18.4"
+          otp-version: "27.3"
+          version-type: strict
+
+      - name: Set up Rust (stable)
+        uses: dtolnay/rust-toolchain@stable
+        if: matrix.platform == 'linux'
+
+      - name: Set up Rust (nightly)
+        uses: dtolnay/rust-toolchain@nightly
+        if: matrix.platform == 'windows'
+
+      - name: Cache Mix
+        uses: actions/cache@v4
+        with:
+          path: |
+            deps
+            _build
+          key: mix-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('mix.lock') }}
+          restore-keys: |
+            mix-${{ matrix.platform }}-${{ matrix.arch }}-
+
+      - name: Cache Cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin/
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            src-tauri/target
+          key: cargo-${{ matrix.platform }}-${{ matrix.arch }}-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ matrix.platform }}-${{ matrix.arch }}-
+
+      - name: Install Hex and Rebar
+        run: |
+          mix local.hex --force
+          mix local.rebar --force
+
+      - name: Build Elixir mix release
+        run: |
+          mix setup
+          mix desktop.setup
+          mix desktop.prepare_release
+
+      - name: Build Tauri release
+        run: cd src-tauri && cargo tauri build
+
+      - name: Upload desktop artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bacview-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            src-tauri/target/release/bundle/**/*
+          if-no-files-found: error
+          retention-days: 30

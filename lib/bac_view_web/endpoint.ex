@@ -1,48 +1,15 @@
-defmodule BacViewWeb.Endpoint.CompileHelper do
-  @moduledoc false
-
-  @desktop_mode Application.compile_env(:bacview, :desktop_mode)
-
-  # Workaround to compile errors that expands `use` before the `if`
-  if @desktop_mode do
-    defmacro use_endpoint() do
-      quote do
-        use Desktop.Endpoint, otp_app: :bacview
-      end
-    end
-  else
-    defmacro use_endpoint() do
-      quote do
-        use Phoenix.Endpoint, otp_app: :bacview
-      end
-    end
-  end
-end
-
 defmodule BacViewWeb.Endpoint do
-  @desktop_mode Application.compile_env(:bacview, :desktop_mode)
-
-  # Workaround to compile errors that expands `use` before the `if`
-  import BacViewWeb.Endpoint.CompileHelper, only: [use_endpoint: 0]
-  use_endpoint()
+  use Phoenix.Endpoint, otp_app: :bacview
 
   # The session will be stored in the cookie and signed,
   # this means its contents can be read but not tampered with.
   # Set :encryption_salt if you would also like to encrypt it.
-  @session_options (if @desktop_mode do
-                      [
-                        store: :ets,
-                        key: "_bacview_key",
-                        table: :bacview_session
-                      ]
-                    else
-                      [
-                        store: :cookie,
-                        key: "_bacview_key",
-                        signing_salt: "Zq3u03aF",
-                        same_site: "Lax"
-                      ]
-                    end)
+  @session_options [
+    store: :cookie,
+    key: "_bacview_key",
+    signing_salt: "Zq3u03aF",
+    same_site: "Lax"
+  ]
 
   socket("/live", Phoenix.LiveView.Socket,
     websocket: [connect_info: [session: @session_options]],
@@ -86,11 +53,5 @@ defmodule BacViewWeb.Endpoint do
   plug(Plug.MethodOverride)
   plug(Plug.Head)
   plug(Plug.Session, @session_options)
-
-  # Maybe also needs "and not code_reloading?"
-  if @desktop_mode do
-    plug(Desktop.Auth)
-  end
-
   plug(BacViewWeb.Router)
 end

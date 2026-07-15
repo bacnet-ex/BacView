@@ -32,7 +32,12 @@ defmodule BacView.MixProject do
 
   def cli() do
     [
-      preferred_envs: [precommit: :test, desktop_installer: :prod, "desktop.installer": :prod]
+      preferred_envs: [
+        precommit: :test,
+        "desktop.prepare_release": :prod,
+        "desktop.installer": :prod,
+        "mobile.android.build": :prod
+      ]
     ]
   end
 
@@ -77,10 +82,7 @@ defmodule BacView.MixProject do
 
   defp desktop_deps() do
     if desktop_mode?() do
-      [
-        {:desktop, github: "elixir-desktop/desktop"},
-        {:desktop_deployment, github: "elixir-desktop/deployment", runtime: false}
-      ]
+      [{:elixirkit, "~> 0.1.0"}]
     else
       []
     end
@@ -103,6 +105,20 @@ defmodule BacView.MixProject do
   end
 
   defp aliases() do
+    cmd_prefix =
+      if Version.compare(System.version(), "1.19.0-dev") != :lt do
+        " --shell"
+      else
+        ""
+      end
+
+    env_desktop =
+      if windows?() do
+        "set BACVIEW_DESKTOP=1&&"
+      else
+        "BACVIEW_DESKTOP=1"
+      end
+
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
       "assets.setup": ["tailwind.install --if-missing", "esbuild.install --if-missing"],
@@ -113,15 +129,41 @@ defmodule BacView.MixProject do
         "phx.digest"
       ],
       "desktop.setup": [
-        "cmd BACVIEW_DESKTOP=1 mix deps.get",
+        "cmd#{cmd_prefix} #{env_desktop} mix deps.get",
+        "cmd#{cmd_prefix} #{env_desktop} mix deps.compile",
         "assets.setup",
-        "cmd BACVIEW_DESKTOP=1 mix compile"
+        "cmd#{cmd_prefix} #{env_desktop} mix compile",
+        "cmd#{cmd_prefix} cd src-tauri && cargo install tauri-cli --version \"^2.11.4\" --locked",
+        "cmd#{cmd_prefix} cd src-tauri && cargo tauri icon ../priv/static/icon.png"
       ],
-      "desktop.server": ["cmd BACVIEW_DESKTOP=1 mix run --no-halt"],
-      desktop_installer: [
+      "desktop.server": [
+        "cmd#{cmd_prefix} #{env_desktop} mix compile --force",
+        "cmd#{cmd_prefix} cd src-tauri && cargo tauri dev"
+      ],
+      "desktop.prepare_release": [
+        "desktop.setup",
         "assets.deploy",
-        "cmd BACVIEW_DESKTOP=1 mix desktop.installer"
+        "compile --force",
+        "release --overwrite --path src-tauri/target/rel"
       ],
+      "desktop.installer": [
+        "desktop.prepare_release",
+        # "cmd#{cmd_prefix} cd src-tauri && cargo tauri build --bundles deb"
+        "cmd#{cmd_prefix} cd src-tauri && cargo tauri build"
+      ],
+      # "mobile.prepare_release": [
+      #   "desktop.setup",
+      #   fn _args -> Enum.each(Path.wildcard("src-tauri/target/rel/**/*.gz"), &File.rm/1) end,
+      #   "release --overwrite --path src-tauri/target/rel"
+      # ],
+      # "mobile.android_dev": [
+      #   "mobile.prepare_release",
+      #   "cmd#{cmd_prefix} cd src-tauri && cargo tauri android dev"
+      # ],
+      # "mobile.android.build": [
+      #   "mobile.prepare_release",
+      #   "cmd#{cmd_prefix} cd src-tauri && cargo tauri android build"
+      # ],
       precommit: [
         "deps.unlock --unused",
         "compile --warnings-as-errors",
@@ -134,23 +176,25 @@ defmodule BacView.MixProject do
   end
 
   defp releases() do
-    web_release = [
-      bacview: [
-        include_executables_for: [:windows, :unix],
-        applications: [runtime_tools: :permanent],
-        steps: [:assemble, :tar],
-        overlays: ["rel/overlays"]
-      ]
-    ]
-
     if desktop_mode?() do
-      Keyword.put(web_release, :bacview_desktop,
-        include_executables_for: [:windows, :unix],
-        applications: [runtime_tools: :permanent, ssl: :permanent],
-        steps: [:assemble, &Desktop.Deployment.generate_installer/1]
-      )
+      [
+        bacview: [
+          include_executables_for: [:windows, :unix],
+          applications: [runtime_tools: :permanent, ssl: :permanent],
+          # codesign is for MacOS - see elixirkit!
+          # &ElixirKit.Release.codesign/1
+          steps: [:assemble]
+        ]
+      ]
     else
-      web_release
+      [
+        bacview: [
+          include_executables_for: [:windows, :unix],
+          applications: [runtime_tools: :permanent],
+          steps: [:assemble, :tar],
+          overlays: ["rel/overlays"]
+        ]
+      ]
     end
   end
 
@@ -158,7 +202,7 @@ defmodule BacView.MixProject do
     [
       name: "BacView",
       name_long: "BacView BACnet Explorer",
-      description: "BACnet network explorer for desktop",
+      description: "BACnet explorer built in Elixir.",
       description_long:
         "Discover BACnet devices, browse objects, subscribe to COV updates, and monitor alarms.",
       icon: "priv/static/icon.png",
@@ -169,7 +213,15 @@ defmodule BacView.MixProject do
 
   def desktop_mode?(), do: System.get_env("BACVIEW_DESKTOP") in ~w(1 true yes)
 
-  defp include_circuits_uart?(), do: not windows?()
+  defp include_circuits_uart?() do
+    case System.get_env("BACVIEW_ENABLE_MSTP") do
+      nil ->
+        Code.ensure_loaded?(Circuits.UART) or not windows?()
+
+      str ->
+        str in ~w(1 true yes)
+    end
+  end
 
   defp windows?(), do: match?({:win32, _}, :os.type())
 end

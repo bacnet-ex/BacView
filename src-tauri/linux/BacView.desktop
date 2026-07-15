@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=BacView
+Comment=BACnet Explorer built in Elixir
+Exec={{exec}}
+Icon={{icon}}
+Terminal=false
+Categories=Utility;Network;Development;
+StartupWMClass=BacView

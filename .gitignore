@@ -32,6 +32,7 @@ bacview-*.tar
 /priv/static/*.gz
 
 # Editors
+/.dexter/
 /.elixir_ls/
 /.expert/
 /.lexical/

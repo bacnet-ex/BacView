@@ -51,20 +51,27 @@ Copy `.env.example` to `.env` and adjust as needed (optional in dev).
 
 ## Desktop app -experimental- (optional)
 
-BacView can also run as a native desktop app via [elixir-desktop](https://github.com/elixir-desktop/desktop). The web workflow above stays the default.
+BacView can also run as a native desktop app via [ElixirKit](https://hex.pm/packages/elixirkit) and [Tauri](https://v2.tauri.app/).
 
 Desktop mode is selected at **compile time** with `BACVIEW_DESKTOP=1`. Run `mix clean` when switching between web and desktop builds.
+The environment variable ensures that we only pull desktop dependencies when we need them and otherwise keep it clean.
 
-**Requirements:** Erlang/OTP with wxWidgets support (see the [desktop getting started guide](https://github.com/elixir-desktop/desktop/blob/main/guides/getting_started.md)). Build installers on native Linux or Windows (msys2 for Windows).
+**Requirements:** Some system packages are required for Tauri.
 
 For recent Debian-based installations:
 ```bash
-sudo apt install inotify-tools libtool automake libgmp-dev make \
-     libwxgtk-webview3.2-dev libssl-dev libncurses-dev curl git \
-     libwxgtk3.2-dev libgtk-3-dev pkg-config -y
+sudo apt update
+sudo apt install libwebkit2gtk-4.1-dev \
+  build-essential \
+  curl \
+  wget \
+  file \
+  libxdo-dev \
+  libssl-dev \
+  libayatana-appindicator3-dev \
+  librsvg2-dev \
+  inotify-tools
 ```
-
-For adsf/mise builds: Erlang build must be installed after installing the packages above.
 
 Starting the desktop application:
 
@@ -73,16 +80,16 @@ BACVIEW_DESKTOP=1 mix deps.get
 BACVIEW_DESKTOP=1 mix desktop.server
 ```
 
-Package a distributable installer (`.run` on Linux, `.exe` on Windows):
+Package a distributable installer (`.{AppImage,deb,rpm}` on Linux, `.exe` on Windows):
 
 ```bash
-mix desktop_installer
+mix do desktop.setup + desktop.installer
 ```
 
 Desktop notes:
 
 - Settings persist under `~/.config/bacview/runtime_settings.json`
-- OS locale is detected on first launch (`Desktop.identify_default_locale/1`); DE/EN can still be switched in the app
+- OS locale is detected on launch and applied; DE/EN can still be switched in the app
 - MS/TP will be included if the dependency `circuits_uart` is present or non-Windows OS - typically it will be omitted on Windows (due to NIF)
 
 Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
@@ -97,6 +104,7 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 | `BACVIEW_BACSTACK_DEBUG` | — | Enable verbose bacstack debug logs (`1` / `true`) |
 | `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
 | `BACVIEW_DESKTOP` | — | Set to `1` at compile time to build the desktop app (see above) |
+| `BACVIEW_DESKTOP_LOCALE` | - | The locale to use on startup (automatically set by the desktop app) |
 | `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback. Lower (e.g. `1`) if old devices are overwhelmed |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 | `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
