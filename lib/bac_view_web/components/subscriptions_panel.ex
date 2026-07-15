@@ -271,11 +271,11 @@ defmodule BacViewWeb.SubscriptionsPanel do
                 phx-click={JS.navigate(object_path(@device_id, sub.object_id, @list_opts))}
                 title={sub.description}
               >
-                {sub.description || "—"}
+                {sub.description || "-"}
               </td>
               <td class="bac-mono">{sub.property}</td>
               <td class="bac-text-faint">{format_time(sub.last_cov_at)}</td>
-              <td class="bac-mono text-[var(--bac-emerald)]">{sub.last_value_formatted || "—"}</td>
+              <td class="bac-mono text-[var(--bac-emerald)]">{sub.last_value_formatted || "-"}</td>
               <td class="bac-text-faint">{remaining_label(sub, @locale, @locale_version)}</td>
               <td>
                 <div class="flex flex-wrap items-center gap-1">
@@ -427,7 +427,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                 {entry.object_id.type}:{entry.object_id.instance}
               </td>
               <td class="bac-mono">{entry.property}</td>
-              <td class="bac-mono text-[var(--bac-emerald)]">{entry.formatted || "—"}</td>
+              <td class="bac-mono text-[var(--bac-emerald)]">{entry.formatted || "-"}</td>
               <td class="bac-text-faint">
                 {confirmed_label(entry.confirmed, @locale, @locale_version)}
               </td>
@@ -447,27 +447,27 @@ defmodule BacViewWeb.SubscriptionsPanel do
     subscriptions != [] and Enum.all?(subscriptions, &selected?(keys, &1))
   end
 
-  defp format_time(nil), do: "—"
+  defp format_time(nil), do: "-"
 
   defp format_time(%DateTime{} = dt),
     do: BacView.Timezone.format(dt, "%H:%M:%S")
 
-  defp format_datetime(nil), do: "—"
+  defp format_datetime(nil), do: "-"
 
   defp format_datetime(%DateTime{} = dt),
     do: BacView.Timezone.format(dt, "%Y-%m-%d %H:%M:%S")
 
   defp confirmed_label(true, locale, lv), do: t(locale, lv, "Ja")
   defp confirmed_label(false, locale, lv), do: t(locale, lv, "Nein")
-  defp confirmed_label(_true, locale, lv), do: t(locale, lv, "—")
+  defp confirmed_label(_true, locale, lv), do: t(locale, lv, "-")
 
-  defp time_remaining_label(nil), do: "—"
+  defp time_remaining_label(nil), do: "-"
   defp time_remaining_label(sec) when is_integer(sec), do: "#{sec}s"
 
   defp remaining_label(%{lifetime: 0}, locale, locale_version),
     do: t(locale, locale_version, "Unbegrenzt")
 
-  defp remaining_label(%{expires_at: nil}, _locale, _locale_version), do: "—"
+  defp remaining_label(%{expires_at: nil}, _locale, _locale_version), do: "-"
 
   defp remaining_label(%{expires_at: expires_at}, locale, locale_version) do
     sec = max(0, DateTime.diff(expires_at, DateTime.utc_now(), :second))

@@ -19,7 +19,7 @@ defmodule BacView.BACnet.Protocol.EventTimestamp do
   end
 
   def alarm_since(_timestamps, _event_state) do
-    %{at: nil, label: "—", sort_key: 0}
+    %{at: nil, label: "-", sort_key: 0}
   end
 
   defp timestamp_for_state(%EventTimestamps{} = timestamps, state) do
@@ -60,7 +60,7 @@ defmodule BacView.BACnet.Protocol.EventTimestamp do
 
   defp format_timestamp(_format_timestamp), do: unknown_timestamp()
 
-  defp unknown_timestamp(), do: %{at: nil, label: "—", sort_key: 0}
+  defp unknown_timestamp(), do: %{at: nil, label: "-", sort_key: 0}
 
   defp format_bacnet_time(%BACnetTime{hour: hour, minute: minute, second: second}) do
     hour = String.pad_leading(Integer.to_string(hour), 2, "0")

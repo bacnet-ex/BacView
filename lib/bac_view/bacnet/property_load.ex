@@ -66,7 +66,7 @@ defmodule BacView.BACnet.PropertyLoad do
   does **not** force the scan fallback path up front.
 
   Optional `opts`:
-  - `:on_property_progress` — `fun.(%{stage: :reading_properties, done: n, total: m})`
+  - `:on_property_progress` - `fun.(%{stage: :reading_properties, done: n, total: m})`
     during individual (non-RPM) property streams
   """
   @spec read(

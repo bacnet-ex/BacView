@@ -39,7 +39,7 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
       assert enriched.enum_type == :event_state
       assert enriched.type == "ENUMERATED"
       assert length(enriched.enum_options) > 0
-      assert enriched.value_formatted == "Normal"
+      assert enriched.value_formatted == "Normal (0)"
     end
 
     test "leaves non-constant properties without enum metadata" do

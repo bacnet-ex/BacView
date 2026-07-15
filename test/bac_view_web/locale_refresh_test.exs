@@ -37,7 +37,7 @@ defmodule BacViewWeb.LocaleRefreshTest do
 
     refreshed = PropertyEnumeration.relocalize_property(prop)
 
-    assert refreshed.value_formatted == "no fault detected"
+    assert refreshed.value_formatted == "no fault detected (0)"
     assert Enum.any?(refreshed.enum_options, &(&1.label =~ "(0)"))
   end
 end

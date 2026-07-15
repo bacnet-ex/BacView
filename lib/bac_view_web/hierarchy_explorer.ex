@@ -189,7 +189,7 @@ defmodule BacViewWeb.HierarchyExplorer do
       object: object,
       writable: Map.get(object, :writable, false),
       commandable: Map.get(object, :commandable, false),
-      present_value_formatted: Map.get(object, :present_value_formatted, "—"),
+      present_value_formatted: Map.get(object, :present_value_formatted, "-"),
       active_priority: Map.get(object, :active_priority),
       status_flags: Map.get(object, :status_flags),
       type_label: Map.get(object, :type_label)

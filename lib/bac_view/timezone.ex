@@ -17,7 +17,7 @@ defmodule BacView.Timezone do
 
   @doc "Formats a DateTime in the application timezone."
   @spec format(DateTime.t() | nil, String.t()) :: String.t()
-  def format(nil, _pattern), do: "—"
+  def format(nil, _pattern), do: "-"
 
   def format(%DateTime{} = dt, pattern) do
     dt

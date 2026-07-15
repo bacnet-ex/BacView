@@ -91,7 +91,7 @@ defmodule BacViewWeb.PropertyValueTest do
   test "renders structs collapsed by default with field count" do
     display = %{
       kind: :struct,
-      formatted: "To Offnormal: —, To Fault: —",
+      formatted: "To Offnormal: -, To Fault: -",
       fields: [
         %{
           key: :to_offnormal,
@@ -104,14 +104,14 @@ defmodule BacViewWeb.PropertyValueTest do
           key: :to_fault,
           label: "To Fault",
           kind: :scalar,
-          formatted: "—",
+          formatted: "-",
           fields: []
         },
         %{
           key: :to_normal,
           label: "To Normal",
           kind: :scalar,
-          formatted: "—",
+          formatted: "-",
           fields: []
         }
       ],

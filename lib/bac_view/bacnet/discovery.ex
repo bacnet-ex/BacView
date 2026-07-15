@@ -593,28 +593,30 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp refresh_shared_destination(address) do
-    ids = prune_share_ids(:address, address)
-    shared? = MapSet.size(ids) > 1
-    # Serialize property/object scan concurrency only when multiple devices are
-    # addressed at the same transport destination (e.g. MS/TP gateway IP).
-    max_concurrency = if shared?, do: 1, else: nil
+    if concurrency_shared_reduction?() do
+      ids = prune_share_ids(:address, address)
+      shared? = MapSet.size(ids) > 1
+      # Serialize property/object scan concurrency only when multiple devices are
+      # addressed at the same transport destination (e.g. MS/TP gateway IP).
+      max_concurrency = if(shared?, do: 1)
 
-    Enum.each(ids, fn id ->
-      case get_device(id) do
-        {:ok, device} ->
-          updated =
-            device
-            |> put_shared_destination(shared?)
-            |> put_device_max_concurrency(max_concurrency)
+      Enum.each(ids, fn id ->
+        case get_device(id) do
+          {:ok, device} ->
+            updated =
+              device
+              |> put_shared_destination(shared?)
+              |> put_device_max_concurrency(max_concurrency)
 
-          if updated != device do
-            :ets.insert(@table, {id, updated})
-          end
+            if updated != device do
+              :ets.insert(@table, {id, updated})
+            end
 
-        :error ->
-          :ok
-      end
-    end)
+          :error ->
+            :ok
+        end
+      end)
+    end
   end
 
   defp prune_share_ids(kind, key) do
@@ -654,10 +656,14 @@ defmodule BacView.BACnet.Discovery do
   defp share_put(_kind, nil, _id), do: :ok
 
   defp share_put(kind, key, id) do
-    ensure_share_table()
-    map_key = {kind, key}
-    ids = share_ids(kind, key)
-    :ets.insert(@share_table, {map_key, MapSet.put(ids, id)})
+    if concurrency_shared_reduction?() do
+      ensure_share_table()
+      map_key = {kind, key}
+      ids = share_ids(kind, key)
+      :ets.insert(@share_table, {map_key, MapSet.put(ids, id)})
+    else
+      :ok
+    end
   end
 
   defp share_delete(_kind, nil, _id), do: :ok
@@ -893,4 +899,12 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp do_normalize_device_name(_do_normalize_device_name), do: nil
+
+  defp concurrency_shared_reduction?() do
+    not Application.get_env(
+      :bacview,
+      :property_read_concurrency_disable_shared_reduction,
+      false
+    )
+  end
 end

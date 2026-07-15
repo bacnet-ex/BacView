@@ -9,7 +9,7 @@ defmodule BacView.BACnet.VendorNames do
   end
 
   @spec label(map(), non_neg_integer() | nil) :: String.t()
-  def label(_names, nil), do: "—"
+  def label(_names, nil), do: "-"
 
   def label(names, vendor_id) when is_integer(vendor_id) do
     case Map.get(names, vendor_id, "") do

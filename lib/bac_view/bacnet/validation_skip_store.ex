@@ -3,8 +3,8 @@ defmodule BacView.BACnet.ValidationSkipStore do
   Owns property-validation skip modes chosen during scan recovery.
 
   Modes match the bacstack `skip_property_validation_remote_object` option:
-  - `:value` — skip value validation only
-  - `true` — skip type and value validation
+  - `:value` - skip value validation only
+  - `true` - skip type and value validation
 
   Resolution order for a read:
   1. Tagged object summaries on the live session (`state.objects`)

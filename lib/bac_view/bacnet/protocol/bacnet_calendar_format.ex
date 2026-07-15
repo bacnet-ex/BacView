@@ -6,7 +6,7 @@ defmodule BacView.BACnet.Protocol.BacnetCalendarFormat do
   alias BACnet.Protocol.BACnetTime
   alias BACnet.Protocol.BACnetTimestamp
 
-  @dash "—"
+  @dash "-"
 
   @spec format(term()) :: String.t()
   def format(%BACnetDateTime{} = datetime), do: format_datetime(datetime)

@@ -50,7 +50,7 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
   def options(_enum_type), do: []
 
   @spec label(atom(), atom() | nil) :: String.t()
-  def label(_enum_type, nil), do: "—"
+  def label(_enum_type, nil), do: "-"
 
   def label(:event_state, value), do: EventFormatter.event_state_label(value)
   def label(:notify_type, value), do: EventFormatter.notify_type_label(value)
@@ -155,7 +155,7 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
   end
 
   defp refresh_display(%{value: value} = prop, enum_type) when is_atom(value) do
-    formatted = label(enum_type, value)
+    formatted = display_label(enum_type, value)
     display = Map.put(prop.value_display, :formatted, formatted)
 
     prop
@@ -205,6 +205,13 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
 
   defp multistate_state_property_formatted(_prop, _value, _object, _units, display),
     do: display.formatted
+
+  defp display_label(enum_type, name) when is_atom(name) do
+    case Constants.by_name(enum_type, name) do
+      {:ok, int_value} -> option_label(enum_type, name, int_value)
+      :error -> label(enum_type, name)
+    end
+  end
 
   defp option_label(enum_type, name, int_value) do
     "#{label(enum_type, name)} (#{format_constant_value(int_value)})"

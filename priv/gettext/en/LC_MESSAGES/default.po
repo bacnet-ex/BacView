@@ -288,8 +288,8 @@ msgstr "Hyphen (-)"
 msgid "Binär"
 msgstr "Binary"
 
-msgid "Binärdatei — Inhalt kann nicht als Text angezeigt werden."
-msgstr "Binary file — content cannot be displayed as text."
+msgid "Binärdatei - Inhalt kann nicht als Text angezeigt werden."
+msgstr "Binary file - content cannot be displayed as text."
 
 msgid "Bis"
 msgstr "To"

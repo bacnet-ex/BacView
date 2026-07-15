@@ -313,7 +313,7 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   end
 
   defp nil_reset?(s),
-    do: String.downcase(s) in ["null", "nil", "none", "—", "-", "relinquish", "reset"]
+    do: String.downcase(s) in ["null", "nil", "none", "-", "-", "relinquish", "reset"]
 
   defp parse_typed_value(s, %{type: "BOOLEAN"}),
     do: parse_boolean(s)

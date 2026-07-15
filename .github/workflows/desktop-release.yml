@@ -28,13 +28,14 @@ jobs:
           - platform: windows
             arch: amd64
             runner: windows-latest
-          - platform: windows
-            arch: arm64
-            runner: windows-11-arm
+          # setup-beam is currently not supporting windows-arm
+          # - platform: windows
+          #   arch: arm64
+          #   runner: windows-11-arm
 
     env:
       MIX_ENV: prod
-      # Compile-time flag for elixir-desktop / Tauri (see mix.exs and README).
+      # Compile-time flag for Tauri (see mix.exs and README)
       BACVIEW_DESKTOP: "1"
       CARGO_TERM_COLOR: always
 

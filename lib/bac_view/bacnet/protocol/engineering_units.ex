@@ -281,7 +281,7 @@ defmodule BacView.BACnet.Protocol.EngineeringUnits do
   end
 
   @spec label(atom() | String.t() | nil) :: String.t()
-  def label(nil), do: "—"
+  def label(nil), do: "-"
   def label(:no_units), do: "No units"
   def label(unit) when is_binary(unit), do: unit
 

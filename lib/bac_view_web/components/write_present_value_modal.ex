@@ -72,7 +72,7 @@ defmodule BacViewWeb.WritePresentValueModal do
                     {active_priority_value_formatted(@object)}
                   </span>
                 <% else %>
-                  <span class="bac-text-faint">—</span>
+                  <span class="bac-text-faint">-</span>
                 <% end %>
               </p>
             </div>

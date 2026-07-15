@@ -14,7 +14,7 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
     end
 
     test "accepts nil reset aliases" do
-      for alias <- ["null", "nil", "reset", "relinquish", "—"] do
+      for alias <- ["null", "nil", "reset", "relinquish", "-"] do
         assert PropertyWriter.parse_input(alias, %{type: "REAL"}) == {:ok, nil}
       end
     end

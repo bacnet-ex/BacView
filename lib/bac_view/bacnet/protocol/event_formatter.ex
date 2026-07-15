@@ -8,7 +8,7 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
   alias BacView.BACnet.EventRecord
 
   @spec event_state_label(atom() | nil) :: String.t()
-  def event_state_label(nil), do: "—"
+  def event_state_label(nil), do: "-"
 
   def event_state_label(state) do
     case state do
@@ -23,11 +23,11 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
   end
 
   @spec notification_class_label(non_neg_integer() | nil) :: String.t()
-  def notification_class_label(nil), do: "—"
+  def notification_class_label(nil), do: "-"
   def notification_class_label(notification_class), do: "NC #{notification_class}"
 
   @spec notify_type_label(atom() | nil) :: String.t()
-  def notify_type_label(nil), do: "—"
+  def notify_type_label(nil), do: "-"
 
   def notify_type_label(type) do
     case type do
@@ -39,7 +39,7 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
   end
 
   @spec event_type_label(atom() | nil) :: String.t()
-  def event_type_label(nil), do: "—"
+  def event_type_label(nil), do: "-"
 
   def event_type_label(type) do
     case type do
@@ -60,7 +60,7 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
   end
 
   @spec priority_label(non_neg_integer() | nil) :: String.t()
-  def priority_label(nil), do: "—"
+  def priority_label(nil), do: "-"
   def priority_label(priority), do: Integer.to_string(priority)
 
   @spec ack_status_label(map()) :: String.t()

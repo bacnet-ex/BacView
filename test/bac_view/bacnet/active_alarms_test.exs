@@ -155,7 +155,7 @@ defmodule BacView.BACnet.ActiveAlarmsTest do
 
     since = ActiveAlarms.object_alarm_since(obj)
 
-    assert since.label == "—"
+    assert since.label == "-"
     assert since.sort_key == DateTime.to_unix(updated_at, :microsecond)
   end
 

@@ -122,7 +122,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   end
 
   @spec format_value(term(), term()) :: String.t()
-  def format_value(nil, _units), do: "—"
+  def format_value(nil, _units), do: "-"
 
   def format_value(value, units) when is_number(value) and not is_nil(units) do
     case EngineeringUnits.symbol(units) do
@@ -151,7 +151,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   def format_value(%PriorityArray{} = value, _units) do
     case PriorityArray.get_value(value) do
       {priority, active} -> "#{format_value(active, nil)} (P#{priority})"
-      nil -> "—"
+      nil -> "-"
     end
   end
 
@@ -283,7 +283,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   def bitstring_value?(_value), do: false
 
   @spec property_type(term()) :: String.t()
-  def property_type(nil), do: "—"
+  def property_type(nil), do: "-"
   def property_type(value) when is_float(value), do: "REAL"
   def property_type(value) when is_integer(value), do: "INTEGER"
   def property_type(value) when is_boolean(value), do: "BOOLEAN"

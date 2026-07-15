@@ -3,7 +3,7 @@
 BACnet explorer built in Elixir with Phoenix LiveView and [bacstack](https://github.com/bacnet-ex/bacstack).
 
 Discover devices, browse Structured View hierarchies or create your own based upon object names,
-read and write properties, subscribe to COV updates, and monitor alarms — all in real time from the browser.
+read and write properties, subscribe to COV updates, and monitor alarms - all in real time from the browser.
 
 This project has been built with Grok Build and the Composer 2.5 Fast model.
 
@@ -11,21 +11,21 @@ This project has been built with Grok Build and the Composer 2.5 Fast model.
 
 ## Features
 
-- **Network discovery** — Who-Is / I-Am scan with live device list, filters, and optional limited instance / vendor ranges
-- **BBMD / Foreign Device** — register with a remote BBMD so Who-Is is distributed via Distribute-Broadcast-To-Network; automatic re-registration
-- **Stack settings** — transport (BACnet/IP or MS/TP), network interface / serial port, local device instance, APDU/timeout options; persisted to `runtime_settings.json` and restartable from the UI
-- **Device load & scan** — full device object list scan with progress banner; scan recovery for validation failures (relaxed value/type skip modes)
-- **Hierarchies** — Structured View tree with search and “reveal in flat list”; optional **name-based hierarchy** built from object-name separators when no Structured View exists
-- **Object explorer** — property table with RPM (ReadPropertyMultiple) first, individual ReadProperty fallback, live load progress, status-flag icons, and COV badges
-- **Property writes** — Present_Value (with priority where applicable), generic property write, and weekly schedule editor
-- **COV subscriptions** — per-property or bulk Present_Value subscribe, auto-renewal, active-subscription overview, notification log, and COV history charts (CSV/JSON export)
-- **Alarms & events** — GetAlarmSummary polling, live Confirmed/UnconfirmedEventNotification handling, active-alarm popups, notification-class recipient enrollment, JSON/CSV event export
-- **Trend logs** — chart viewer for log buffer data, time-range navigation, CSV/JSON export
-- **File objects** — AtomicReadFile / AtomicWriteFile transfer UI
-- **EDE export** — generate BACnet Engineering Data Exchange files from a scanned device (`bacnet_ede`)
-- **Device services** — time synchronization, DeviceCommunicationControl, and ReinitializeDevice
-- **i18n** — German (default) and English via Gettext; locale switcher persisted in `localStorage` (desktop: OS locale on first launch)
-- **Keyboard shortcuts** — press `?` for help (`/`, `r`, `1`–`4`, `0` / Escape on device pages)
+- **Network discovery** - Who-Is / I-Am scan with live device list, filters, and optional limited instance / vendor ranges
+- **BBMD / Foreign Device** - register with a remote BBMD so Who-Is is distributed via Distribute-Broadcast-To-Network; automatic re-registration
+- **Stack settings** - transport (BACnet/IP or MS/TP), network interface / serial port, local device instance, APDU/timeout options; persisted to `runtime_settings.json` and restartable from the UI
+- **Device load & scan** - full device object list scan with progress banner; scan recovery for validation failures (relaxed value/type skip modes)
+- **Hierarchies** - Structured View tree with search and “reveal in flat list”; optional **name-based hierarchy** built from object-name separators when no Structured View exists
+- **Object explorer** - property table with RPM (ReadPropertyMultiple) first, individual ReadProperty fallback, live load progress, status-flag icons, and COV badges
+- **Property writes** - Present_Value (with priority where applicable), generic property write, and weekly schedule editor
+- **COV subscriptions** - per-property or bulk Present_Value subscribe, auto-renewal, active-subscription overview, notification log, and COV history charts (CSV/JSON export)
+- **Alarms & events** - GetAlarmSummary polling, live Confirmed/UnconfirmedEventNotification handling, active-alarm popups, notification-class recipient enrollment, JSON/CSV event export
+- **Trend logs** - chart viewer for log buffer data, time-range navigation, CSV/JSON export
+- **File objects** - AtomicReadFile / AtomicWriteFile transfer UI
+- **EDE export** - generate BACnet Engineering Data Exchange files from a scanned device (`bacnet_ede`)
+- **Device services** - time synchronization, DeviceCommunicationControl, and ReinitializeDevice
+- **i18n** - German (default) and English via Gettext; locale switcher persisted in `localStorage` (desktop: OS locale on first launch)
+- **Keyboard shortcuts** - press `?` for help (`/`, `r`, `1`–`4`, `0` / Escape on device pages)
 
 ## Requirements
 
@@ -98,14 +98,15 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `PHX_SERVER` | — | Set `true` to start HTTP in releases |
+| `PHX_SERVER` | - | Set `true` to start HTTP in releases |
 | `PORT` | `4000` | HTTP port |
-| `SECRET_KEY_BASE` | — | Required in production (see `mix phx.gen.secret`) |
-| `BACVIEW_BACSTACK_DEBUG` | — | Enable verbose bacstack debug logs (`1` / `true`) |
+| `SECRET_KEY_BASE` | - | Required in production (see `mix phx.gen.secret`) |
+| `BACVIEW_BACSTACK_DEBUG` | - | Enable verbose bacstack debug logs (`1` / `true`) |
 | `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
-| `BACVIEW_DESKTOP` | — | Set to `1` at compile time to build the desktop app (see above) |
+| `BACVIEW_DESKTOP` | - | Set to `1` at compile time to build the desktop app (see above) |
 | `BACVIEW_DESKTOP_LOCALE` | - | The locale to use on startup (automatically set by the desktop app) |
-| `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback. Lower (e.g. `1`) if old devices are overwhelmed |
+| `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback - lower (e.g. `1`) if old devices are overwhelmed |
+| `BACVIEW_READ_CONCUR_DISABLE_SHARED_RED` | - | Disable concurrency reduction for shared addresses (routers) to prevent overwhelm of router (`1` / `true`) |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 | `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
 
@@ -179,7 +180,7 @@ Primary UI routes:
 | `/devices/:device_id` | `DeviceLive` |
 | `/devices/:device_id/objects/:type/:instance` | `ObjectLive` |
 
-Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. Runtime BACnet state uses **ETS** (`BacView.BACnet.Cache`) and JSON settings (`BacView.Settings`) — no Ecto for domain data.
+Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. Runtime BACnet state uses **ETS** (`BacView.BACnet.Cache`) and JSON settings (`BacView.Settings`) - no Ecto for domain data.
 
 ### Device load vs object property load
 
@@ -189,7 +190,7 @@ Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. R
 
 1. Prefer RPM (`read_object` / ReadPropertyMultiple).
 2. On segmentation/buffer-style failures → individual concurrent `ReadProperty` (default concurrency **8**, `BACVIEW_PROPERTY_READ_CONCURRENCY`).
-3. Validation skip mode (from scan recovery) is applied via bacstack `object_opts` on the normal path — it does not force the scan path alone.
+3. Validation skip mode (from scan recovery) is applied via bacstack `object_opts` on the normal path - it does not force the scan path alone.
 4. On certain hard failures → `ObjectScanRead` fallback.
 
 Individual property progress is broadcast on `"device:#{id}:properties_progress"` and shown in the object detail UI.
@@ -201,7 +202,7 @@ Owned by `BacView.BACnet.Cache`:
 `:bacview_devices`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`,
 `:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`
 
-Web code must not open subscription ETS directly — use `SubscriptionManager` APIs.
+Web code must not open subscription ETS directly - use `SubscriptionManager` APIs.
 
 ### Transports
 

@@ -28,7 +28,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   @trend_log_types [:trend_log, :trend_log_multiple]
 
-  # Large or scan-irrelevant Device properties — skip during individual property reads
+  # Large or scan-irrelevant Device properties - skip during individual property reads
   # (object_list alone can be thousands of entries and blocks the UI for minutes).
   @device_heavy_properties [
     :property_list,
@@ -45,7 +45,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   ]
 
   # Historical healthy default; override via config :bacview, :property_read_concurrency
-  # (lower for devices overwhelmed by parallel ReadProperty — was temporarily 1).
+  # (lower for devices overwhelmed by parallel ReadProperty - was temporarily 1).
   @default_property_read_concurrency 8
 
   @type read_result :: %{
@@ -746,7 +746,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp property_type(nil, _display, :double), do: "REAL"
   defp property_type(nil, _display, :string), do: "CHARACTER STRING"
   defp property_type(nil, _display, :bitstring), do: "BITSTRING"
-  defp property_type(nil, _display, _bac_type), do: "—"
+  defp property_type(nil, _display, _bac_type), do: "-"
 
   defp property_type(_value, %{kind: :array}, _bac_type), do: "ARRAY"
   defp property_type(_value, %{kind: :list}, _bac_type), do: "LIST"

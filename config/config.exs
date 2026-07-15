@@ -106,7 +106,8 @@ config :bacstack, :objects_additional_properties,
        # services(intrinsic: true)
 
        field(:device_uuid, binary(),
-         annotation: [decoder: fn %{value: value} -> Base.encode16(value) end]
+         annotation: [decoder: fn %{value: value} -> Base.encode16(value) end],
+         readonly: true
        )
 
        field(:timezone_string, String.t())
@@ -121,12 +122,13 @@ config :bacstack, :objects_additional_properties,
          annotation: [
            encoder: &{:enumerated, if(&1 == :plc_loop, do: 1, else: 0)},
            decoder: &if(&1.value == 1, do: :plc_loop, else: :bacnet_loop)
-         ]
+         ],
+         readonly: true
        )
      end),
   schedule:
     (quote do
-       field(:time_before_operation, non_neg_integer())
+       field(:time_before_operation, non_neg_integer(), readonly: true)
      end)
 
 # Import environment specific config. This must remain at the bottom

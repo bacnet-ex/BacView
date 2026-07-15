@@ -903,7 +903,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       assert length(rows) == 3
       assert Enum.find(rows, &(&1.property == :description)).value == nil
-      assert Enum.find(rows, &(&1.property == :description)).value_formatted == "—"
+      assert Enum.find(rows, &(&1.property == :description)).value_formatted == "-"
     end
 
     test "labels unknown numeric property ids" do
@@ -1073,7 +1073,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert row.enum_type == :event_state
       assert row.type == "ENUMERATED"
       assert length(row.enum_options) > 0
-      assert row.value_formatted == "Normal"
+      assert row.value_formatted == "Normal (0)"
     end
   end
 end

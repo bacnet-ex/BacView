@@ -46,7 +46,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplayTest do
     assert display.kind == :priority_array
     assert length(display.items) == 16
     assert Enum.find(display.items, &(&1.key == 8)).formatted == "21.5"
-    assert Enum.find(display.items, &(&1.key == 1)).formatted == "—"
+    assert Enum.find(display.items, &(&1.key == 1)).formatted == "-"
   end
 
   test "expands limit enable for writing" do

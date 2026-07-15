@@ -41,7 +41,7 @@ defmodule BacViewWeb.ActiveCovSubscriptions do
       object_name: Map.get(sub, :object_name),
       description: Map.get(sub, :description),
       property_label: to_string(sub.property),
-      value_label: sub.last_value_formatted || "—",
+      value_label: sub.last_value_formatted || "-",
       type: object_id.type,
       instance: object_id.instance,
       property: sub.property,

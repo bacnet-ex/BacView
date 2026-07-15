@@ -1,4 +1,4 @@
-# BacView — agent guidelines
+# BacView - agent guidelines
 
 BacView is a **BACnet explorer** built with **Phoenix LiveView** and [bacstack](https://github.com/bacnet-ex/bacstack). App modules are `BacView` / `BacViewWeb`.
 
@@ -41,7 +41,7 @@ There is **no user auth / `current_scope`** in this app. Do not invent scope plu
          python3 priv/gettext/build_en_translations.py
 
   3. Run `mix test test/bac_view_web/locale_test.exs test/bac_view_web/locale_switch_live_test.exs` (or `mix precommit`)
-- The script **fails** if any msgid lacks an English translation — add the missing entry before finishing.
+- The script **fails** if any msgid lacks an English translation - add the missing entry before finishing.
 - Locale switch: `BacViewWeb.LocaleHook` on the default `live_session`; use `LocaleAttrs` in function components that need `t/3`.
 
 ### Config & environment
@@ -80,7 +80,7 @@ Important keys (see `config/config.exs`, `config/runtime.exs`, `README.md`):
 
 Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`, `:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`.
 
-- **Web code must not** open subscription ETS directly — use `SubscriptionManager.list_active/0` (and related APIs).
+- **Web code must not** open subscription ETS directly - use `SubscriptionManager.list_active/0` (and related APIs).
 - Tests that touch named tables should use `BacView.Test.BacnetEtsLock.with_tables/2` when concurrent tests share global ETS.
 
 ### Device load vs object property load
@@ -94,7 +94,7 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
 
 1. Prefer **RPM** (`read_object` / property multiple) with opts from `PropertyLoad.property_read_opts/2`.
 2. On segmentation/buffer-style failures → individual path (property list / schema + concurrent `ReadProperty`).
-3. **Skip mode** (scan recovery) is applied via `object_opts: [skip_property_validation_remote_object: …]` on the normal path — do **not** force the scan path only because skip mode is set.
+3. **Skip mode** (scan recovery) is applied via `object_opts: [skip_property_validation_remote_object: …]` on the normal path - do **not** force the scan path only because skip mode is set.
 4. On certain hard failures (`properties_scan_fallback_on_error?/1`) → `ObjectScanRead` (thin wrapper around `PropertyReader.read_properties_map/4`).
 
 **Individual (one-by-one) property progress** (object properties view):
@@ -120,7 +120,7 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
 
 - Full `property_list` array fails → indexed 0..N **only** when `Segmentation.array_fallback_error?/1` (segmentation/buffer **or** `:property_not_readable`).
 - `:unknown_property` on `property_list` → **schema** path (device has no list), **not** indexed N-reads.
-- Heavy device properties (`object_list`, bindings, COV lists, etc.) are skipped on individual loads — see `PropertyReader.heavy_properties_for/1`.
+- Heavy device properties (`object_list`, bindings, COV lists, etc.) are skipped on individual loads - see `PropertyReader.heavy_properties_for/1`.
 
 ### Concurrency
 
@@ -131,10 +131,10 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
 ### UI structure conventions
 
 - LiveViews: `DashboardLive`, `DeviceLive`, `ObjectLive` under `lib/bac_view_web/live/`.
-- Prefer **extracted helpers** over growing LiveViews further (`DeviceUrl`, `*Assigns`, `ChartEventPayload`, `CovNotificationChartLive`, badge/count modules). `DeviceLive` / `ObjectLive` are already very large — extract rather than add bulk.
+- Prefer **extracted helpers** over growing LiveViews further (`DeviceUrl`, `*Assigns`, `ChartEventPayload`, `CovNotificationChartLive`, badge/count modules). `DeviceLive` / `ObjectLive` are already very large - extract rather than add bulk.
 - Charts: shared JS hook `TrendLogChart` + `ChartEventPayload`; COV chart lifecycle via `CovNotificationChartLive`.
 - Icons: **always** `<.icon name="hero-…">` from `CoreComponents`, never Heroicons modules.
-- CSS: Tailwind v4 + custom `bac-*` classes in `assets/css/app.css`. daisyUI is vendored for theme tokens — **prefer existing BacView components and `bac-*` utilities**; do not expand daisyUI component-driven UI as the primary design system.
+- CSS: Tailwind v4 + custom `bac-*` classes in `assets/css/app.css`. daisyUI is vendored for theme tokens - **prefer existing BacView components and `bac-*` utilities**; do not expand daisyUI component-driven UI as the primary design system.
 - Keep `@import "tailwindcss" source(none)` and `@source` paths covering `lib/bac_view_web` (see `app.css`).
 
 ### Testing
@@ -154,17 +154,17 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
 ### Phoenix v1.8 guidelines (BacView)
 
 - **Always** begin LiveView templates with `<Layouts.app flash={@flash} ...>` wrapping content.
-- `BacViewWeb.Layouts` is aliased via `BacViewWeb` html helpers — no extra alias needed.
+- `BacViewWeb.Layouts` is aliased via `BacViewWeb` html helpers - no extra alias needed.
 - **Do not** call `<.flash_group>` outside `layouts.ex` (Phoenix 1.8 placement).
 - **Always** use `<.icon name="hero-…">` and `<.input>` from `core_components.ex` when available.
-- If you override `<.input class="...">`, you replace defaults entirely — supply full styling.
+- If you override `<.input class="...">`, you replace defaults entirely - supply full styling.
 
 ### JS and CSS guidelines
 
 - Prefer Tailwind utilities + existing `bac-*` CSS for polished, responsive UI.
 - Tailwind v4 import pattern in `app.css` (keep `@source` for css/js/`lib/bac_view_web`).
 - **Never** use `@apply` in raw CSS.
-- Only **app.js** and **app.css** bundles are supported — import vendors into those; **no** external script/link in layouts; **no** inline `<script>` in HEEx.
+- Only **app.js** and **app.css** bundles are supported - import vendors into those; **no** external script/link in layouts; **no** inline `<script>` in HEEx.
 - Hooks that own DOM: `phx-hook` **and** `phx-update="ignore"`.
 
 ### UI/UX guidelines
@@ -237,7 +237,7 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
 
   the UserLive route would point to the `BacViewWeb.Admin.UserLive` module
 
-- Default browser scope is already aliased with `BacViewWeb` — route with `live "/", DashboardLive`, etc.
+- Default browser scope is already aliased with `BacViewWeb` - route with `live "/", DashboardLive`, etc.
 - `Phoenix.View` is no longer needed or included with Phoenix; don't use it
 <!-- phoenix:phoenix-end -->
 

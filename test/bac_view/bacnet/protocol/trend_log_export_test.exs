@@ -24,7 +24,7 @@ defmodule BacView.BACnet.Protocol.TrendLogExportTest do
     assert String.starts_with?(csv, "timestamp;")
     assert csv =~ "AI-1 (°C)"
     assert csv =~ "BI-2"
-    refute csv =~ "BI-2 (—)"
+    refute csv =~ "BI-2 (-)"
     assert csv =~ "12.5"
   end
 
@@ -57,7 +57,7 @@ defmodule BacView.BACnet.Protocol.TrendLogExportTest do
 
     csv = TrendLogExport.to_csv(data)
     assert String.starts_with?(csv, "timestamp;\"MSV-1\"\n")
-    refute csv =~ "(—)"
+    refute csv =~ "(-)"
     assert csv =~ "1 (Aus)"
     assert csv =~ "2 (Ein)"
 

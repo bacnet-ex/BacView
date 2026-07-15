@@ -54,7 +54,7 @@ defmodule BacView.BACnet.InterfaceSelection do
   defp loopback_option() do
     %{
       value: "lo",
-      label: "lo — 127.0.0.1",
+      label: "lo - 127.0.0.1",
       name: "lo",
       address: {127, 0, 0, 1}
     }

@@ -39,7 +39,7 @@ defmodule BacView.BACnet.Segmentation do
 
   Includes segmentation/buffer errors plus full-array-not-supported style
   failures (`:property_not_readable`). Does **not** include `:unknown_property`
-  (device has no property_list — use schema) or `:timeout` (avoid N-read storms).
+  (device has no property_list - use schema) or `:timeout` (avoid N-read storms).
   """
   @spec array_fallback_error?(term()) :: boolean()
   def array_fallback_error?({:error, reason}), do: array_fallback_reason?(reason)

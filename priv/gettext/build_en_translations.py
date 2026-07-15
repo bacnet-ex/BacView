@@ -153,7 +153,7 @@ TRANSLATIONS: dict[str, str] = {
     "Dateiübertragung": "File transfer",
     "Bindestrich (-)": "Hyphen (-)",
     "Binär": "Binary",
-    "Binärdatei — Inhalt kann nicht als Text angezeigt werden.": "Binary file — content cannot be displayed as text.",
+    "Binärdatei - Inhalt kann nicht als Text angezeigt werden.": "Binary file - content cannot be displayed as text.",
     "Geladen": "Loaded",
     "Gelesen: %{size} Bytes": "Read: %{size} bytes",
     "Herunterladen": "Download",

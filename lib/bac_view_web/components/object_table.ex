@@ -316,14 +316,14 @@ defmodule BacViewWeb.ObjectTable do
                 class="text-[var(--bac-text)] bac-row-clickable"
                 phx-click={JS.navigate(object_path(@device_id, obj, @list_opts))}
               >
-                {obj.name || "—"}
+                {obj.name || "-"}
               </td>
               <td
                 class="text-[var(--bac-text-muted)] max-w-xs truncate bac-row-clickable"
                 phx-click={JS.navigate(object_path(@device_id, obj, @list_opts))}
                 title={object_description(obj)}
               >
-                {object_description(obj) || "—"}
+                {object_description(obj) || "-"}
               </td>
               <td>
                 <button
@@ -626,7 +626,7 @@ defmodule BacViewWeb.ObjectTable do
   defp commandable?(obj) when is_map(obj), do: Map.get(obj, :commandable, false)
 
   defp present_value_label(obj) when is_map(obj) do
-    formatted = Map.get(obj, :present_value_formatted, "—")
+    formatted = Map.get(obj, :present_value_formatted, "-")
 
     if commandable?(obj) && Map.get(obj, :active_priority) do
       "#{formatted} (#{obj.active_priority})"
@@ -635,7 +635,7 @@ defmodule BacViewWeb.ObjectTable do
     end
   end
 
-  defp present_value_label(_obj), do: "—"
+  defp present_value_label(_obj), do: "-"
 
   defp selected?(keys, obj),
     do: MapSet.member?(keys, {obj.type, obj.instance})
@@ -653,7 +653,7 @@ defmodule BacViewWeb.ObjectTable do
       else: ""
   end
 
-  defp format_time(nil), do: "—"
+  defp format_time(nil), do: "-"
 
   defp format_time(%DateTime{} = dt),
     do: BacView.Timezone.format(dt, "%H:%M:%S")

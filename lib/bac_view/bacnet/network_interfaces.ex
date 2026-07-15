@@ -43,7 +43,7 @@ defmodule BacView.BACnet.NetworkInterfaces do
 
     %{
       value: name,
-      label: "#{display_name} — #{ip_str}",
+      label: "#{display_name} - #{ip_str}",
       name: name,
       address: ip4
     }

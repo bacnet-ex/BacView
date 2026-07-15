@@ -284,7 +284,7 @@ defmodule BacViewWeb.HierarchyPanel do
                     </p>
                     <p class="text-sm font-medium truncate">{entry.name}</p>
                     <p class="text-xs text-[var(--bac-text-muted)] truncate">
-                      {entry.description || "—"}
+                      {entry.description || "-"}
                     </p>
                   </div>
                   <span :if={entry.child_count > 0} class="bac-badge bac-badge-sm shrink-0">
@@ -331,7 +331,7 @@ defmodule BacViewWeb.HierarchyPanel do
                   class="block min-w-0 py-1 group"
                 >
                   <p class="text-xs bac-text-faint truncate">
-                    {entry.annotation || "—"}
+                    {entry.annotation || "-"}
                   </p>
                   <p class="text-sm font-medium text-[var(--bac-text)] group-hover:text-[var(--bac-accent)] flex items-center gap-2 min-w-0">
                     <span class="truncate">{entry.name}</span>
@@ -343,7 +343,7 @@ defmodule BacViewWeb.HierarchyPanel do
                     </span>
                   </p>
                   <p class="text-xs text-[var(--bac-text-muted)] truncate">
-                    {entry.description || "—"}
+                    {entry.description || "-"}
                   </p>
                 </.link>
               </td>

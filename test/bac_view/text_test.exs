@@ -4,7 +4,7 @@ defmodule BacView.TextTest do
   alias BacView.Text
 
   test "sanitize_utf8 keeps valid UTF-8" do
-    assert Text.sanitize_utf8("Cov Increment: —") == "Cov Increment: —"
+    assert Text.sanitize_utf8("Cov Increment: -") == "Cov Increment: -"
   end
 
   test "sanitize_utf8 converts Latin-1 CharacterString bytes to UTF-8" do
@@ -35,7 +35,7 @@ defmodule BacView.TextTest do
     row = %{
       property: :active_cov_subscriptions,
       property_name: "active cov",
-      value: %{cov_increment: <<"—", 192>>},
+      value: %{cov_increment: <<"-", 192>>},
       value_formatted: <<"Cov Increment: ", 192>>,
       value_display: %{
         kind: :struct,
@@ -45,8 +45,8 @@ defmodule BacView.TextTest do
             key: :cov_increment,
             label: "Cov Increment",
             kind: :scalar,
-            value: <<"—", 192>>,
-            formatted: <<"—", 192>>,
+            value: <<"-", 192>>,
+            formatted: <<"-", 192>>,
             fields: []
           }
         ],

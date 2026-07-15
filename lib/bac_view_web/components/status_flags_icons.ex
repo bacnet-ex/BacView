@@ -25,7 +25,7 @@ defmodule BacViewWeb.StatusFlagsIcons do
         :if={status_flag_count_entries(@counts) == []}
         class="bac-text-faint text-xs whitespace-nowrap"
       >
-        —
+        -
       </span>
       <span
         :if={status_flag_count_entries(@counts) != []}
@@ -90,7 +90,7 @@ defmodule BacViewWeb.StatusFlagsIcons do
           <.icon name={flag_icon(flag)} class="size-4" />
         </span>
       </span>
-      <span :if={@active == []} class="bac-text-faint">—</span>
+      <span :if={@active == []} class="bac-text-faint">-</span>
       <% end %>
     <% end %>
     <% end %>

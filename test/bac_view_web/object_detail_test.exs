@@ -81,8 +81,8 @@ defmodule BacViewWeb.ObjectDetailTest do
         property_name: "Status Flags",
         type: "Status Flags",
         value: object.status_flags,
-        value_display: %{kind: :scalar, formatted: "—", fields: [], items: []},
-        value_formatted: "—",
+        value_display: %{kind: :scalar, formatted: "-", fields: [], items: []},
+        value_formatted: "-",
         writable: false
       }
     ]
@@ -617,7 +617,7 @@ defmodule BacViewWeb.ObjectDetailTest do
       type: :trend_log_multiple,
       instance: 5,
       present_value: nil,
-      present_value_formatted: "—",
+      present_value_formatted: "-",
       writable: false,
       commandable: false,
       units: nil,
@@ -670,7 +670,7 @@ defmodule BacViewWeb.ObjectDetailTest do
       type: :trend_log,
       instance: 1,
       present_value: nil,
-      present_value_formatted: "—",
+      present_value_formatted: "-",
       writable: false,
       commandable: false,
       units: nil,
@@ -682,8 +682,8 @@ defmodule BacViewWeb.ObjectDetailTest do
       property_name: "Log Buffer",
       type: "BACnetLOGRECORD",
       value: nil,
-      value_display: %{kind: :scalar, formatted: "—", fields: [], items: []},
-      value_formatted: "—",
+      value_display: %{kind: :scalar, formatted: "-", fields: [], items: []},
+      value_formatted: "-",
       writable: true
     }
 

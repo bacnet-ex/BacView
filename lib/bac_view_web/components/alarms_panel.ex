@@ -452,9 +452,9 @@ defmodule BacViewWeb.AlarmsPanel do
                 {obj.type}:{obj.instance}
               </td>
               <td>{ObjectTypes.short_label(obj.type)}</td>
-              <td class="max-w-xs truncate">{obj.name || "—"}</td>
+              <td class="max-w-xs truncate">{obj.name || "-"}</td>
               <td class="max-w-sm truncate" title={Map.get(obj, :description)}>
-                {Map.get(obj, :description) || "—"}
+                {Map.get(obj, :description) || "-"}
               </td>
               <td>
                 <StatusFlagsIcons.status_flags_icons
@@ -464,7 +464,7 @@ defmodule BacViewWeb.AlarmsPanel do
                 />
               </td>
               <td class="bac-text-faint whitespace-nowrap">
-                {Map.get(obj, :alarm_since_label, "—")}
+                {Map.get(obj, :alarm_since_label, "-")}
               </td>
               <td class="bac-text-faint">{format_time(Map.get(obj, :updated_at))}</td>
             </tr>
@@ -605,7 +605,7 @@ defmodule BacViewWeb.AlarmsPanel do
                 </span>
               </td>
               <td class="bac-mono">{EventFormatter.priority_label(notif.priority)}</td>
-              <td class="max-w-sm truncate">{notif.message_text || "—"}</td>
+              <td class="max-w-sm truncate">{notif.message_text || "-"}</td>
             </tr>
           </tbody>
         </table>
@@ -697,7 +697,7 @@ defmodule BacViewWeb.AlarmsPanel do
   defp state_badge_class(_normal), do: "bac-badge-ghost"
 
   defp format_time(%DateTime{} = dt), do: BacView.Timezone.format(dt, "%H:%M:%S")
-  defp format_time(_format_time), do: "—"
+  defp format_time(_format_time), do: "-"
 
   defp object_path(device_id, type, instance, list_opts) do
     url_opts =

@@ -494,7 +494,7 @@ defmodule BacViewWeb.DeviceList do
 
   defp device_description(_device), do: nil
 
-  defp object_count_label(nil), do: "—"
+  defp object_count_label(nil), do: "-"
   defp object_count_label(count) when is_integer(count), do: Integer.to_string(count)
 
   defp status_label(:loaded, locale, locale_version),

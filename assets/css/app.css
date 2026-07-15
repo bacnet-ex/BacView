@@ -14,7 +14,7 @@
   themes: false;
 }
 
-/* BacView dark theme — deep slate with cyan BACnet accent */
+/* BacView dark theme - deep slate with cyan BACnet accent */
 @plugin "../vendor/daisyui-theme" {
   name: "dark";
   default: true;

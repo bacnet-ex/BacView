@@ -867,7 +867,7 @@ defmodule BacViewWeb.ObjectDetail do
   defp write_placeholder(_prop, locale, locale_version),
     do: t(locale, locale_version, "Neuer Wert")
 
-  defp format_time(nil), do: "—"
+  defp format_time(nil), do: "-"
 
   defp format_time(%DateTime{} = dt),
     do: BacView.Timezone.format(dt, "%d.%m.%Y %H:%M:%S")

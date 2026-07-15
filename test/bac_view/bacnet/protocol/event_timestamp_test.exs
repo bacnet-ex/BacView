@@ -45,6 +45,6 @@ defmodule BacView.BACnet.Protocol.EventTimestampTest do
   end
 
   test "returns placeholder when timestamps are missing" do
-    assert EventTimestamp.alarm_since(nil, :fault) == %{at: nil, label: "—", sort_key: 0}
+    assert EventTimestamp.alarm_since(nil, :fault) == %{at: nil, label: "-", sort_key: 0}
   end
 end

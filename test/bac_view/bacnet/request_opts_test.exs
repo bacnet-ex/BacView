@@ -102,4 +102,44 @@ defmodule BacView.BACnet.RequestOptsTest do
     refute Keyword.has_key?(merged, :device_id)
     refute Keyword.has_key?(merged, :destination)
   end
+
+  describe "with shared reduction disabled" do
+    setup do
+      previous =
+        Application.get_env(:bacview, :property_read_concurrency_disable_shared_reduction)
+
+      Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, true)
+
+      on_exit(fn ->
+        restore_disable_shared_reduction(previous)
+      end)
+
+      :ok
+    end
+
+    test "shared_address? is false when multiple devices share an address" do
+      store(100)
+      store(200)
+
+      refute RequestOpts.shared_address?(@address)
+    end
+
+    test "for_device adds invoke device_id for routed device on shared gateway" do
+      npci_source = %NpciTarget{net: 3, address: 200}
+
+      store(100)
+      store(200, npci_source)
+
+      merged = RequestOpts.for_device(200, remote_device_id: 200)
+      assert merged[:remote_device_id] == 200
+      assert merged[:destination] == npci_source
+      assert merged[:device_id] == 200
+    end
+  end
+
+  defp restore_disable_shared_reduction(nil),
+    do: Application.delete_env(:bacview, :property_read_concurrency_disable_shared_reduction)
+
+  defp restore_disable_shared_reduction(value),
+    do: Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, value)
 end

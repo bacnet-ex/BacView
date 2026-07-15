@@ -80,7 +80,7 @@ defmodule BacView.BACnet.Protocol.TrendLogExport do
   end
 
   defp series_header_label(label, unit_label)
-       when is_binary(unit_label) and unit_label not in ["", "—"],
+       when is_binary(unit_label) and unit_label not in ["", "-"],
        do: "#{label} (#{unit_label})"
 
   defp series_header_label(label, _unit_label), do: label

@@ -17,6 +17,6 @@ defmodule BacView.BACnet.VendorNamesTest do
 
   test "label/2 falls back to id only when name is unknown" do
     assert VendorNames.label(%{}, 999_999) == "999999"
-    assert VendorNames.label(%{}, nil) == "—"
+    assert VendorNames.label(%{}, nil) == "-"
   end
 end

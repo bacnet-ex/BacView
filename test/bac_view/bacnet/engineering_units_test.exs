@@ -30,7 +30,7 @@ defmodule BacView.BACnet.Protocol.EngineeringUnitsTest do
 
     test "handles no units and nil" do
       assert EngineeringUnits.label(:no_units) == "No units"
-      assert EngineeringUnits.label(nil) == "—"
+      assert EngineeringUnits.label(nil) == "-"
     end
   end
 end

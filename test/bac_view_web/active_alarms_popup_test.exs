@@ -58,7 +58,7 @@ defmodule BacViewWeb.ActiveAlarmsPopupTest do
             device_label: "AHU-1",
             object_label: "analog_input:1",
             description: "Supply temp",
-            alarm_since_label: "—",
+            alarm_since_label: "-",
             sort_key: 1,
             device_path: "/devices/42",
             object_path: "/devices/42/objects/analog_input/1"

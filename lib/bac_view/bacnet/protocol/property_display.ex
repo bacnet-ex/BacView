@@ -59,7 +59,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     struct_fields_summary(fields)
   end
 
-  def summary(_summary), do: "—"
+  def summary(_summary), do: "-"
 
   defp struct_fields_summary(fields) do
     Enum.map_join(fields, ", ", fn field -> "#{field.label}: #{field.formatted}" end)
@@ -92,9 +92,9 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
   def brief_summary(%{kind: :scalar, formatted: formatted}), do: formatted
   def brief_summary(%{kind: :object_identifier, formatted: formatted}), do: formatted
   def brief_summary(%{formatted: formatted}) when is_binary(formatted), do: formatted
-  def brief_summary(_formatted), do: "—"
+  def brief_summary(_formatted), do: "-"
 
-  defp do_build(nil), do: %{kind: :scalar, formatted: "—", fields: [], items: []}
+  defp do_build(nil), do: %{kind: :scalar, formatted: "-", fields: [], items: []}
 
   defp do_build(%Encoding{type: type} = encoding) when not is_nil(type) do
     %{
@@ -397,7 +397,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
   defp boolean_label(true), do: gettext("Ja")
   defp boolean_label(false), do: gettext("Nein")
 
-  defp format_slot_value(nil), do: "—"
+  defp format_slot_value(nil), do: "-"
   defp format_slot_value(value), do: PropertyFormatter.format_value(value, nil)
 
   defp priority_field(priority) when priority in 1..16,

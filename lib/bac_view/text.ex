@@ -45,7 +45,7 @@ defmodule BacView.Text do
     |> Map.update(:value_formatted, nil, &sanitize_utf8/1)
     |> Map.update(
       :value_display,
-      %{kind: :scalar, formatted: "—", fields: [], items: []},
+      %{kind: :scalar, formatted: "-", fields: [], items: []},
       &sanitize_display/1
     )
     |> Map.update(:value, nil, &sanitize_property_value/1)

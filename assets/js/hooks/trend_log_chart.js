@@ -54,7 +54,7 @@ function escapeHtml(text) {
 }
 
 function formatChartValue(value) {
-  if (value == null) return "—"
+  if (value == null) return "-"
 
   if (typeof value === "number") {
     return value.toLocaleString(defaultLocale, {maximumFractionDigits: 3})

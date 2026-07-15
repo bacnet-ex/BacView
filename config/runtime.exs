@@ -19,7 +19,20 @@ property_read_concurrency =
       end
   end
 
+property_read_concurrency_disable_shared_reduction =
+  case System.get_env("BACVIEW_READ_CONCUR_DISABLE_SHARED_RED") do
+    nil ->
+      false
+
+    raw ->
+      raw in ~w(1 true yes)
+  end
+
 config :bacview, :property_read_concurrency, property_read_concurrency
+
+config :bacview,
+       :property_read_concurrency_disable_shared_reduction,
+       property_read_concurrency_disable_shared_reduction
 
 if Application.get_env(:bacview, :desktop_mode) do
   {:ok, [[home]]} = :init.get_argument(:home)

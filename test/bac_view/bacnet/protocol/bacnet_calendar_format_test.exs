@@ -35,7 +35,7 @@ defmodule BacView.BACnet.Protocol.BacnetCalendarFormatTest do
       }
     }
 
-    assert BacnetCalendarFormat.format(datetime) == "—"
+    assert BacnetCalendarFormat.format(datetime) == "-"
   end
 
   test "formats BACnetDate and BACnetTime separately" do

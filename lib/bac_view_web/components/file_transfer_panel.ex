@@ -76,7 +76,7 @@ defmodule BacViewWeb.FileTransferPanel do
           <div id="file-content-binary" class="bac-file-preview-empty">
             <.icon name="hero-document" class="size-8 opacity-40" />
             <p class="text-sm text-[var(--bac-text-muted)]">
-              {t(@locale, @locale_version, "Binärdatei — Inhalt kann nicht als Text angezeigt werden.")}
+              {t(@locale, @locale_version, "Binärdatei - Inhalt kann nicht als Text angezeigt werden.")}
             </p>
             <p class="text-xs bac-text-faint">
               {t(@locale, @locale_version, "Verwenden Sie „Herunterladen“, um die Datei zu speichern.")}
