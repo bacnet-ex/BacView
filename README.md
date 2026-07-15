@@ -7,6 +7,8 @@ read and write properties, subscribe to COV updates, and monitor alarms — all 
 
 This project has been built with Grok Build and the Composer 2.5 Fast model.
 
+![Application Scan Page screenshot](docs/assets/application_scan_page.png)
+
 ## Features
 
 - **Network discovery** — Who-Is / I-Am scan with live device list, filters, and optional limited instance / vendor ranges
@@ -24,7 +26,6 @@ This project has been built with Grok Build and the Composer 2.5 Fast model.
 - **Device services** — time synchronization, DeviceCommunicationControl, and ReinitializeDevice
 - **i18n** — German (default) and English via Gettext; locale switcher persisted in `localStorage` (desktop: OS locale on first launch)
 - **Keyboard shortcuts** — press `?` for help (`/`, `r`, `1`–`4`, `0` / Escape on device pages)
-- **Desktop app (experimental)** — optional native window via elixir-desktop (`BACVIEW_DESKTOP=1`)
 
 ## Requirements
 
