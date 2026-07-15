@@ -78,7 +78,7 @@ defmodule BacView.BACnet.DiscoverySnifferTest do
       await_task = Task.async(fn -> GenServer.call(pid, {:await, ref}, 1_000) end)
 
       assert {:ok, responses} = Task.await(await_task, 1_000)
-      assert [{address, %IAm{device: %{instance: 42}}}] = responses
+      assert [{address, %IAm{device: %{instance: 42}}, nil, ^source}] = responses
       assert address == {{192, 168, 1, 79}, 47_808}
     end)
   end

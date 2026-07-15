@@ -4,7 +4,57 @@ defmodule BacViewWeb.ObjectDetailTest do
   import Phoenix.LiveViewTest
 
   alias BACnet.Protocol.StatusFlags
+  alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacViewWeb.ObjectDetail
+
+  test "shows struct name tooltip on STRUCT type column" do
+    flags = %StatusFlags{
+      in_alarm: false,
+      fault: true,
+      overridden: false,
+      out_of_service: false
+    }
+
+    display = PropertyDisplay.build(flags)
+
+    prop = %{
+      property: :status_flags,
+      property_name: "status flags",
+      type: "STRUCT",
+      value: flags,
+      value_display: display,
+      value_formatted: display.formatted,
+      writable: false
+    }
+
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      status_flags: flags,
+      writable: false,
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(title="BACnet.Protocol.StatusFlags")
+    assert html =~ "STRUCT"
+  end
 
   test "renders status flags in header when property exists" do
     object = %{
@@ -671,13 +721,34 @@ defmodule BacViewWeb.ObjectDetailTest do
       updated_at: nil
     }
 
+    integer_encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+      encoding: :primitive,
+      type: :unsigned_integer,
+      value: 42,
+      extras: []
+    }
+
+    string_encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+      encoding: :primitive,
+      type: :character_string,
+      value: "x",
+      extras: []
+    }
+
+    binary_encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+      encoding: :primitive,
+      type: :character_string,
+      value: "a\0b",
+      extras: []
+    }
+
     unknown_properties = [
       %{
         property: 512,
         property_name: "property 512",
-        type: "INTEGER",
-        value: 42,
-        value_display: %{kind: :scalar, formatted: "42", fields: [], items: []},
+        type: "UNSIGNED INTEGER",
+        value: integer_encoding,
+        value_display: PropertyDisplay.build(42),
         value_formatted: "42",
         string_value?: false,
         raw_binary: nil
@@ -686,11 +757,23 @@ defmodule BacViewWeb.ObjectDetailTest do
         property: :vendor_prop,
         property_name: "vendor prop",
         type: "CHARACTER STRING",
-        value: "x",
-        value_display: %{kind: :scalar, formatted: "x", fields: [], items: []},
+        value: string_encoding,
+        value_display: PropertyDisplay.build(string_encoding),
         value_formatted: "x",
         string_value?: true,
+        hex_toggle?: false,
         raw_binary: "x"
+      },
+      %{
+        property: :binary_prop,
+        property_name: "binary prop",
+        type: "CHARACTER STRING",
+        value: binary_encoding,
+        value_display: PropertyDisplay.build("a\0b"),
+        value_formatted: "a\0b",
+        string_value?: true,
+        hex_toggle?: true,
+        raw_binary: "a\0b"
       }
     ]
 
@@ -711,13 +794,14 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ ~s(id="object-unknown-properties-panel")
     assert html =~ ~s(id="object-detail-unknown-properties-table")
     assert html =~ "Unbekannte Eigenschaften"
-    assert html =~ "2 unbekannte Eigenschaften"
+    assert html =~ "3 unbekannte Eigenschaften"
     assert html =~ "property 512"
     assert html =~ "vendor prop"
     refute html =~ ~s(id="object-detail-properties-table")
     assert html =~ ~s(phx-click="sort_unknown_properties")
     assert html =~ ~s(id="unknown-property-sort-name")
-    assert html =~ ~s(id="unknown-prop-hex-toggle-vendor_prop")
+    refute html =~ ~s(id="unknown-prop-hex-toggle-vendor_prop")
+    assert html =~ ~s(id="unknown-prop-hex-toggle-binary_prop")
     assert html =~ "Als Hex"
     refute html =~ ~s(id="unknown-prop-hex-toggle-512")
 
@@ -729,14 +813,14 @@ defmodule BacViewWeb.ObjectDetailTest do
           object: object,
           properties: [],
           unknown_properties: unknown_properties,
-          unknown_property_hex_keys: MapSet.new([:vendor_prop]),
+          unknown_property_hex_keys: MapSet.new([:binary_prop]),
           properties_loading: false,
           locale: "de",
           locale_version: 0
         }
       )
 
-    assert hex_html =~ "78"
+    assert hex_html =~ "61:00:62"
     assert hex_html =~ "Als Text"
 
     unknown_section =

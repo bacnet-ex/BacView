@@ -117,11 +117,11 @@ defmodule BacView.BACnet.DiscoverySniffer do
 
   @impl true
   def handle_info(
-        {:bacnet_client, _ref, apdu, {source, bvlc, _npci}, _client_pid},
+        {:bacnet_client, _ref, apdu, {source, bvlc, npci}, _client_pid},
         %{active: active} = state
       )
       when not is_nil(active) do
-    {:noreply, ingest_apdu(state, apdu, source, bvlc)}
+    {:noreply, ingest_apdu(state, apdu, source, bvlc, npci)}
   end
 
   def handle_info({:bacnet_client, _ref, apdu, {source, bvlc, _npci}, _client_pid}, state) do
@@ -148,20 +148,25 @@ defmodule BacView.BACnet.DiscoverySniffer do
 
   def handle_info(_msg, state), do: {:noreply, state}
 
-  defp ingest_apdu(%{active: active} = state, apdu, source, bvlc) do
+  defp ingest_apdu(%{active: active} = state, apdu, source, bvlc, npci) do
     active = %{active | messages: active.messages + 1}
 
     case IAmCollector.parse_iam(apdu) do
       {:ok, %IAm{device: %{instance: instance}} = iam} ->
         address = IAmCollector.device_address(source, bvlc)
+        npci_source = IAmCollector.npci_source_from(npci)
+        source_address = IAmCollector.source_address(source)
 
         Logger.info("DiscoverySniffer: I-Am device #{instance} at #{format_address(address)}")
 
-        if on_iam = active.on_iam, do: on_iam.(address, iam)
+        if on_iam = active.on_iam, do: on_iam.(address, iam, npci_source, source_address)
 
         %{
           state
-          | active: %{active | acc: Map.put(active.acc, instance, {address, iam})}
+          | active: %{
+              active
+              | acc: Map.put(active.acc, instance, {address, iam, npci_source, source_address})
+            }
         }
 
       {:error, reason} ->

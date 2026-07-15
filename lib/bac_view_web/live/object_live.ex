@@ -941,7 +941,10 @@ defmodule BacViewWeb.ObjectLive do
       Task.start(fn ->
         result =
           with {:ok, address} <- DeviceServices.device_address(device_id) do
-            FileTransfer.read_file(address, object_id, stream_access: metadata.stream_access)
+            FileTransfer.read_file(address, object_id,
+              stream_access: metadata.stream_access,
+              device_id: device_id
+            )
           end
 
         send(parent, {:file_read_complete, result})
@@ -974,7 +977,8 @@ defmodule BacViewWeb.ObjectLive do
            result =
              with {:ok, address} <- DeviceServices.device_address(device_id) do
                FileTransfer.write_file(address, object_id, data,
-                 stream_access: metadata.stream_access
+                 stream_access: metadata.stream_access,
+                 device_id: device_id
                )
              end
 
@@ -1861,8 +1865,7 @@ defmodule BacViewWeb.ObjectLive do
         value: value,
         value_display: display,
         value_formatted: formatted,
-        type:
-          if(display.kind in [:struct, :priority_array, :array], do: "STRUCT", else: prop.type),
+        type: PropertyFormatter.display_kind_type_label(display.kind) || prop.type,
         updated_at: at || DateTime.utc_now()
       })
 

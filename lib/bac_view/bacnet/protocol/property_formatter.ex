@@ -3,8 +3,10 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   Formats BACnet property values for display.
   """
 
+  alias BACnet.Protocol.ApplicationTags
   alias BACnet.Protocol.ApplicationTags.Encoding
 
+  alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.BACnetDate
   alias BACnet.Protocol.BACnetDateTime
   alias BACnet.Protocol.BACnetTime
@@ -14,6 +16,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   alias BACnet.Protocol.Recipient
   alias BACnet.Protocol.RecipientAddress
 
+  alias BacView.BACnet.FileTransfer
   alias BacView.BACnet.Protocol.BacnetCalendarFormat
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.MultistateState
@@ -136,6 +139,12 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   def format_value(value, _units) when is_boolean(value), do: if(value, do: "true", else: "false")
   def format_value(value, _units) when is_binary(value), do: Text.sanitize_utf8(value)
   def format_value(value, _units) when is_atom(value), do: Atom.to_string(value)
+
+  def format_value(%BACnetArray{} = array, units) do
+    array
+    |> BACnetArray.to_list()
+    |> then(&format_value(&1, units))
+  end
 
   def format_value(value, _units) when is_list(value) do
     Enum.map_join(value, ", ", &format_value(&1, nil))
@@ -262,6 +271,19 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
     |> String.upcase()
   end
 
+  @doc false
+  @spec bitstring_value?(term()) :: boolean()
+  def bitstring_value?({:bitstring, value}), do: bitstring_value?(value)
+
+  def bitstring_value?(value) when is_tuple(value) do
+    value
+    |> Tuple.to_list()
+    |> Enum.all?(&is_boolean/1)
+  end
+
+  def bitstring_value?(%Encoding{type: :bitstring, value: value}), do: bitstring_value?(value)
+  def bitstring_value?(_value), do: false
+
   @spec property_type(term()) :: String.t()
   def property_type(nil), do: "—"
   def property_type(value) when is_float(value), do: "REAL"
@@ -269,8 +291,315 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   def property_type(value) when is_boolean(value), do: "BOOLEAN"
   def property_type(value) when is_binary(value), do: "CHARACTER STRING"
   def property_type(value) when is_atom(value), do: "ENUMERATED"
-  def property_type(value) when is_list(value), do: "ARRAY"
+  def property_type(%BACnetArray{}), do: "ARRAY"
+  def property_type(value) when is_list(value), do: "LIST"
+  def property_type(%Encoding{type: nil}), do: "CONSTRUCTED"
+  def property_type(%Encoding{type: type}), do: encoding_type_label(type)
+  def property_type(value) when is_tuple(value), do: property_type_for_tuple(value)
   def property_type(_value), do: "STRUCT"
+
+  @doc false
+  @spec unknown_property_type(term()) :: String.t()
+  def unknown_property_type(value) when is_list(value) do
+    if unknown_property_encoding_list?(value), do: "PROPRIETARY", else: property_type(value)
+  end
+
+  def unknown_property_type(value), do: property_type(value)
+
+  @doc false
+  @spec unknown_property_string_value?(term()) :: boolean()
+  def unknown_property_string_value?(value) when is_list(value),
+    do: unknown_property_encoding_list?(value)
+
+  def unknown_property_string_value?(%Encoding{type: type, value: inner})
+      when type in [:octet_string, :character_string] and is_binary(inner),
+      do: true
+
+  def unknown_property_string_value?(%Encoding{value: inner}) when is_binary(inner), do: true
+  def unknown_property_string_value?(value) when is_binary(value), do: true
+  def unknown_property_string_value?(_value), do: false
+
+  @doc false
+  @spec unknown_property_raw_binary(term()) :: binary() | nil
+  def unknown_property_raw_binary(value) when is_list(value) do
+    if unknown_property_encoding_list?(value) do
+      case unknown_property_encoding_list_binary(value) do
+        {:ok, binary} -> binary
+        _other -> nil
+      end
+    else
+      nil
+    end
+  end
+
+  def unknown_property_raw_binary(value) when is_binary(value), do: value
+
+  def unknown_property_raw_binary(%Encoding{value: inner}) when is_binary(inner),
+    do: unknown_property_raw_binary(inner)
+
+  def unknown_property_raw_binary(_value), do: nil
+
+  @doc false
+  @spec unknown_property_hex_toggle?(term()) :: boolean()
+  def unknown_property_hex_toggle?(value) when is_list(value), do: false
+
+  def unknown_property_hex_toggle?(value) do
+    case unknown_property_raw_binary(value) do
+      binary when is_binary(binary) -> not FileTransfer.printable_text?(binary)
+      _other -> false
+    end
+  end
+
+  @doc false
+  @spec unknown_property_display_value(term()) :: term()
+  def unknown_property_display_value(value) when is_list(value) do
+    if unknown_property_encoding_list?(value) do
+      case unknown_property_encoding_list_binary(value) do
+        {:ok, binary} -> binary
+        _other -> value
+      end
+    else
+      value
+    end
+  end
+
+  def unknown_property_display_value(%Encoding{encoding: :primitive, value: inner}), do: inner
+  def unknown_property_display_value(value), do: value
+
+  @doc false
+  @spec unknown_property_formatted(term(), map() | nil) :: String.t()
+  def unknown_property_formatted(value, _display) when is_list(value) do
+    if unknown_property_encoding_list?(value) do
+      case unknown_property_encoding_list_binary(value) do
+        {:ok, binary} -> format_binary_hex(binary)
+        _other -> "—"
+      end
+    else
+      format_value(value, nil)
+    end
+  end
+
+  def unknown_property_formatted(%Encoding{type: :character_string, value: inner}, _display)
+      when is_binary(inner),
+      do: Text.sanitize_utf8(inner)
+
+  def unknown_property_formatted(%Encoding{type: :octet_string, value: inner}, _display)
+      when is_binary(inner),
+      do: format_binary_hex(inner)
+
+  def unknown_property_formatted(%Encoding{encoding: :primitive, value: inner}, _display),
+    do: format_value(inner, nil)
+
+  def unknown_property_formatted(_value, %{formatted: formatted}) when is_binary(formatted),
+    do: formatted
+
+  def unknown_property_formatted(value, _display), do: format_value(value, nil)
+
+  @spec unknown_property_encoding_list?(term()) :: boolean()
+  defp unknown_property_encoding_list?(value) when is_list(value) do
+    value != [] and Enum.all?(value, &match?(%Encoding{}, &1))
+  end
+
+  defp unknown_property_encoding_list?(_value), do: false
+
+  defp unknown_property_encoding_list_binary(value) when is_list(value) do
+    if unknown_property_encoding_list?(value) do
+      Enum.reduce_while(value, {:ok, <<>>}, fn %Encoding{} = encoding, {:ok, acc} ->
+        with {:ok, raw} <- Encoding.to_encoding(encoding),
+             {:ok, bytes} <- ApplicationTags.encode(raw) do
+          {:cont, {:ok, acc <> bytes}}
+        else
+          {:error, _reason} = err -> {:halt, err}
+        end
+      end)
+    else
+      {:error, :not_encoding_list}
+    end
+  end
+
+  @doc false
+  @spec integer_bac_type_label(term()) :: String.t() | nil
+  def integer_bac_type_label(bac_type) do
+    case primitive_integer_bac_type(bac_type) do
+      type when type in [:unsigned_integer, :signed_integer] -> encoding_type_label(type)
+      _other -> nil
+    end
+  end
+
+  defp primitive_integer_bac_type(type) when type in [:unsigned_integer, :signed_integer],
+    do: type
+
+  defp primitive_integer_bac_type({:with_validator, type, _validator}),
+    do: primitive_integer_bac_type(type)
+
+  defp primitive_integer_bac_type({:type_list, types}) when is_list(types) do
+    Enum.find_value(types, &primitive_integer_bac_type/1)
+  end
+
+  defp primitive_integer_bac_type(_type), do: nil
+
+  defp property_type_for_tuple(value) do
+    if bitstring_value?(value), do: "BITSTRING", else: "STRUCT"
+  end
+
+  @doc """
+  Type label derived from a loaded `PropertyDisplay` kind.
+  """
+  @spec display_kind_type_label(atom()) :: String.t() | nil
+  def display_kind_type_label(:array), do: "ARRAY"
+  def display_kind_type_label(:list), do: "LIST"
+  def display_kind_type_label(kind) when kind in [:struct, :priority_array], do: "STRUCT"
+  def display_kind_type_label(_kind), do: nil
+
+  @doc """
+  Tooltip for the property type column (`STRUCT`, `ARRAY`, `LIST`, and similar aggregate types).
+  """
+  @spec property_type_tooltip(map()) :: String.t() | nil
+  def property_type_tooltip(prop) do
+    cond do
+      array_type_property?(prop) -> array_type_tooltip(prop)
+      list_type_property?(prop) -> list_type_tooltip(prop)
+      struct_type_property?(prop) -> struct_type_label(prop.value)
+      true -> nil
+    end
+  end
+
+  @doc false
+  @spec array_type_tooltip(map()) :: String.t()
+  def array_type_tooltip(prop) do
+    case array_element_type_label(prop) do
+      nil -> "ARRAY"
+      element -> "ARRAY OF #{element}"
+    end
+  end
+
+  @doc false
+  @spec list_type_tooltip(map()) :: String.t()
+  def list_type_tooltip(prop) do
+    case list_element_type_label(prop) do
+      nil -> "LIST"
+      element -> "LIST OF #{element}"
+    end
+  end
+
+  defp array_type_property?(%{value_display: %{kind: :array}}), do: true
+  defp array_type_property?(%{type: "ARRAY"}), do: true
+  defp array_type_property?(%{value: %BACnetArray{}}), do: true
+  defp array_type_property?(_prop), do: false
+
+  defp list_type_property?(%{value_display: %{kind: :list}}), do: true
+  defp list_type_property?(%{type: "LIST"}), do: true
+  defp list_type_property?(%{value: value}) when is_list(value), do: true
+  defp list_type_property?(_prop), do: false
+
+  defp struct_type_property?(%{type: "STRUCT", value: %{__struct__: _struct}}), do: true
+  defp struct_type_property?(_prop), do: false
+
+  defp array_element_type_label(prop) do
+    schema_array_element_label(Map.get(prop, :bac_type)) ||
+      homogeneous_array_element_label(Map.get(prop, :value)) ||
+      homogeneous_array_element_label_from_display(Map.get(prop, :value_display))
+  end
+
+  defp list_element_type_label(prop) do
+    schema_list_element_label(Map.get(prop, :bac_type)) ||
+      homogeneous_list_element_label(Map.get(prop, :value)) ||
+      homogeneous_list_element_label_from_display(Map.get(prop, :value_display))
+  end
+
+  defp schema_array_element_label({:array, subtype}), do: bac_type_label(subtype)
+  defp schema_array_element_label({:array, subtype, _size}), do: bac_type_label(subtype)
+  defp schema_array_element_label(_bac_type), do: nil
+
+  defp schema_list_element_label({:list, subtype}), do: bac_type_label(subtype)
+  defp schema_list_element_label(_bac_type), do: nil
+
+  defp bac_type_label({:constant, type}) when is_atom(type), do: encoding_type_label(type)
+  defp bac_type_label({:struct, module}) when is_atom(module), do: struct_type_label(module)
+  defp bac_type_label({:with_validator, type, _validator}), do: bac_type_label(type)
+
+  defp bac_type_label(type) when type in [:unsigned_integer, :signed_integer],
+    do: encoding_type_label(type)
+
+  defp bac_type_label(type) when is_atom(type), do: encoding_type_label(type)
+  defp bac_type_label(_type), do: nil
+
+  defp homogeneous_array_element_label(%BACnetArray{} = value) do
+    value
+    |> BACnetArray.to_list()
+    |> homogeneous_element_type_label()
+  end
+
+  defp homogeneous_array_element_label(_value), do: nil
+
+  defp homogeneous_array_element_label_from_display(%{kind: :array, items: items})
+       when is_list(items) do
+    items
+    |> Enum.map(&Map.get(&1, :value))
+    |> homogeneous_element_type_label()
+  end
+
+  defp homogeneous_array_element_label_from_display(_display), do: nil
+
+  defp homogeneous_list_element_label(value) when is_list(value) do
+    homogeneous_element_type_label(value)
+  end
+
+  defp homogeneous_list_element_label(_value), do: nil
+
+  defp homogeneous_list_element_label_from_display(%{kind: :list, items: items})
+       when is_list(items) do
+    items
+    |> Enum.map(&Map.get(&1, :value))
+    |> homogeneous_element_type_label()
+  end
+
+  defp homogeneous_list_element_label_from_display(_display), do: nil
+
+  defp homogeneous_element_type_label(elements) when is_list(elements) do
+    elements
+    |> Enum.map(&array_element_type_key/1)
+    |> Enum.reject(&is_nil/1)
+    |> Enum.uniq()
+    |> case do
+      [single] -> array_element_type_key_label(single)
+      _mixed -> nil
+    end
+  end
+
+  defp array_element_type_key(%BACnetArray{}), do: :array
+  defp array_element_type_key(%Encoding{type: type}) when not is_nil(type), do: {:encoding, type}
+  defp array_element_type_key(%Encoding{type: nil}), do: :constructed
+  defp array_element_type_key(%{__struct__: module}) when is_atom(module), do: {:struct, module}
+  defp array_element_type_key(value) when is_float(value), do: :real
+  defp array_element_type_key(value) when is_integer(value), do: :integer
+  defp array_element_type_key(value) when is_boolean(value), do: :boolean
+  defp array_element_type_key(value) when is_binary(value), do: :character_string
+  defp array_element_type_key(value) when is_atom(value), do: :enumerated
+
+  defp array_element_type_key(value) when is_tuple(value) do
+    if bitstring_value?(value), do: :bitstring, else: nil
+  end
+
+  defp array_element_type_key(value) when is_list(value), do: :list
+
+  defp array_element_type_key(_value), do: nil
+
+  defp array_element_type_key_label({:struct, module}), do: struct_type_label(module)
+  defp array_element_type_key_label({:encoding, type}), do: encoding_type_label(type)
+  defp array_element_type_key_label(:integer), do: "INTEGER"
+  defp array_element_type_key_label(:list), do: "LIST"
+  defp array_element_type_key_label(:array), do: "ARRAY"
+  defp array_element_type_key_label(type) when is_atom(type), do: encoding_type_label(type)
+
+  @spec struct_type_label(term()) :: String.t()
+  def struct_type_label(%{__struct__: module}) when is_atom(module), do: struct_type_label(module)
+
+  def struct_type_label(module) when is_atom(module) do
+    module
+    |> Atom.to_string()
+    |> String.replace_prefix("Elixir.", "")
+  end
 
   defp format_number(value) when is_float(value), do: format_float(value)
   defp format_number(value) when is_integer(value), do: Integer.to_string(value)

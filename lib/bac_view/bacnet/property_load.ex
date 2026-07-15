@@ -21,10 +21,14 @@ defmodule BacView.BACnet.PropertyLoad do
     base =
       case device_obj do
         %ObjectIdentifier{instance: instance} ->
-          [allow_unknown_properties: true, remote_device_id: instance]
+          [
+            allow_unknown_properties: :no_unpack,
+            ignore_unsupported_object_types: true,
+            remote_device_id: instance
+          ]
 
         _other ->
-          [allow_unknown_properties: true]
+          [allow_unknown_properties: :no_unpack, ignore_unsupported_object_types: true]
       end
 
     case skip_mode do
@@ -40,6 +44,19 @@ defmodule BacView.BACnet.PropertyLoad do
   @spec scan_read_opts(ObjectIdentifier.t(), :value | true | nil) :: keyword()
   def scan_read_opts(%ObjectIdentifier{} = device_obj, skip_mode \\ nil) do
     property_read_opts(skip_mode, device_obj)
+  end
+
+  @doc false
+  @spec device_scan_opts(integer(), ObjectIdentifier.t(), :value | true | nil, keyword()) ::
+          keyword()
+  def device_scan_opts(device_id, %ObjectIdentifier{} = device_obj, skip_mode \\ nil, extra \\ []) do
+    device_id
+    |> then(fn id ->
+      device_obj
+      |> scan_read_opts(skip_mode)
+      |> Keyword.put(:remote_device_id, id)
+    end)
+    |> Keyword.merge(extra)
   end
 
   @doc """
@@ -73,7 +90,7 @@ defmodule BacView.BACnet.PropertyLoad do
   @doc false
   @spec properties_scan_fallback_on_error?(term()) :: boolean()
   def properties_scan_fallback_on_error?(reason) do
-    Segmentation.fallback_error?({:error, reason}) or
+    Segmentation.rpm_fallback_error?({:error, reason}) or
       reason in [:object_unavailable, :property_list_not_readable]
   end
 
@@ -118,9 +135,15 @@ defmodule BacView.BACnet.PropertyLoad do
     do: property_read_opts(skip_mode, device_obj)
 
   defp merge_progress_opts(read_opts, opts) when is_list(read_opts) and is_list(opts) do
-    case Keyword.get(opts, :on_property_progress) do
-      fun when is_function(fun, 1) -> Keyword.put(read_opts, :on_property_progress, fun)
-      _no_progress -> read_opts
+    read_opts
+    |> maybe_put_pass_through_opt(opts, :on_property_progress)
+    |> maybe_put_pass_through_opt(opts, :remote_device_id)
+  end
+
+  defp maybe_put_pass_through_opt(read_opts, opts, key) do
+    case Keyword.get(opts, key) do
+      nil -> read_opts
+      value -> Keyword.put(read_opts, key, value)
     end
   end
 end

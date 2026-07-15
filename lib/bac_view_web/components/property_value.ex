@@ -56,9 +56,9 @@ defmodule BacViewWeb.PropertyValue do
           >
             <.priority_array_items items={@display.items} />
           </.collapsible_block>
-        <% :array -> %>
+        <% kind when kind in [:array, :list] -> %>
           <.collapsible_block
-            id={collapsible_id(@dom_id_prefix, @property, "array")}
+            id={collapsible_id(@dom_id_prefix, @property, Atom.to_string(kind))}
             summary={
               t(@locale, @locale_version, "%{count} Einträge",
                 count: length(@display.items)
@@ -276,9 +276,9 @@ defmodule BacViewWeb.PropertyValue do
               <span class="bac-mono text-sm">{slot.formatted}</span>
             </div>
           </div>
-        <% @field.kind == :array and match?(%{items: items} when is_list(items), @field) -> %>
+        <% @field.kind in [:array, :list] and match?(%{items: items} when is_list(items), @field) -> %>
           <.collapsible_block
-            id={collapsible_id(@dom_id_prefix, @property, "field-array", @field.key)}
+            id={collapsible_id(@dom_id_prefix, @property, "field-#{@field.kind}", @field.key)}
             summary={"#{@field.label}: #{PropertyDisplay.brief_summary(field_display(@field))}"}
             locale={@locale}
             locale_version={@locale_version}
@@ -307,7 +307,7 @@ defmodule BacViewWeb.PropertyValue do
   end
 
   defp array_item_display(%{kind: kind, formatted: formatted, fields: fields, items: items})
-       when kind in [:struct, :priority_array, :array] do
+       when kind in [:struct, :priority_array, :array, :list] do
     %{kind: kind, formatted: formatted, fields: fields || [], items: items || []}
   end
 
@@ -326,7 +326,7 @@ defmodule BacViewWeb.PropertyValue do
   end
 
   defp field_display(%{kind: kind, formatted: formatted, fields: fields, items: items})
-       when kind in [:struct, :priority_array, :array] do
+       when kind in [:struct, :priority_array, :array, :list] do
     %{kind: kind, formatted: formatted, fields: fields || [], items: items || []}
   end
 
@@ -335,11 +335,17 @@ defmodule BacViewWeb.PropertyValue do
   end
 
   defp nested_display?(%{kind: :struct, fields: fields}) when fields != [], do: true
-  defp nested_display?(%{kind: :array, items: items}) when items != [], do: true
+
+  defp nested_display?(%{kind: kind, items: items})
+       when kind in [:array, :list] and items != [],
+       do: true
+
   defp nested_display?(%{kind: :priority_array, items: items}) when items != [], do: true
   defp nested_display?(_nested_display), do: false
 
-  defp nested_field?(%{kind: kind}) when kind in [:struct, :array, :priority_array], do: true
+  defp nested_field?(%{kind: kind}) when kind in [:struct, :array, :list, :priority_array],
+    do: true
+
   defp nested_field?(_nested_field), do: false
 
   defp collapsible_id(dom_id_prefix, property, suffix, key \\ nil) do
@@ -364,7 +370,8 @@ defmodule BacViewWeb.PropertyValue do
     not writable
   end
 
-  defp collapsible?(%{kind: kind}, _writable) when kind in [:array, :priority_array], do: true
+  defp collapsible?(%{kind: kind}, _writable) when kind in [:array, :list, :priority_array],
+    do: true
 
   defp collapsible?(%{kind: kind, formatted: formatted}, _writable)
        when kind in [:scalar, :object_identifier] and is_binary(formatted) do

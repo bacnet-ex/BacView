@@ -41,14 +41,18 @@ defmodule BacView.BACnet.ScanValidationTest do
 
   describe "PropertyLoad.property_read_opts/2" do
     test "builds strict property read opts by default" do
-      assert PropertyLoad.property_read_opts() == [allow_unknown_properties: true]
+      assert PropertyLoad.property_read_opts() == [
+               allow_unknown_properties: :no_unpack,
+               ignore_unsupported_object_types: true
+             ]
     end
 
     test "includes remote_device_id when device object is known" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
       assert PropertyLoad.property_read_opts(nil, device_obj) == [
-               allow_unknown_properties: true,
+               allow_unknown_properties: :no_unpack,
+               ignore_unsupported_object_types: true,
                remote_device_id: 12
              ]
     end
@@ -165,7 +169,8 @@ defmodule BacView.BACnet.ScanValidationTest do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
       assert PropertyLoad.scan_read_opts(device_obj) == [
-               allow_unknown_properties: true,
+               allow_unknown_properties: :no_unpack,
+               ignore_unsupported_object_types: true,
                remote_device_id: 12
              ]
     end
@@ -174,7 +179,7 @@ defmodule BacView.BACnet.ScanValidationTest do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
       value_opts = PropertyLoad.scan_read_opts(device_obj, :value)
-      assert Keyword.get(value_opts, :allow_unknown_properties)
+      assert Keyword.get(value_opts, :allow_unknown_properties) == :no_unpack
       assert Keyword.get(value_opts, :remote_device_id) == 12
 
       assert Keyword.get(value_opts, :object_opts) == [

@@ -5,10 +5,18 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     ObjectIdentifier,
     ObjectTypes.AnalogInput,
     ObjectTypes.AnalogOutput,
+    ObjectTypes.IntegerValue,
     ObjectsUtility
   }
 
+  alias BacView.BACnet.Client
   alias BacView.BACnet.Protocol.PropertyReader
+  alias BacView.Test.{BacnetEtsLock, SilenceLogger}
+
+  setup do
+    SilenceLogger.silence_for_test(Client, :error)
+    :ok
+  end
 
   defmodule MockClient do
     def read_object(_destination, _object, _opts) do
@@ -144,6 +152,26 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert %{properties: rows, unknown_properties: []} = result
       assert Enum.any?(rows, &(&1.property == :present_value and &1.value == 1.0))
     end
+
+    test "labels integer properties from object schema" do
+      {:ok, unsigned_object} =
+        AnalogInput.create(1, "AI-1", %{present_value: 1.0, update_interval: 30})
+
+      {:ok, signed_object} = IntegerValue.create(1, "IV-1", %{present_value: -5})
+
+      unsigned_id = %ObjectIdentifier{type: :analog_input, instance: 1}
+      signed_id = %ObjectIdentifier{type: :integer_value, instance: 1}
+
+      unsigned_rows =
+        PropertyReader.read_result_from_object(unsigned_id, unsigned_object).properties
+
+      signed_rows = PropertyReader.read_result_from_object(signed_id, signed_object).properties
+
+      assert Enum.find(unsigned_rows, &(&1.property == :update_interval)).type ==
+               "UNSIGNED INTEGER"
+
+      assert Enum.find(signed_rows, &(&1.property == :present_value)).type == "SIGNED INTEGER"
+    end
   end
 
   describe "read_all/3" do
@@ -254,6 +282,15 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert expected_fallback_rows(rows)
     end
 
+    test "falls back to individual reads when RPM is unrecognized" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(__MODULE__.UnrecognizedServiceClient, :dest, object)
+
+      assert expected_fallback_rows(rows)
+    end
+
     test "reads property_list by index when the full array read fails" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
 
@@ -333,7 +370,22 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     end
   end
 
-  describe "property_read_concurrency/0" do
+  describe "property_read_concurrency/1" do
+    test "uses per-device max_concurrency when set" do
+      BacnetEtsLock.with_tables([:bacview_devices], fn ->
+        if :ets.whereis(:bacview_devices) == :undefined do
+          :ets.new(:bacview_devices, [:named_table, :set, :public])
+        else
+          :ets.delete_all_objects(:bacview_devices)
+        end
+
+        :ets.insert(:bacview_devices, {42, %{id: 42, max_concurrency: 1}})
+
+        assert PropertyReader.property_read_concurrency(device_id: 42) == 1
+        assert PropertyReader.property_read_concurrency(remote_device_id: 42) == 1
+      end)
+    end
+
     test "defaults to historical healthy concurrency of 8" do
       previous = Application.get_env(:bacview, :property_read_concurrency)
 
@@ -468,6 +520,55 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
   defmodule UnavailableClient do
     def read_object(_destination, _object, _opts), do: {:error, :timeout}
+  end
+
+  defmodule UnrecognizedServiceClient do
+    alias BACnet.Protocol.APDU
+
+    @property_list [
+      :object_identifier,
+      :object_name,
+      :object_type,
+      :present_value,
+      :description,
+      :status_flags,
+      :event_state,
+      :out_of_service,
+      :units
+    ]
+
+    @rpm_reject {:error,
+                 {:bacnet_reject, %APDU.Reject{invoke_id: 1, reason: :unrecognized_service}}}
+
+    def read_object(_destination, _object, _opts), do: @rpm_reject
+
+    def read_property_multiple(_destination, _object, _properties, _opts), do: @rpm_reject
+
+    def read_property(_destination, _object, :object_name, _opts), do: {:ok, "AI-197"}
+
+    def read_property(_destination, _object, :property_list, opts) do
+      case Keyword.get(opts, :array_index) do
+        nil -> {:ok, @property_list}
+        0 -> {:ok, length(@property_list)}
+        idx when is_integer(idx) -> {:ok, Enum.at(@property_list, idx - 1)}
+      end
+    end
+
+    def read_property(_destination, _object, property, _opts) do
+      values = %{
+        present_value: 42.0,
+        description: "test input",
+        status_flags: [false, false, false, false],
+        event_state: :normal,
+        out_of_service: false,
+        units: :degrees_celsius
+      }
+
+      case Map.fetch(values, property) do
+        {:ok, value} -> {:ok, value}
+        :error -> {:error, :property_not_found}
+      end
+    end
   end
 
   defmodule BufferOverflowClient do
@@ -814,36 +915,86 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
   end
 
   describe "format_unknown_properties/1" do
-    test "formats numeric and atom identifiers from _unknown_properties" do
+    test "formats Encoding values from _unknown_properties" do
+      integer_encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 42,
+        extras: []
+      }
+
+      string_encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :character_string,
+        value: "x",
+        extras: []
+      }
+
       {:ok, object} =
-        AnalogInput.create(
-          1,
-          "AI-1",
-          Map.merge(%{present_value: 1.0, vendor_prop: "x"}, %{512 => 42}),
-          allow_unknown_properties: true,
-          remote_object: 1555
-        )
+        AnalogInput.create(1, "AI-1", %{present_value: 1.0}, remote_object: 1555)
+
+      object = %{
+        object
+        | _unknown_properties: %{512 => integer_encoding, vendor_prop: string_encoding}
+      }
 
       rows = PropertyReader.format_unknown_properties(object)
 
       assert length(rows) == 2
 
-      assert %{property: 512, property_name: "property 512", value: 42} =
-               Enum.find(rows, &(&1.property == 512))
+      assert %{
+               property: 512,
+               property_name: "property 512",
+               value: ^integer_encoding,
+               type: "UNSIGNED INTEGER",
+               value_formatted: "42"
+             } = Enum.find(rows, &(&1.property == 512))
 
       assert %{
                property: :vendor_prop,
                property_name: "vendor prop",
-               value: "x",
+               value: ^string_encoding,
+               type: "CHARACTER STRING",
+               value_formatted: "x",
                string_value?: true,
+               hex_toggle?: false,
                raw_binary: "x"
-             } =
-               Enum.find(rows, &(&1.property == :vendor_prop))
+             } = Enum.find(rows, &(&1.property == :vendor_prop))
 
       refute Enum.find(rows, &(&1.property == 512)).string_value?
 
       assert Enum.all?(rows, &Map.has_key?(&1, :value_display))
-      assert Enum.all?(rows, &Map.has_key?(&1, :type))
+    end
+
+    test "labels Encoding lists in unknown properties as PROPRIETARY hex dumps" do
+      encoding_list = [
+        %BACnet.Protocol.ApplicationTags.Encoding{
+          encoding: :primitive,
+          type: :unsigned_integer,
+          value: 3,
+          extras: []
+        },
+        %BACnet.Protocol.ApplicationTags.Encoding{
+          encoding: :primitive,
+          type: :real,
+          value: 21.5,
+          extras: []
+        }
+      ]
+
+      {:ok, object} =
+        AnalogInput.create(1, "AI-1", %{present_value: 1.0}, remote_object: 1555)
+
+      object = %{object | _unknown_properties: %{vendor_blob: encoding_list}}
+
+      [row] = PropertyReader.format_unknown_properties(object)
+
+      assert row.property == :vendor_blob
+      assert row.type == "PROPRIETARY"
+      assert row.string_value?
+      refute row.hex_toggle?
+      assert row.value_formatted =~ ":"
+      refute row.value_formatted =~ "21.5"
     end
 
     test "returns empty list when no unknown properties are present" do

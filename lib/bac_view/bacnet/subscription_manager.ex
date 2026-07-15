@@ -288,7 +288,14 @@ defmodule BacView.BACnet.SubscriptionManager do
 
     with {:ok, device} <- fetch_device(device_id),
          {:ok, subscribe_service} <-
-           send_subscribe(device.address, object_id, property, sub_opts, preferred_service) do
+           send_subscribe(
+             device.address,
+             object_id,
+             property,
+             device_id,
+             sub_opts,
+             preferred_service
+           ) do
       cov_increment =
         if subscribe_service == :subscribe_cov_property,
           do: Keyword.get(sub_opts, :cov_increment),
@@ -327,6 +334,7 @@ defmodule BacView.BACnet.SubscriptionManager do
              device.address,
              object_id,
              property,
+             device_id,
              process_id,
              subscribe_service
            ) do
@@ -338,7 +346,9 @@ defmodule BacView.BACnet.SubscriptionManager do
     end
   end
 
-  defp send_subscribe(destination, object_id, property, opts, preferred_service) do
+  defp send_subscribe(destination, object_id, property, device_id, opts, preferred_service) do
+    opts = Keyword.put(opts, :device_id, device_id)
+
     case preferred_service do
       :subscribe_cov when property == :present_value ->
         subscribe_present_value(destination, object_id, property, opts, :subscribe_cov)
@@ -374,8 +384,15 @@ defmodule BacView.BACnet.SubscriptionManager do
     end
   end
 
-  defp cancel_subscription(destination, object_id, property, process_id, subscribe_service) do
-    opts = [lifetime: nil, pid: process_id]
+  defp cancel_subscription(
+         destination,
+         object_id,
+         property,
+         device_id,
+         process_id,
+         subscribe_service
+       ) do
+    opts = [lifetime: nil, pid: process_id, device_id: device_id]
 
     case subscribe_service do
       :subscribe_cov when property == :present_value ->

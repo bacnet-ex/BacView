@@ -49,6 +49,22 @@ defmodule BacView.BACnet.SegmentationTest do
     refute Segmentation.fallback_error?({:error, {:bacnet_reject, service_reject}})
   end
 
+  test "rpm_fallback_error? includes unrecognized service rejects for RPM fallback" do
+    service_reject = %APDU.Reject{invoke_id: 2, reason: :reject_unrecognized_service}
+    atom_reject = %APDU.Reject{invoke_id: 3, reason: :unrecognized_service}
+    numeric_reject = %APDU.Reject{invoke_id: 4, reason: 9}
+
+    assert Segmentation.rpm_fallback_error?({:error, {:bacnet_reject, service_reject}})
+    assert Segmentation.rpm_fallback_error?({:error, {:bacnet_reject, atom_reject}})
+    assert Segmentation.rpm_fallback_error?({:error, {:bacnet_reject, numeric_reject}})
+
+    assert Segmentation.rpm_fallback_error?(
+             {:error, {{:bacnet_reject, %{service_reject | reason: :unrecognized_service}}, :oid}}
+           )
+
+    refute Segmentation.rpm_fallback_error?({:error, :timeout})
+  end
+
   test "array_fallback_error? includes segmentation and property_not_readable" do
     assert Segmentation.array_fallback_error?({:error, :segmentation_not_supported})
     assert Segmentation.array_fallback_error?({:error, :buffer_overflow})

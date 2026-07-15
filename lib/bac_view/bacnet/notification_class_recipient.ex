@@ -157,7 +157,9 @@ defmodule BacView.BACnet.NotificationClassRecipient do
     with {:ok, device} <- fetch_device(device_id) do
       destination = default_destination()
 
-      case Client.add_list_element(device.address, object_id, :recipient_list, destination) do
+      case Client.add_list_element(device.address, object_id, :recipient_list, destination,
+             device_id: device_id
+           ) do
         :ok ->
           mark_enrolled(device_id, object_id)
           :ok
@@ -173,14 +175,14 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   end
 
   defp enroll_via_write_property(device, device_id, object_id) do
-    with {:ok, current} <- read_recipient_list(device.address, object_id) do
+    with {:ok, current} <- read_recipient_list(device.address, object_id, device_id) do
       if recipient_list_contains_self?(current) do
         mark_enrolled(device_id, object_id)
         :ok
       else
         updated = add_self_to_recipient_list(current)
 
-        case write_recipient_list(device.address, object_id, updated) do
+        case write_recipient_list(device.address, object_id, updated, device_id) do
           :ok ->
             mark_enrolled(device_id, object_id)
             :ok
@@ -196,7 +198,9 @@ defmodule BacView.BACnet.NotificationClassRecipient do
     with {:ok, device} <- fetch_device(device_id) do
       destination = default_destination()
 
-      case Client.remove_list_element(device.address, object_id, :recipient_list, destination) do
+      case Client.remove_list_element(device.address, object_id, :recipient_list, destination,
+             device_id: device_id
+           ) do
         :ok ->
           mark_unenrolled(device_id, object_id)
           :ok
@@ -212,11 +216,11 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   end
 
   defp unenroll_via_write_property(device, device_id, object_id) do
-    with {:ok, current} <- read_recipient_list(device.address, object_id) do
+    with {:ok, current} <- read_recipient_list(device.address, object_id, device_id) do
       if recipient_list_contains_self?(current) do
         updated = remove_self_from_recipient_list(current)
 
-        case write_recipient_list(device.address, object_id, updated) do
+        case write_recipient_list(device.address, object_id, updated, device_id) do
           :ok ->
             mark_unenrolled(device_id, object_id)
             :ok
@@ -235,7 +239,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
     object_id = %ObjectIdentifier{type: :notification_class, instance: instance}
 
     with {:ok, device} <- fetch_device(device_id),
-         {:ok, current} <- read_recipient_list(device.address, object_id) do
+         {:ok, current} <- read_recipient_list(device.address, object_id, device_id) do
       if recipient_list_contains_self?(current) do
         mark_enrolled(device_id, object_id)
       else
@@ -256,19 +260,20 @@ defmodule BacView.BACnet.NotificationClassRecipient do
     end
   end
 
-  defp read_recipient_list(destination, object_id) do
-    case Client.read_property(destination, object_id, :recipient_list) do
+  defp read_recipient_list(destination, object_id, device_id) do
+    case Client.read_property(destination, object_id, :recipient_list, device_id: device_id) do
       {:ok, value} -> {:ok, normalize_recipient_list(value)}
       {:error, _destination} = err -> err
     end
   end
 
-  defp write_recipient_list(destination, object_id, destinations) do
+  defp write_recipient_list(destination, object_id, destinations, device_id) do
     Client.write_property(
       destination,
       object_id,
       :recipient_list,
-      BACnetArray.from_list(destinations)
+      BACnetArray.from_list(destinations),
+      device_id: device_id
     )
   end
 

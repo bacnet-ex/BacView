@@ -4,6 +4,8 @@ defmodule BacView.BACnet.Address do
   addresses for display and comparison.
   """
 
+  alias BACnet.Protocol.NpciTarget
+
   @bacnet_port 47_808
   @ipv4_port_range 47_808..65_535
   @max_scan_targets 256
@@ -93,6 +95,53 @@ defmodule BacView.BACnet.Address do
 
   def format_destination(mac) when is_integer(mac) and mac in 0..255, do: Integer.to_string(mac)
   def format_destination(other), do: inspect(other)
+
+  @doc "Formats an NPCI source or destination target for display."
+  @spec format_npci_target(NpciTarget.t() | nil) :: String.t()
+  def format_npci_target(nil), do: "none"
+
+  def format_npci_target(%NpciTarget{net: net, address: nil}), do: "#{net}/broadcast"
+
+  def format_npci_target(%NpciTarget{net: net, address: address}) when is_integer(address) do
+    "#{net}/#{format_npci_address(address)}"
+  end
+
+  defp format_npci_address(address) when address in 0..255, do: Integer.to_string(address)
+
+  defp format_npci_address(address) when is_integer(address) and address >= 0 do
+    binary = npci_address_to_binary(address)
+
+    case byte_size(binary) do
+      6 ->
+        <<a, b, c, d, port_hi, port_lo>> = binary
+        port = port_hi * 256 + port_lo
+
+        if port in 1..65_535 do
+          "#{a}.#{b}.#{c}.#{d}:#{port}"
+        else
+          format_npci_hex(binary)
+        end
+
+      1 ->
+        Integer.to_string(address)
+
+      _other ->
+        format_npci_hex(binary)
+    end
+  end
+
+  defp npci_address_to_binary(address) do
+    int_length = max(1, div(byte_size(Integer.to_string(address, 2)) + 7, 8))
+    <<address::integer-size(int_length)-unit(8)>>
+  end
+
+  defp format_npci_hex(binary) do
+    binary
+    |> Base.encode16(case: :upper)
+    |> String.graphemes()
+    |> Enum.chunk_every(2)
+    |> Enum.map_join(":", &Enum.join(&1, ""))
+  end
 
   @doc """
   Derives legacy `ip`/`port` fields and a display label from a destination address.

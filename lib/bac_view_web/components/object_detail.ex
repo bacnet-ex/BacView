@@ -516,7 +516,9 @@ defmodule BacViewWeb.ObjectDetail do
                       />
                     </.form>
                   </td>
-                  <td class="bac-text-faint align-top">{prop.type}</td>
+                  <td class="bac-text-faint align-top" title={PropertyFormatter.property_type_tooltip(prop)}>
+                    {prop.type}
+                  </td>
                   <td class="align-top">
                     <button
                       :if={
@@ -628,7 +630,9 @@ defmodule BacViewWeb.ObjectDetail do
                       locale_version={@locale_version}
                     />
                   </td>
-                  <td class="bac-text-faint align-top">{prop.type}</td>
+                  <td class="bac-text-faint align-top" title={PropertyFormatter.property_type_tooltip(prop)}>
+                    {prop.type}
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -654,6 +658,7 @@ defmodule BacViewWeb.ObjectDetail do
         {unknown_property_display_text(@prop, @hex_mode?)}
       </span>
       <button
+        :if={@prop[:hex_toggle?]}
         type="button"
         id={"unknown-prop-hex-toggle-#{@prop.property}"}
         phx-click="toggle_unknown_property_hex"
@@ -770,7 +775,7 @@ defmodule BacViewWeb.ObjectDetail do
   end
 
   defp complex_property_display?(%{value_display: %{kind: kind}} = prop)
-       when kind in [:struct, :array, :priority_array, :object_identifier] do
+       when kind in [:struct, :array, :list, :priority_array, :object_identifier] do
     not PropertyEnumeration.dropdown?(prop)
   end
 

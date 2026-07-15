@@ -29,7 +29,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
         }
 
   @type t :: %{
-          kind: :scalar | :struct | :priority_array | :array | :object_identifier,
+          kind: :scalar | :struct | :priority_array | :array | :list | :object_identifier,
           formatted: String.t(),
           fields: [field()],
           items: [field() | map()]
@@ -52,9 +52,8 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     gettext("%{count} Prioritäten gesetzt", count: active)
   end
 
-  def summary(%{kind: :array, items: items}) do
-    gettext("%{count} Einträge", count: length(items))
-  end
+  def summary(%{kind: :array, items: items}), do: collection_summary(items)
+  def summary(%{kind: :list, items: items}), do: collection_summary(items)
 
   def summary(%{kind: :struct, fields: fields}) do
     struct_fields_summary(fields)
@@ -66,6 +65,10 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     Enum.map_join(fields, ", ", fn field -> "#{field.label}: #{field.formatted}" end)
   end
 
+  defp collection_summary(items) do
+    gettext("%{count} Einträge", count: length(items))
+  end
+
   @doc """
   Short label for collapsed nested values (lists, structs, priority arrays).
   """
@@ -74,9 +77,8 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     gettext("%{count} Felder", count: length(fields))
   end
 
-  def brief_summary(%{kind: :array, items: items}) do
-    gettext("%{count} Einträge", count: length(items))
-  end
+  def brief_summary(%{kind: :array, items: items}), do: collection_summary(items)
+  def brief_summary(%{kind: :list, items: items}), do: collection_summary(items)
 
   def brief_summary(%{kind: :priority_array, items: items}) do
     active =
@@ -99,6 +101,21 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
       kind: :scalar,
       formatted: PropertyFormatter.format_value(encoding, nil),
       fields: [],
+      items: []
+    }
+  end
+
+  defp do_build(%Encoding{} = encoding) do
+    fields =
+      encoding
+      |> Map.from_struct()
+      |> Enum.map(fn {key, value} -> field_entry(key, value) end)
+      |> Enum.sort_by(& &1.label)
+
+    %{
+      kind: :struct,
+      formatted: struct_fields_summary(fields),
+      fields: fields,
       items: []
     }
   end
@@ -276,7 +293,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
       end)
 
     %{
-      kind: :array,
+      kind: :list,
       formatted: Enum.map_join(items, ", ", & &1.formatted),
       fields: [],
       items: items

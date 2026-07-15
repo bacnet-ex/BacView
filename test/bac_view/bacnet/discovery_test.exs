@@ -78,6 +78,49 @@ defmodule BacView.BACnet.DiscoveryTest do
     end
   end
 
+  describe "apply_shared_source_max_concurrency/0" do
+    setup do
+      if :ets.whereis(:bacview_devices) == :undefined do
+        :ets.new(:bacview_devices, [:named_table, :set, :public])
+      end
+
+      on_exit(fn ->
+        if :ets.whereis(:bacview_devices) != :undefined do
+          :ets.delete(:bacview_devices)
+        end
+      end)
+
+      {:ok, iam: elem(IAmCollector.parse_iam(@iam_apdu), 1)}
+    end
+
+    test "sets max_concurrency to 1 when multiple devices share a source address", %{iam: iam} do
+      router_source = {{192, 168, 1, 1}, 47_808}
+      iam_100 = %{iam | device: %{iam.device | instance: 100}}
+      iam_200 = %{iam | device: %{iam.device | instance: 200}}
+
+      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808}, nil, router_source)
+      Discovery.upsert_iam_device(iam_200, {{10, 0, 0, 6}, 47_808}, nil, router_source)
+
+      assert {:ok, %{max_concurrency: 1}} = Discovery.get_device(100)
+      assert {:ok, %{max_concurrency: 1}} = Discovery.get_device(200)
+    end
+
+    test "clears max_concurrency when only one device remains on a source address", %{iam: iam} do
+      router_source = {{192, 168, 1, 1}, 47_808}
+      iam_100 = %{iam | device: %{iam.device | instance: 100}}
+      iam_200 = %{iam | device: %{iam.device | instance: 200}}
+
+      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808}, nil, router_source)
+      Discovery.upsert_iam_device(iam_200, {{10, 0, 0, 6}, 47_808}, nil, router_source)
+
+      :ets.delete_all_objects(:bacview_devices)
+      Discovery.upsert_iam_device(iam_100, {{10, 0, 0, 5}, 47_808}, nil, router_source)
+
+      assert {:ok, device} = Discovery.get_device(100)
+      refute Map.has_key?(device, :max_concurrency)
+    end
+  end
+
   describe "upsert_iam_device/2" do
     setup do
       if :ets.whereis(:bacview_devices) == :undefined do

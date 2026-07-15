@@ -5,6 +5,8 @@ defmodule BacView.BACnet.IAmCollector do
 
   alias BACnet.Protocol.APDU.UnconfirmedServiceRequest
   alias BACnet.Protocol.BvlcForwardedNPDU
+  alias BACnet.Protocol.NPCI
+  alias BACnet.Protocol.NpciTarget
   alias BACnet.Protocol.Services.IAm
   alias BACnet.Stack.Client, as: StackClient
   alias BacView.BACnet.Address
@@ -40,12 +42,19 @@ defmodule BacView.BACnet.IAmCollector do
   Collects I-Am responses for `timeout` ms from the caller's mailbox.
 
   The caller must already be subscribed to the BACnet stack client.
-  Returns a list of `{address, %IAm{}}` tuples, deduplicated by device instance.
+  Returns a list of `{address, %IAm{}, npci_source, source_address}` tuples,
+  deduplicated by device instance. `npci_source` is a `NpciTarget` when the I-Am
+  NPCI carried a source target (typical for BACnet routers), otherwise `nil`.
+  `source_address` is the normalized BACnet/IP or MS/TP transport source that
+  delivered the I-Am.
 
   Options:
-    * `:on_iam` - optional `(address, IAm.t() -> any)` callback invoked per response
+    * `:on_iam` - optional
+      `(address, IAm.t(), npci_source :: NpciTarget.t() | nil, source_address :: term() -> any)`
+      callback invoked per response
   """
-  @spec collect(pos_integer(), keyword()) :: [{term(), IAm.t()}]
+  @spec collect(pos_integer(), keyword()) ::
+          [{term(), IAm.t(), NpciTarget.t() | nil, term()}]
   def collect(timeout, opts \\ []) when is_integer(timeout) and timeout > 0 do
     ref = make_ref()
     timer = Process.send_after(self(), {:bacview_iam_collector, :stop, ref}, timeout)
@@ -72,8 +81,13 @@ defmodule BacView.BACnet.IAmCollector do
 
   defp collect_loop(ref, acc, on_iam, messages) do
     receive do
-      {:bacnet_client, _reply_ref, apdu, {source, bvlc, _npci}, _client_pid} ->
-        collect_loop(ref, ingest_apdu(acc, apdu, source, bvlc, on_iam), on_iam, messages + 1)
+      {:bacnet_client, _reply_ref, apdu, {source, bvlc, npci}, _client_pid} ->
+        collect_loop(
+          ref,
+          ingest_apdu(acc, apdu, source, bvlc, npci, on_iam),
+          on_iam,
+          messages + 1
+        )
 
       {:bacview_iam_collector, :stop, ^ref} ->
         {acc, messages}
@@ -91,19 +105,22 @@ defmodule BacView.BACnet.IAmCollector do
     end
   end
 
-  defp ingest_apdu(acc, apdu, source, bvlc, on_iam) do
+  defp ingest_apdu(acc, apdu, source, bvlc, npci, on_iam) do
     case parse_iam(apdu) do
       {:ok, %IAm{device: %{instance: instance}} = iam} ->
         address = device_address(source, bvlc)
+        npci_source = npci_source_from(npci)
+        source_address = source_address(source)
 
         Logger.info(
           "IAmCollector: device #{instance} at #{format_address(address)} " <>
-            "(source #{format_address(source)})"
+            "(source #{format_address(source_address)}, " <>
+            "npci source #{Address.format_npci_target(npci_source)})"
         )
 
-        if on_iam, do: on_iam.(address, iam)
+        if on_iam, do: on_iam.(address, iam, npci_source, source_address)
 
-        Map.put(acc, instance, {address, iam})
+        Map.put(acc, instance, {address, iam, npci_source, source_address})
 
       {:error, reason} ->
         Logger.debug("IAmCollector: ignored APDU #{inspect(reason)}")
@@ -123,6 +140,10 @@ defmodule BacView.BACnet.IAmCollector do
 
   def parse_iam(_iam), do: {:error, :not_i_am}
 
+  @doc false
+  @spec source_address(term()) :: term()
+  def source_address(source), do: Address.normalize_destination(source)
+
   @spec device_address(term(), term()) :: {term(), term()}
   def device_address(source, bvlc) do
     case bvlc do
@@ -133,6 +154,11 @@ defmodule BacView.BACnet.IAmCollector do
         normalize_address(source)
     end
   end
+
+  @doc false
+  @spec npci_source_from(NPCI.t() | term()) :: NpciTarget.t() | nil
+  def npci_source_from(%NPCI{source: %NpciTarget{} = source}), do: source
+  def npci_source_from(_npci), do: nil
 
   defp normalize_address(address), do: Address.normalize_destination(address)
   defp format_address(address), do: Address.format_destination(address)

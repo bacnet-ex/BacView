@@ -22,6 +22,7 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyFormatter
+  alias BacView.BACnet.Protocol.PropertyReader
   alias BacView.BACnet.Protocol.PropertyWriter
   alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.BACnet.Protocol.TrendLogNavigation
@@ -294,13 +295,14 @@ defmodule BacView.BACnet.DeviceSession do
     progress_opts =
       case Keyword.get(call_opts, :on_property_progress) do
         fun when is_function(fun, 1) ->
-          [on_property_progress: fun]
+          [on_property_progress: fun, remote_device_id: device_id]
 
         _no_progress ->
           [
             on_property_progress: fn progress ->
               broadcast_properties_progress(device_id, object, progress)
-            end
+            end,
+            remote_device_id: device_id
           ]
       end
 
@@ -331,14 +333,19 @@ defmodule BacView.BACnet.DeviceSession do
   def handle_call(
         {:read_property, object, property, opts},
         _from,
-        %{device: device} = state
+        %{device: device, device_id: device_id} = state
       ) do
     skip_mode = ValidationSkipStore.resolve(state, object)
     device_obj = Map.get(device || %{}, :object)
 
     result =
       if device do
-        read_opts = Keyword.merge(PropertyLoad.property_read_opts(skip_mode, device_obj), opts)
+        read_opts =
+          skip_mode
+          |> PropertyLoad.property_read_opts(device_obj)
+          |> Keyword.put(:remote_device_id, device_id)
+          |> Keyword.merge(opts)
+
         Client.read_property(device.address, object, property, read_opts)
       else
         {:error, :device_not_loaded}
@@ -355,7 +362,13 @@ defmodule BacView.BACnet.DeviceSession do
       ) do
     result =
       if device do
-        Client.read_range(device.address, object, property, range, opts)
+        Client.read_range(
+          device.address,
+          object,
+          property,
+          range,
+          Keyword.put(opts, :device_id, state.device_id)
+        )
       else
         {:error, :device_not_loaded}
       end
@@ -371,7 +384,13 @@ defmodule BacView.BACnet.DeviceSession do
       ) do
     result =
       if device do
-        Client.write_property(device.address, object, property, value, opts)
+        Client.write_property(
+          device.address,
+          object,
+          property,
+          value,
+          Keyword.put(opts, :device_id, state.device_id)
+        )
       else
         {:error, :device_not_loaded}
       end
@@ -482,8 +501,10 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp load_device_impl(discovered, device_id, address, device_obj) do
     with {:ok, device} <-
-           ObjectScanRead.read_object_fallback(address, device_obj,
-             allow_unknown_properties: true
+           ObjectScanRead.read_object_fallback(
+             address,
+             device_obj,
+             PropertyLoad.device_scan_opts(device_id, device_obj)
            ),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
          {:ok, scanned, scan_errors} <-
@@ -531,7 +552,10 @@ defmodule BacView.BACnet.DeviceSession do
   defp read_object_list(address, device_obj, device_id) do
     report_progress(device_id, %{stage: :reading_object_list, done: 0, total: nil})
 
-    case Client.read_property(address, device_obj, :object_list, raw: true) do
+    case Client.read_property(address, device_obj, :object_list,
+           remote_device_id: device_id,
+           raw: true
+         ) do
       {:ok, raw} ->
         object_ids = normalize_object_ids(raw)
 
@@ -556,7 +580,10 @@ defmodule BacView.BACnet.DeviceSession do
   # response may be too large. Read the length (index 0), then fetch each element
   # by array index individually (each response is a single small ObjectIdentifier).
   defp read_object_list_indexed(address, device_obj, device_id) do
-    case Client.read_property(address, device_obj, :object_list, array_index: 0) do
+    case Client.read_property(address, device_obj, :object_list,
+           remote_device_id: device_id,
+           array_index: 0
+         ) do
       {:ok, count} when is_integer(count) ->
         if count == 0 do
           {:ok, []}
@@ -578,6 +605,7 @@ defmodule BacView.BACnet.DeviceSession do
                          address,
                          device_obj,
                          :object_list,
+                         remote_device_id: device_id,
                          array_index: idx,
                          raw: true
                        ) do
@@ -602,7 +630,7 @@ defmodule BacView.BACnet.DeviceSession do
                 bump_object_list_progress(device_id, processed_counter, count)
                 oid
               end,
-              max_concurrency: 8,
+              max_concurrency: PropertyReader.property_read_concurrency(device_id: device_id),
               timeout: :infinity,
               ordered: false
             )
@@ -654,7 +682,7 @@ defmodule BacView.BACnet.DeviceSession do
     if total == 0 do
       {:ok, [], []}
     else
-      scan_opts = PropertyLoad.scan_read_opts(device_obj)
+      scan_opts = PropertyLoad.device_scan_opts(device_id, device_obj)
 
       done_counter = :counters.new(1, [])
       error_counter = :counters.new(1, [])
@@ -670,7 +698,7 @@ defmodule BacView.BACnet.DeviceSession do
               {:error, reason} -> {:error, object_id, reason}
             end
           end,
-          max_concurrency: min(32, System.schedulers_online()),
+          max_concurrency: PropertyReader.scan_concurrency(device_id),
           ordered: false,
           timeout: :infinity
         )
@@ -831,7 +859,7 @@ defmodule BacView.BACnet.DeviceSession do
          %ObjectIdentifier{} = object,
          skip_mode
        ) do
-    opts = PropertyLoad.scan_read_opts(device_obj, skip_mode)
+    opts = PropertyLoad.device_scan_opts(device_id, device_obj, skip_mode)
 
     with {:ok, obj} <- ObjectScanRead.read_object_fallback(address, object, opts) do
       scanned = upsert_scanned(state.scanned, {object, obj})

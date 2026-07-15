@@ -46,7 +46,8 @@ defmodule BacView.BACnet.PropertyLoadSkipResolveTest do
              ]
 
       assert Keyword.get(read_opts, :remote_device_id) == device_id
-      assert Keyword.get(read_opts, :allow_unknown_properties) == true
+      assert Keyword.get(read_opts, :allow_unknown_properties) == :no_unpack
+      assert Keyword.get(read_opts, :ignore_unsupported_object_types) == true
 
       # Skip mode is applied via object_opts; scan fallback remains error-driven only.
       assert PropertyLoad.properties_scan_fallback_on_error?(:segmentation_not_supported)

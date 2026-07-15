@@ -2,6 +2,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplayTest do
   use ExUnit.Case, async: true
 
   alias BACnet.Protocol.{
+    BACnetArray,
     BACnetDate,
     BACnetDateTime,
     BACnetTime,
@@ -76,7 +77,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplayTest do
 
     display = PropertyDisplay.build([subscription])
 
-    assert display.kind == :array
+    assert display.kind == :list
     [item] = display.items
     recipient = Enum.find(item.fields, &(&1.key == :recipient))
     address_field = recipient.fields |> Enum.find(&(&1.key == :address)) |> Map.get(:fields)
@@ -116,6 +117,16 @@ defmodule BacView.BACnet.Protocol.PropertyDisplayTest do
     assert display.fields != []
     assert Enum.any?(display.fields, &(&1.key == :encoding))
     assert Enum.any?(display.fields, &(&1.key == :value))
+  end
+
+  test "labels BACnetArray as array and plain lists as list" do
+    array_display = PropertyDisplay.build(BACnetArray.from_list([1, 2]))
+    list_display = PropertyDisplay.build([1, 2])
+
+    assert array_display.kind == :array
+    assert list_display.kind == :list
+    assert length(array_display.items) == 2
+    assert length(list_display.items) == 2
   end
 
   test "formats BACnetDateTime as scalar instead of struct" do

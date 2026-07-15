@@ -123,8 +123,30 @@ defmodule BacView.BACnet.Discovery do
   def normalize_device_description(value), do: do_normalize_device_name(value)
 
   @doc false
-  @spec upsert_iam_device(IAm.t(), term()) :: map() | nil
-  def upsert_iam_device(iam, address), do: store_device(iam, address)
+  @spec upsert_iam_device(IAm.t(), term(), term(), term()) :: map() | nil
+  def upsert_iam_device(iam, address, npci_source \\ nil, source_address \\ nil),
+    do: store_device(iam, address, npci_source, source_address)
+
+  @doc false
+  @spec apply_shared_source_max_concurrency() :: :ok
+  def apply_shared_source_max_concurrency() do
+    if :ets.whereis(@table) == :undefined do
+      :ok
+    else
+      devices = list_devices()
+
+      shared_sources =
+        devices
+        |> Enum.map(&Map.get(&1, :source_address))
+        |> Enum.reject(&is_nil/1)
+        |> Enum.frequencies()
+        |> Enum.filter(fn {_source, count} -> count > 1 end)
+        |> Map.new()
+
+      Enum.each(devices, &update_device_max_concurrency(&1, shared_sources))
+      :ok
+    end
+  end
 
   @spec get_device(integer()) :: {:ok, map()} | :error
   def get_device(device_id) do
@@ -246,8 +268,12 @@ defmodule BacView.BACnet.Discovery do
   end
 
   @impl true
-  def handle_cast({:device_discovered, scan_gen, address, %IAm{} = iam}, state) do
-    if scan_gen == state.active_scan_gen and store_device(iam, address) do
+  def handle_cast(
+        {:device_discovered, scan_gen, address, %IAm{} = iam, npci_source, source_address},
+        state
+      ) do
+    if scan_gen == state.active_scan_gen and
+         store_device(iam, address, npci_source, source_address) do
       broadcast_devices()
     end
 
@@ -311,9 +337,12 @@ defmodule BacView.BACnet.Discovery do
       "Discovery scan starting (route: #{route}, collect: #{collect_timeout}ms, destination: #{format_destination(destination)}, opts: #{inspect(Keyword.drop(who_is_opts, [:destination]))})"
     )
 
-    on_iam = fn address, %IAm{} = iam ->
+    on_iam = fn address, %IAm{} = iam, npci_source, source_address ->
       if vendor_matches?(iam, vendor_id) do
-        GenServer.cast(__MODULE__, {:device_discovered, scan_gen, address, iam})
+        GenServer.cast(
+          __MODULE__,
+          {:device_discovered, scan_gen, address, iam, npci_source, source_address}
+        )
       end
     end
 
@@ -326,9 +355,15 @@ defmodule BacView.BACnet.Discovery do
         if scan_active?(scan_gen) do
           devices =
             responses
-            |> Enum.filter(fn {_address, %IAm{} = iam} -> vendor_matches?(iam, vendor_id) end)
-            |> Enum.map(fn {address, %IAm{} = iam} -> store_device(iam, address) end)
+            |> Enum.filter(fn {_address, %IAm{} = iam, _npci_source, _source_address} ->
+              vendor_matches?(iam, vendor_id)
+            end)
+            |> Enum.map(fn {address, %IAm{} = iam, npci_source, source_address} ->
+              store_device(iam, address, npci_source, source_address)
+            end)
             |> Enum.reject(&is_nil/1)
+
+          apply_shared_source_max_concurrency()
 
           Logger.info("Discovery scan finished with #{length(devices)} device(s)")
 
@@ -417,9 +452,13 @@ defmodule BacView.BACnet.Discovery do
     collect_timeout(route, timeout) + 10_000
   end
 
+  defp store_device(iam, address, npci_source, source_address)
+
   defp store_device(
          %IAm{device: %ObjectIdentifier{type: :device, instance: instance}} = iam,
-         address
+         address,
+         npci_source,
+         source_address
        ) do
     normalized_address = Address.normalize_destination(address)
     %{ip: ip, port: port, label: address_label} = Address.destination_meta(normalized_address)
@@ -438,6 +477,11 @@ defmodule BacView.BACnet.Discovery do
       discovered_at: DateTime.utc_now()
     }
 
+    incoming =
+      incoming
+      |> maybe_put_npci_source(npci_source)
+      |> maybe_put_source_address(source_address)
+
     device =
       case :ets.lookup(@table, instance) do
         [{^instance, existing}] -> merge_discovered_device(existing, incoming)
@@ -445,11 +489,12 @@ defmodule BacView.BACnet.Discovery do
       end
 
     :ets.insert(@table, {instance, device})
+    apply_shared_source_max_concurrency()
     GenServer.cast(__MODULE__, {:schedule_name_fetch, instance})
     device
   end
 
-  defp store_device(%IAm{} = iam, _address) do
+  defp store_device(%IAm{} = iam, _address, _npci_source, _source_address) do
     Logger.warning("Discovery ignored I-Am without device object identifier: #{inspect(iam)}")
     nil
   end
@@ -484,6 +529,35 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp preserve_loaded_status?(_existing, _incoming), do: false
+
+  defp maybe_put_npci_source(device, %BACnet.Protocol.NpciTarget{} = npci_source),
+    do: Map.put(device, :npci_source, npci_source)
+
+  defp maybe_put_npci_source(device, _npci_source), do: device
+
+  defp maybe_put_source_address(device, source_address) when not is_nil(source_address) do
+    Map.put(device, :source_address, Address.normalize_destination(source_address))
+  end
+
+  defp maybe_put_source_address(device, _source_address), do: device
+
+  defp update_device_max_concurrency(device, shared_sources) do
+    source = Map.get(device, :source_address)
+
+    max_concurrency =
+      if source && Map.get(shared_sources, source, 0) > 0, do: 1, else: nil
+
+    updated = put_device_max_concurrency(device, max_concurrency)
+
+    if updated != device do
+      :ets.insert(@table, {device.id, updated})
+    end
+  end
+
+  defp put_device_max_concurrency(device, nil), do: Map.delete(device, :max_concurrency)
+
+  defp put_device_max_concurrency(device, max_concurrency),
+    do: Map.put(device, :max_concurrency, max_concurrency)
 
   defp do_clear_devices() do
     if :ets.whereis(@table) != :undefined do
@@ -649,7 +723,14 @@ defmodule BacView.BACnet.Discovery do
          property,
          normalize
        ) do
-    case PropertyReader.read_property_value(Client, address, object, property, []) do
+    case PropertyReader.read_property_value(
+           Client,
+           address,
+           object,
+           property,
+           remote_device_id: device_id,
+           log_read_error: false
+         ) do
       {:ok, value} ->
         normalize.(value)
 

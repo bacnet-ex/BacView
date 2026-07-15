@@ -131,7 +131,7 @@ defmodule BacView.BACnet.AlarmEvent do
   def handle_call({:refresh, device_id}, _from, state) do
     result =
       with {:ok, device} <- fetch_device(device_id),
-           {:ok, summaries} <- fetch_alarm_summaries(device.address) do
+           {:ok, summaries} <- fetch_alarm_summaries(device.address, device_id) do
         store_polled_events(device_id, summaries)
         broadcast_updates(device_id)
         :ok
@@ -196,7 +196,9 @@ defmodule BacView.BACnet.AlarmEvent do
     :ok
   end
 
-  defp fetch_alarm_summaries(destination, opts \\ []) do
+  defp fetch_alarm_summaries(destination, device_id, opts \\ []) do
+    opts = Keyword.put(opts, :device_id, device_id)
+
     case Client.get_alarm_summary(destination, opts) do
       {:ok, %{summaries: summaries}} -> {:ok, summaries}
       {:error, _destination} = err -> err

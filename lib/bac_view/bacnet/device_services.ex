@@ -25,7 +25,9 @@ defmodule BacView.BACnet.DeviceServices do
          {:ok, state} <- parse_enable_disable(Map.get(params, "state", "disable")),
          {:ok, time_duration} <- parse_time_duration(Map.get(params, "time_duration", "")),
          password <- parse_password(Map.get(params, "password", "")) do
-      Client.device_communication_control(address, state, time_duration, password)
+      Client.device_communication_control(address, state, time_duration, password,
+        device_id: device_id
+      )
     end
   end
 
@@ -36,7 +38,7 @@ defmodule BacView.BACnet.DeviceServices do
          {:ok, state} <-
            parse_reinitialized_state(Map.get(params, "reinitialized_state", "warmstart")),
          password <- parse_password(Map.get(params, "password", "")) do
-      Client.reinitialize_device(address, state, password)
+      Client.reinitialize_device(address, state, password, device_id: device_id)
     end
   end
 
@@ -46,7 +48,7 @@ defmodule BacView.BACnet.DeviceServices do
     with {:ok, address} <- device_address(device_id) do
       utc = Map.get(params, "time_mode", "local") == "utc"
 
-      Client.send_time_synchronization(address, utc: utc)
+      Client.send_time_synchronization(address, utc: utc, device_id: device_id)
     end
   end
 

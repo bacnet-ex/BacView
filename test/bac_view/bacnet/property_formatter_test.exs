@@ -203,4 +203,236 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
       assert PropertyFormatter.format_value(broadcast_recipient, nil) == "1/broadcast"
     end
   end
+
+  describe "unknown_property helpers" do
+    test "formats primitive encodings without type prefix" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 41_160,
+        extras: []
+      }
+
+      assert PropertyFormatter.unknown_property_formatted(encoding, nil) == "41160"
+      assert PropertyFormatter.unknown_property_display_value(encoding) == 41_160
+      assert PropertyFormatter.unknown_property_type(encoding) == "UNSIGNED INTEGER"
+    end
+
+    test "detects binary values inside Encoding wrappers" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :character_string,
+        value: "x",
+        extras: []
+      }
+
+      assert PropertyFormatter.unknown_property_string_value?(encoding)
+      assert PropertyFormatter.unknown_property_raw_binary(encoding) == "x"
+      assert PropertyFormatter.unknown_property_formatted(encoding, nil) == "x"
+      assert PropertyFormatter.unknown_property_type(encoding) == "CHARACTER STRING"
+      refute PropertyFormatter.unknown_property_hex_toggle?(encoding)
+    end
+
+    test "treats unknown Encoding lists as proprietary hex dumps" do
+      alias BACnet.Protocol.{BACnetDate, BACnetTime}
+
+      encoding_list = [
+        %BACnet.Protocol.ApplicationTags.Encoding{
+          encoding: :primitive,
+          type: :date,
+          value: %BACnetDate{year: 2026, month: 1, day: 15, weekday: 3},
+          extras: []
+        },
+        %BACnet.Protocol.ApplicationTags.Encoding{
+          encoding: :primitive,
+          type: :time,
+          value: %BACnetTime{hour: 12, minute: 30, second: 0, hundredth: 0},
+          extras: []
+        }
+      ]
+
+      assert PropertyFormatter.unknown_property_type(encoding_list) == "PROPRIETARY"
+      assert PropertyFormatter.unknown_property_string_value?(encoding_list)
+      refute PropertyFormatter.unknown_property_hex_toggle?(encoding_list)
+      assert PropertyFormatter.property_type(encoding_list) == "LIST"
+
+      formatted = PropertyFormatter.unknown_property_formatted(encoding_list, nil)
+      assert formatted =~ ":"
+      refute formatted =~ "REAL:"
+      refute formatted =~ "DATE:"
+    end
+
+    test "offers hex toggle only for non-printable binary values" do
+      printable = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :character_string,
+        value: "hello",
+        extras: []
+      }
+
+      non_printable = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :character_string,
+        value: "a\0b",
+        extras: []
+      }
+
+      refute PropertyFormatter.unknown_property_hex_toggle?(printable)
+      assert PropertyFormatter.unknown_property_hex_toggle?(non_printable)
+    end
+  end
+
+  describe "property_type/1" do
+    test "returns BITSTRING for boolean tuples" do
+      assert PropertyFormatter.property_type({true, false, false, true}) == "BITSTRING"
+      assert PropertyFormatter.property_type({:bitstring, {false, true}}) == "BITSTRING"
+    end
+
+    test "returns BITSTRING for Encoding bitstring values" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :bitstring,
+        value: {false, false, false, true},
+        extras: []
+      }
+
+      assert PropertyFormatter.property_type(encoding) == "BITSTRING"
+    end
+
+    test "does not treat non-boolean tuples as bitstrings" do
+      assert PropertyFormatter.property_type({192, 168, 1, 1}) == "STRUCT"
+    end
+
+    test "labels BACnetArray as ARRAY and plain lists as LIST" do
+      assert PropertyFormatter.property_type(BACnet.Protocol.BACnetArray.from_list([1])) ==
+               "ARRAY"
+
+      assert PropertyFormatter.property_type([1]) == "LIST"
+    end
+
+    test "returns signed and unsigned labels for Encoding integers" do
+      unsigned = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 3,
+        extras: []
+      }
+
+      signed = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :signed_integer,
+        value: -3,
+        extras: []
+      }
+
+      assert PropertyFormatter.property_type(unsigned) == "UNSIGNED INTEGER"
+      assert PropertyFormatter.property_type(signed) == "SIGNED INTEGER"
+    end
+
+    test "keeps generic INTEGER label without schema" do
+      assert PropertyFormatter.property_type(42) == "INTEGER"
+      assert PropertyFormatter.property_type(-3) == "INTEGER"
+    end
+  end
+
+  describe "integer_bac_type_label/1" do
+    test "unwraps schema integer types" do
+      assert PropertyFormatter.integer_bac_type_label(:unsigned_integer) == "UNSIGNED INTEGER"
+      assert PropertyFormatter.integer_bac_type_label(:signed_integer) == "SIGNED INTEGER"
+
+      assert PropertyFormatter.integer_bac_type_label(
+               {:with_validator, :unsigned_integer, &(&1 >= 1)}
+             ) == "UNSIGNED INTEGER"
+
+      assert PropertyFormatter.integer_bac_type_label(
+               {:type_list, [:unsigned_integer, {:literal, nil}]}
+             ) == "UNSIGNED INTEGER"
+    end
+
+    test "returns nil for non-integer schema types" do
+      assert PropertyFormatter.integer_bac_type_label(:real) == nil
+      assert PropertyFormatter.integer_bac_type_label({:constant, :event_state}) == nil
+    end
+  end
+
+  describe "property_type_tooltip/1" do
+    test "returns struct name for STRUCT properties" do
+      flags = %BACnet.Protocol.StatusFlags{
+        in_alarm: false,
+        fault: true,
+        overridden: false,
+        out_of_service: false
+      }
+
+      prop = %{
+        type: "STRUCT",
+        value: flags,
+        value_display: %{kind: :struct, fields: [], items: []}
+      }
+
+      assert PropertyFormatter.property_type_tooltip(prop) == "BACnet.Protocol.StatusFlags"
+    end
+
+    test "returns ARRAY OF INTEGER for homogeneous BACnetArray values" do
+      array = BACnet.Protocol.BACnetArray.from_list([1, 2])
+
+      prop = %{
+        type: "ARRAY",
+        value: array,
+        value_display: %{kind: :array, items: [%{value: 1}, %{value: 2}]}
+      }
+
+      assert PropertyFormatter.property_type_tooltip(prop) == "ARRAY OF INTEGER"
+    end
+
+    test "returns ARRAY OF subtype from schema when BACnetArray is empty" do
+      prop = %{
+        type: "ARRAY",
+        value: BACnet.Protocol.BACnetArray.new(),
+        bac_type: {:array, :unsigned_integer},
+        value_display: %{kind: :array, items: []}
+      }
+
+      assert PropertyFormatter.property_type_tooltip(prop) == "ARRAY OF UNSIGNED INTEGER"
+    end
+
+    test "returns plain ARRAY for mixed-type BACnetArray without schema" do
+      array = BACnet.Protocol.BACnetArray.from_list([1, 2.0])
+
+      prop = %{
+        type: "ARRAY",
+        value: array,
+        value_display: %{kind: :array, items: [%{value: 1}, %{value: 2.0}]}
+      }
+
+      assert PropertyFormatter.property_type_tooltip(prop) == "ARRAY"
+    end
+
+    test "returns LIST OF INTEGER for homogeneous plain lists" do
+      prop = %{
+        type: "LIST",
+        value: [1, 2],
+        value_display: %{kind: :list, items: [%{value: 1}, %{value: 2}]}
+      }
+
+      assert PropertyFormatter.property_type_tooltip(prop) == "LIST OF INTEGER"
+    end
+
+    test "returns LIST OF subtype from schema for plain lists" do
+      prop = %{
+        type: "LIST",
+        value: [],
+        bac_type: {:list, :bitstring},
+        value_display: %{kind: :list, items: []}
+      }
+
+      assert PropertyFormatter.property_type_tooltip(prop) == "LIST OF BITSTRING"
+    end
+
+    test "returns nil for non-STRUCT types" do
+      prop = %{type: "REAL", value: 1.0, value_display: %{kind: :scalar}}
+
+      assert PropertyFormatter.property_type_tooltip(prop) == nil
+    end
+  end
 end

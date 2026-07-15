@@ -1,6 +1,7 @@
 defmodule BacView.BACnet.AddressTest do
   use ExUnit.Case, async: true
 
+  alias BACnet.Protocol.NpciTarget
   alias BacView.BACnet.Address
 
   test "parse_host accepts IPv4" do
@@ -38,6 +39,19 @@ defmodule BacView.BACnet.AddressTest do
     test "format_destination renders IPv4 and MS/TP addresses" do
       assert Address.format_destination({{10, 0, 0, 1}, 47_808}) == "10.0.0.1:47808"
       assert Address.format_destination(42) == "42"
+    end
+
+    test "format_npci_target renders NPCI source targets" do
+      assert Address.format_npci_target(nil) == "none"
+      assert Address.format_npci_target(%NpciTarget{net: 2, address: nil}) == "2/broadcast"
+      assert Address.format_npci_target(%NpciTarget{net: 2, address: 42}) == "2/42"
+
+      bacnet_ip_address =
+        <<10, 130, 0, 221, div(47_808, 256), rem(47_808, 256)>>
+        |> :binary.decode_unsigned()
+
+      assert Address.format_npci_target(%NpciTarget{net: 1, address: bacnet_ip_address}) ==
+               "1/10.130.0.221:47808"
     end
 
     test "destination_meta derives display fields" do

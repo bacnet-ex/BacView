@@ -3,11 +3,15 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   Reads object properties declared on the BACnet object via `ObjectsUtility.get_properties/1`.
   """
 
+  require Logger
+
   alias BACnet.Protocol.ApplicationTags.Encoding
   alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.Constants
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.ObjectsUtility
+  alias BacView.BACnet.Client
+  alias BacView.BACnet.Discovery
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
@@ -17,7 +21,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   import BACnet.Protocol.ObjectsUtility, only: [is_object: 1]
 
   @chunk_size 30
-  @read_opts [allow_unknown_properties: true]
+  @read_opts [allow_unknown_properties: :no_unpack, ignore_unsupported_object_types: true]
 
   @input_object_types [:analog_input, :binary_input, :multi_state_input]
 
@@ -90,7 +94,8 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   end
 
   defp build_read_opts(opts) when is_list(opts) do
-    base = Keyword.merge(@read_opts, Keyword.take(opts, [:object_opts, :remote_device_id]))
+    base =
+      Keyword.merge(@read_opts, Keyword.take(opts, [:object_opts, :remote_device_id, :device_id]))
 
     case Keyword.get(opts, :on_property_progress) do
       fun when is_function(fun, 1) -> Keyword.put(base, :on_property_progress, fun)
@@ -98,8 +103,11 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     end
   end
 
-  defp client_opts(read_opts) when is_list(read_opts),
-    do: Keyword.drop(read_opts, [:on_property_progress])
+  defp client_opts(read_opts) when is_list(read_opts) do
+    read_opts
+    |> Keyword.drop([:on_property_progress])
+    |> Keyword.put_new(:log_read_error, false)
+  end
 
   @doc """
   Non-RPM property load: resolve property identifiers (full list / indexed / schema),
@@ -169,9 +177,46 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   Configured via `config :bacview, :property_read_concurrency, n` (default 8).
   Set lower (e.g. 1) if old devices are overwhelmed by parallel reads.
+
+  When `opts` includes `:device_id` or `:remote_device_id`, a per-device
+  `:max_concurrency` from discovery (e.g. shared router source) overrides the
+  global default when set.
   """
-  @spec property_read_concurrency() :: pos_integer()
-  def property_read_concurrency() do
+  @spec property_read_concurrency(keyword()) :: pos_integer()
+  def property_read_concurrency(opts \\ []) do
+    case device_max_concurrency(opts) do
+      n when is_integer(n) and n > 0 -> n
+      _no_device_limit -> default_property_read_concurrency()
+    end
+  end
+
+  @doc false
+  @spec device_max_concurrency(keyword() | integer() | nil) :: pos_integer() | nil
+  def device_max_concurrency(nil), do: nil
+
+  def device_max_concurrency(device_id) when is_integer(device_id) do
+    case Discovery.get_device(device_id) do
+      {:ok, %{max_concurrency: n}} when is_integer(n) and n > 0 -> n
+      _device -> nil
+    end
+  end
+
+  def device_max_concurrency(opts) when is_list(opts) do
+    opts
+    |> device_id_from_opts()
+    |> device_max_concurrency()
+  end
+
+  @doc false
+  @spec scan_concurrency(integer()) :: pos_integer()
+  def scan_concurrency(device_id) when is_integer(device_id) do
+    case device_max_concurrency(device_id) do
+      n when is_integer(n) and n > 0 -> n
+      _no_device_limit -> min(32, System.schedulers_online())
+    end
+  end
+
+  defp default_property_read_concurrency() do
     case Application.get_env(
            :bacview,
            :property_read_concurrency,
@@ -180,6 +225,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       n when is_integer(n) and n > 0 -> n
       _invalid -> @default_property_read_concurrency
     end
+  end
+
+  defp device_id_from_opts(opts) when is_list(opts) do
+    Keyword.get(opts, :device_id) || Keyword.get(opts, :remote_device_id)
   end
 
   @doc false
@@ -253,6 +302,15 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
              Segmentation.fallback_error?(err) do
           read_property_array_indexed(client, destination, object, property, client_opts)
         else
+          Client.log_read_error(
+            :read_property,
+            destination,
+            object,
+            property,
+            elem(err, 1),
+            Keyword.put(client_opts, :log_read_error, true)
+          )
+
           err
         end
     end
@@ -281,7 +339,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
         {:ok, obj, :rpm}
 
       {:error, _reason} = error ->
-        if Segmentation.fallback_error?(error) do
+        if Segmentation.rpm_fallback_error?(error) do
           fetch_bacnet_object_without_rpm(client, destination, object, read_opts)
         else
           error
@@ -340,7 +398,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     case ObjectsUtility.cast_properties_to_object(
            object,
            %{object_name: object_name},
-           allow_unknown_properties: true
+           allow_unknown_properties: :no_unpack
          ) do
       {:ok, bacnet_object} ->
         {:ok, bacnet_object}
@@ -395,7 +453,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
                 {:error, _reason} -> nil
               end
             end,
-            max_concurrency: property_read_concurrency(),
+            max_concurrency: property_read_concurrency(read_opts),
             timeout: :infinity,
             ordered: false
           )
@@ -510,11 +568,18 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     |> Task.async_stream(
       fn prop ->
         case read_property_value(client, destination, object, prop, read_opts) do
-          {:ok, value} -> {prop, value}
-          {:error, _client} -> nil
+          {:ok, value} ->
+            {prop, value}
+
+          {:error, reason} ->
+            Logger.debug(
+              Client.read_error_message(:read_property, destination, object, prop, reason)
+            )
+
+            nil
         end
       end,
-      max_concurrency: property_read_concurrency(),
+      max_concurrency: property_read_concurrency(read_opts),
       timeout: :infinity,
       ordered: true
     )
@@ -585,31 +650,25 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     bacnet_object
     |> Map.get(:_unknown_properties, %{})
     |> Enum.map(fn {property, value} ->
-      display = PropertyDisplay.build(value)
-      raw_binary = unknown_property_raw_binary(value)
+      display_value = PropertyFormatter.unknown_property_display_value(value)
+      display = PropertyDisplay.build(display_value)
 
       Text.sanitize_property_row(%{
         property: property,
         property_name: property_name(property),
         value: value,
         value_display: display,
-        value_formatted: display.formatted,
-        type: PropertyFormatter.property_type(value),
-        string_value?: not is_nil(raw_binary),
-        raw_binary: raw_binary
+        value_formatted: PropertyFormatter.unknown_property_formatted(value, display),
+        type: PropertyFormatter.unknown_property_type(value),
+        string_value?: PropertyFormatter.unknown_property_string_value?(value),
+        hex_toggle?: PropertyFormatter.unknown_property_hex_toggle?(value),
+        raw_binary: PropertyFormatter.unknown_property_raw_binary(value)
       })
     end)
     |> Enum.sort_by(& &1.property_name)
   end
 
   def format_unknown_properties(_bacnet_object), do: []
-
-  defp unknown_property_raw_binary(value) when is_binary(value), do: value
-
-  defp unknown_property_raw_binary(%Encoding{value: inner}) when is_binary(inner),
-    do: unknown_property_raw_binary(inner)
-
-  defp unknown_property_raw_binary(_value), do: nil
 
   defp format_results(properties, results, bacnet_object)
        when is_list(properties) and is_map(results) do
@@ -654,17 +713,30 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   defp property_type(nil, _display, :boolean), do: "BOOLEAN"
   defp property_type(nil, _display, :real), do: "REAL"
-  defp property_type(nil, _display, :unsigned_integer), do: "INTEGER"
-  defp property_type(nil, _display, :signed_integer), do: "INTEGER"
   defp property_type(nil, _display, :double), do: "REAL"
   defp property_type(nil, _display, :string), do: "CHARACTER STRING"
+  defp property_type(nil, _display, :bitstring), do: "BITSTRING"
   defp property_type(nil, _display, _bac_type), do: "—"
 
+  defp property_type(_value, %{kind: :array}, _bac_type), do: "ARRAY"
+  defp property_type(_value, %{kind: :list}, _bac_type), do: "LIST"
+
   defp property_type(_value, %{kind: kind}, _bac_type)
-       when kind in [:struct, :priority_array, :array],
+       when kind in [:struct, :priority_array],
        do: "STRUCT"
 
-  defp property_type(value, _display, _bac_type), do: PropertyFormatter.property_type(value)
+  defp property_type(value, _display, :bitstring) do
+    if PropertyFormatter.bitstring_value?(value),
+      do: "BITSTRING",
+      else: PropertyFormatter.property_type(value)
+  end
+
+  defp property_type(value, _display, bac_type) do
+    case PropertyFormatter.integer_bac_type_label(bac_type) do
+      nil -> PropertyFormatter.property_type(value)
+      label -> label
+    end
+  end
 
   defp property_name(property) when is_atom(property),
     do: property |> Atom.to_string() |> String.replace("_", " ")
@@ -765,7 +837,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
                 {:error, _reason} -> nil
               end
             end,
-            max_concurrency: 8,
+            max_concurrency: property_read_concurrency(read_opts),
             timeout: :infinity,
             ordered: true
           )

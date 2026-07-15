@@ -9,7 +9,7 @@ defmodule BacView.BACnet.EventExport do
   alias BacView.BACnet.Client
   alias BacView.BACnet.Discovery
 
-  @read_opts [allow_unknown_properties: true]
+  @read_opts [allow_unknown_properties: :no_unpack, ignore_unsupported_object_types: true]
   @csv_separator ";"
 
   @spec export(integer(), :json | :csv) :: {:ok, String.t()} | {:error, term()}
@@ -29,7 +29,9 @@ defmodule BacView.BACnet.EventExport do
       object_details =
         object_ids
         |> Task.async_stream(
-          fn object_id -> {object_key(object_id), read_object_details(address, object_id)} end,
+          fn object_id ->
+            {object_key(object_id), read_object_details(address, object_id, device_id)}
+          end,
           timeout: :infinity,
           ordered: true
         )
@@ -84,8 +86,8 @@ defmodule BacView.BACnet.EventExport do
     ArgumentError -> :error
   end
 
-  defp read_object_details(address, %ObjectIdentifier{} = object_id) do
-    case Client.read_object(address, object_id, @read_opts) do
+  defp read_object_details(address, %ObjectIdentifier{} = object_id, device_id) do
+    case Client.read_object(address, object_id, Keyword.put(@read_opts, :device_id, device_id)) do
       {:ok, obj} when is_map(obj) -> extract_object_details(obj)
       _address -> %{}
     end

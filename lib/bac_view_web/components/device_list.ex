@@ -387,7 +387,14 @@ defmodule BacViewWeb.DeviceList do
   end
 
   @doc false
-  def sorted_devices(devices, sort_by, sort_dir, vendor_names, locale \\ "de", locale_version \\ 0)
+  def sorted_devices(
+        devices,
+        sort_by,
+        sort_dir,
+        vendor_names,
+        locale \\ "de",
+        locale_version \\ 0
+      )
 
   def sorted_devices(devices, sort_by, sort_dir, vendor_names, locale, locale_version)
       when sort_by in @sort_columns do

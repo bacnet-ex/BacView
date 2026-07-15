@@ -131,7 +131,7 @@ defmodule BacViewWeb.DeviceLoadProgress do
       reason when not is_nil(reason) ->
         BacViewWeb.ErrorMessageText.format(reason, locale, locale_version)
 
-      _ ->
+      _reason ->
         Map.get(entry, :message, "")
     end
   end

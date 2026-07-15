@@ -28,7 +28,7 @@ defmodule BacView.BACnet.FileTransfer do
         Keyword.get(opts, :record_count, 1)
       end
 
-    do_read(destination, object, stream_access, 0, chunk_size, <<>>)
+    do_read(destination, object, stream_access, 0, chunk_size, <<>>, opts)
   end
 
   @spec write_file(term(), ObjectIdentifier.t(), binary(), keyword()) ::
@@ -39,11 +39,18 @@ defmodule BacView.BACnet.FileTransfer do
     chunk_size = min(Keyword.get(opts, :chunk_size, @default_chunk_size), @max_chunk_size)
     start_position = Keyword.get(opts, :start_position, 0)
 
-    do_write(destination, object, stream_access, start_position, data, chunk_size)
+    do_write(destination, object, stream_access, start_position, data, chunk_size, opts)
   end
 
-  defp do_read(destination, object, stream_access, position, chunk_size, acc) do
-    case Client.atomic_read_file(destination, object, stream_access, position, chunk_size) do
+  defp do_read(destination, object, stream_access, position, chunk_size, acc, opts) do
+    case Client.atomic_read_file(
+           destination,
+           object,
+           stream_access,
+           position,
+           chunk_size,
+           opts
+         ) do
       {:ok, %{eof: true, data: data}} ->
         chunk = append_data(data, stream_access)
         result = acc <> chunk
@@ -52,28 +59,55 @@ defmodule BacView.BACnet.FileTransfer do
       {:ok, %{eof: false, data: data} = ack} ->
         chunk = append_data(data, stream_access)
         next = next_read_position(stream_access, ack, chunk)
-        do_read(destination, object, stream_access, next, chunk_size, acc <> chunk)
+        do_read(destination, object, stream_access, next, chunk_size, acc <> chunk, opts)
 
       {:error, _destination} = err ->
         err
     end
   end
 
-  defp do_write(_destination, _object, _stream_access, _position, <<>>, _chunk_size), do: :ok
+  defp do_write(_destination, _object, _stream_access, _position, <<>>, _chunk_size, _opts),
+    do: :ok
 
-  defp do_write(destination, object, true = stream_access, position, data, chunk_size) do
+  defp do_write(destination, object, true = stream_access, position, data, chunk_size, opts) do
     if byte_size(data) <= chunk_size do
-      write_stream_chunk(destination, object, stream_access, position, data, <<>>, chunk_size)
+      write_stream_chunk(
+        destination,
+        object,
+        stream_access,
+        position,
+        data,
+        <<>>,
+        chunk_size,
+        opts
+      )
     else
       <<chunk::binary-size(chunk_size), rest::binary>> = data
-      write_stream_chunk(destination, object, stream_access, position, chunk, rest, chunk_size)
+
+      write_stream_chunk(
+        destination,
+        object,
+        stream_access,
+        position,
+        chunk,
+        rest,
+        chunk_size,
+        opts
+      )
     end
   end
 
-  defp do_write(destination, object, false = stream_access, position, data, chunk_size) do
+  defp do_write(destination, object, false = stream_access, position, data, chunk_size, opts) do
     records = chunk_records(data, chunk_size)
 
-    case Client.atomic_write_file(destination, object, stream_access, position, records) do
+    case Client.atomic_write_file(
+           destination,
+           object,
+           stream_access,
+           position,
+           records,
+           opts
+         ) do
       {:ok, %{start_position: next}} ->
         written = Enum.reduce(records, 0, fn r, n -> n + byte_size(r) end)
         rest_size = byte_size(data) - written
@@ -82,7 +116,7 @@ defmodule BacView.BACnet.FileTransfer do
           :ok
         else
           remaining = binary_part(data, written, rest_size)
-          do_write(destination, object, stream_access, next, remaining, chunk_size)
+          do_write(destination, object, stream_access, next, remaining, chunk_size, opts)
         end
 
       {:error, _destination} = err ->
@@ -90,13 +124,30 @@ defmodule BacView.BACnet.FileTransfer do
     end
   end
 
-  defp write_stream_chunk(destination, object, stream_access, position, chunk, rest, chunk_size) do
-    case Client.atomic_write_file(destination, object, stream_access, position, chunk) do
+  defp write_stream_chunk(
+         destination,
+         object,
+         stream_access,
+         position,
+         chunk,
+         rest,
+         chunk_size,
+         opts
+       ) do
+    case Client.atomic_write_file(destination, object, stream_access, position, chunk, opts) do
       {:ok, %{start_position: next}} ->
         if rest == <<>> do
           :ok
         else
-          do_write(destination, object, stream_access, next + byte_size(chunk), rest, chunk_size)
+          do_write(
+            destination,
+            object,
+            stream_access,
+            next + byte_size(chunk),
+            rest,
+            chunk_size,
+            opts
+          )
         end
 
       {:error, _destination} = err ->

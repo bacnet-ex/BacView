@@ -16,9 +16,22 @@ defmodule BacView.BACnet.Segmentation do
   @fallback_reject_reasons [:buffer_overflow]
   @fallback_reject_codes [1]
 
+  @rpm_fallback_reject_reasons [:unrecognized_service, :reject_unrecognized_service]
+  @rpm_fallback_reject_codes [9]
+
   @spec fallback_error?(term()) :: boolean()
   def fallback_error?({:error, reason}), do: fallback_reason?(reason)
   def fallback_error?(_error), do: false
+
+  @doc """
+  Like `fallback_error?/1`, plus BACnet Reject **unrecognized service** for RPM
+  (`read_object` / ReadPropertyMultiple) so callers can fall back to ReadProperty.
+  """
+  @spec rpm_fallback_error?(term()) :: boolean()
+  def rpm_fallback_error?({:error, reason}),
+    do: fallback_error?({:error, reason}) or rpm_fallback_reason?(reason)
+
+  def rpm_fallback_error?(_error), do: false
 
   @doc """
   True when a full array property read failed in a way that **indexed** reads
@@ -69,4 +82,18 @@ defmodule BacView.BACnet.Segmentation do
        do: true
 
   defp reject_fallback_reason?(_reason), do: false
+
+  defp rpm_fallback_reason?({:bacnet_reject, %APDU.Reject{reason: reason}}),
+    do: rpm_reject_fallback_reason?(reason)
+
+  defp rpm_fallback_reason?({{:bacnet_reject, %APDU.Reject{reason: reason}}, _oid}),
+    do: rpm_reject_fallback_reason?(reason)
+
+  defp rpm_fallback_reason?(_reason), do: false
+
+  defp rpm_reject_fallback_reason?(reason)
+       when reason in @rpm_fallback_reject_reasons or reason in @rpm_fallback_reject_codes,
+       do: true
+
+  defp rpm_reject_fallback_reason?(_reason), do: false
 end
