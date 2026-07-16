@@ -83,6 +83,10 @@ defmodule BacView.BACnet.Segmentation do
 
   defp reject_fallback_reason?(_reason), do: false
 
+  # Routers may not allow you to use Read-Property-Multiple to read a Network Port object
+  defp rpm_fallback_reason?({:bacnet_error, %APDU.Error{service: :read_property_multiple, class: :resources, code: :other}}),
+    do: true
+
   defp rpm_fallback_reason?({:bacnet_reject, %APDU.Reject{reason: reason}}),
     do: rpm_reject_fallback_reason?(reason)
 
