@@ -1,6 +1,8 @@
 defmodule BacView.BACnet.Protocol.PropertyReaderTest do
   use ExUnit.Case, async: true
 
+  require Logger
+
   alias BACnet.Protocol.{
     ObjectIdentifier,
     ObjectTypes.AnalogInput,
@@ -208,11 +210,18 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
                skip_property_validation_remote_object: :value
              ]
 
-      assert_receive {:read_property_multiple_opts, rpm_opts}
+      refute_receive {:read_property_multiple_opts, _opts}
+    end
 
-      assert Keyword.get(rpm_opts, :object_opts) == [
-               skip_property_validation_remote_object: :value
-             ]
+    test "does not re-read properties after successful read_object" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 1}
+
+      assert {:ok, %{properties: rows}} =
+               PropertyReader.read_all(OptsCapturingClient, :dest, object)
+
+      assert Enum.any?(rows, &(&1.property == :present_value))
+      refute_receive {:read_property_multiple_opts, _opts}
+      refute_receive {:read_property, _opts}
     end
 
     test "does not crash when RPM returns object identifiers" do
@@ -343,6 +352,75 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       refute Enum.any?(rows, &is_nil(&1.value))
     end
 
+    test "casts a remote object after individual schema reads without inventing unread rows" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, %{properties: rows, unknown_properties: []}} =
+               PropertyReader.read_all(
+                 __MODULE__.PropertyListUnavailableClient,
+                 :dest,
+                 object,
+                 remote_device_id: 42,
+                 object_opts: [skip_property_validation_remote_object: true]
+               )
+
+      properties = Enum.map(rows, & &1.property) |> Enum.sort()
+
+      assert properties == [
+               :description,
+               :event_state,
+               :object_name,
+               :out_of_service,
+               :present_value,
+               :status_flags,
+               :units
+             ]
+
+      refute Enum.any?(rows, &is_nil(&1.value))
+
+      assert {:ok, schema} = PropertyReader.schema_properties(object)
+      assert length(properties) < length(schema)
+
+      present_value = Enum.find(rows, &(&1.property == :present_value))
+      assert present_value.value == 42.0
+      assert is_binary(present_value.type)
+    end
+
+    test "emits debug logs for individual schema fallback reads" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+      previous_level = Logger.level()
+      previous_flag = Application.get_env(:bacview, :debug_log_property_reader)
+
+      log =
+        ExUnit.CaptureLog.capture_log(fn ->
+          Logger.configure(level: :debug)
+
+          try do
+            Application.put_env(:bacview, :debug_log_property_reader, true)
+
+            PropertyReader.read_all(
+              __MODULE__.PropertyListUnavailableClient,
+              :dest,
+              object,
+              remote_device_id: 42,
+              object_opts: [skip_property_validation_remote_object: true]
+            )
+          after
+            Application.put_env(:bacview, :debug_log_property_reader, previous_flag)
+            Logger.configure(level: previous_level)
+          end
+        end)
+
+      assert log =~ "PropertyReader analog_input:197"
+      assert log =~ "read_all_start"
+      assert log =~ "fetch_bacnet_object"
+      assert log =~ "property_identifiers"
+      assert log =~ "schema_fallback"
+      assert log =~ "individual_reads_done"
+      assert log =~ "read_all_done"
+      assert log =~ "individual_cast_failed" or log =~ "individual_cast_ok"
+    end
+
     test "does not index property_list when full array fails with unknown_property" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
       __MODULE__.PropertyListUnknownNoIndexClient.reset()
@@ -370,11 +448,21 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       properties = Enum.map(rows, & &1.property)
 
-      assert :object_name in properties
-      assert :vendor_name in properties
+      assert Enum.sort(properties) == [
+               :application_software_version,
+               :firmware_revision,
+               :max_apdu_length_accepted,
+               :model_name,
+               :object_name,
+               :protocol_revision,
+               :protocol_version,
+               :segmentation_supported,
+               :vendor_name
+             ]
+
       refute :object_list in properties
       refute :property_list in properties
-      assert length(properties) > 10
+      refute Enum.any?(rows, &is_nil(&1.value))
     end
 
     test "reads device metadata without object_list during schema fallback" do
@@ -919,7 +1007,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
   end
 
   describe "format_property_rows/2" do
-    test "includes every property from the list even when not read" do
+    test "formats nil values when caller still includes unread properties" do
       rows =
         PropertyReader.format_property_rows(
           [:object_name, :present_value, :description],
