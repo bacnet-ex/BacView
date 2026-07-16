@@ -86,7 +86,12 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
                  :individual,
                  read_opts
                ) do
-          {:ok, build_read_result(readable, results, bacnet_object)}
+          {:ok,
+           build_read_result(
+             successful_read_properties(readable, results),
+             results,
+             bacnet_object
+           )}
         end
 
       {:error, _client} = err ->
@@ -241,6 +246,13 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   defp readable_properties(properties, object_id),
     do: skip_heavy_properties(properties, object_id)
+
+  @doc false
+  @spec successful_read_properties([term()], map()) :: [term()]
+  def successful_read_properties(properties, results)
+      when is_list(properties) and is_map(results) do
+    Enum.filter(properties, &Map.has_key?(results, &1))
+  end
 
   @doc false
   @spec format_property_rows([term()], map(), term()) :: [map()]

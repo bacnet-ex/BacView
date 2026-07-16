@@ -318,6 +318,31 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       refute :property_list in properties
     end
 
+    test "drops schema properties that failed to read on the individual path" do
+      object = %ObjectIdentifier{type: :analog_input, instance: 197}
+
+      assert {:ok, %{properties: rows}} =
+               PropertyReader.read_all(
+                 __MODULE__.PropertyListUnavailableClient,
+                 :dest,
+                 object
+               )
+
+      properties = Enum.map(rows, & &1.property)
+
+      assert properties == [
+               :description,
+               :event_state,
+               :object_name,
+               :out_of_service,
+               :present_value,
+               :status_flags,
+               :units
+             ]
+
+      refute Enum.any?(rows, &is_nil(&1.value))
+    end
+
     test "does not index property_list when full array fails with unknown_property" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
       __MODULE__.PropertyListUnknownNoIndexClient.reset()
