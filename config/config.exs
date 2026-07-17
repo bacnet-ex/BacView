@@ -22,6 +22,10 @@ mstp_enabled =
 config :bacview, :desktop_mode, desktop_mode?
 config :bacview, :mstp_enabled, mstp_enabled
 
+# Parallel individual ReadProperty streams (object open / scan fallback).
+# Historical healthy default is 8. Lower (e.g. 1) if old devices are overwhelmed.
+config :bacview, :property_read_concurrency, 8
+
 config :bacview, BacViewWeb.Gettext,
   locales: ~w(de en),
   default_locale: "de"
@@ -74,10 +78,6 @@ config :codepagex, :encodings, [
   "VENDORS/MICSFT/WINDOWS/CP932"
 ]
 
-# Enable debug logging paths in the bacstack library (actual output is still
-# controlled at runtime via Logger application level, see BacView.Application).
-config :bacstack, :debug, true
-
 # Timezone for BACnet wall-clock timestamps and UI display (IANA name).
 default_timezone = "Europe/Zurich"
 
@@ -85,9 +85,13 @@ config :elixir, :time_zone_database, Tzdata.TimeZoneDatabase
 config :bacview, :timezone, default_timezone
 config :bacstack, :default_timezone, default_timezone
 
-# Parallel individual ReadProperty streams (object open / scan fallback).
-# Historical healthy default is 8. Lower (e.g. 1) if old devices are overwhelmed.
-config :bacview, :property_read_concurrency, 8
+# Enable debug logging paths in the bacstack library (actual output is still
+# controlled at runtime via Logger application level, see BacView.Application).
+config :bacstack, :debug, true
+
+# Allow to automatically convert UTF-8 Latin-1 character strings to valid UTF-8.
+# This is for some older european BACnet devices - runtime performance cost.
+config :bacstack, :app_tags_convert_latin1_utf8, true
 
 # WAGO proprietary properties
 config :bacstack, :additional_property_identifiers,
