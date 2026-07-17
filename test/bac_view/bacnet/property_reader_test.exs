@@ -1043,8 +1043,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
         extras: []
       }
 
-      {:ok, object} =
-        AnalogInput.create(1, "AI-1", %{present_value: 1.0}, remote_object: 1555)
+      {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0})
 
       object = %{
         object
@@ -1095,8 +1094,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
         }
       ]
 
-      {:ok, object} =
-        AnalogInput.create(1, "AI-1", %{present_value: 1.0}, remote_object: 1555)
+      {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0})
 
       object = %{object | _unknown_properties: %{vendor_blob: encoding_list}}
 

@@ -1662,6 +1662,7 @@ defmodule BacViewWeb.ObjectLive do
   defp format_editor_error(:empty_value), do: gt("Bitte einen Wert eingeben.")
   defp format_editor_error(:invalid_boolean), do: gt("erwartet true/false")
   defp format_editor_error(:invalid_number), do: gt("erwartet Zahl")
+  defp format_editor_error(:invalid_ip), do: gt("erwartet IPv4- oder IPv6-Adresse")
   defp format_editor_error(:invalid_atom), do: gt("Ungültiger Enum-Wert.")
   defp format_editor_error(:invalid_enum), do: gt("Ungültiger Enum-Wert.")
   defp format_editor_error(:invalid_path), do: gt("Ungültiger Feldpfad.")

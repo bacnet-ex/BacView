@@ -165,6 +165,43 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
       assert PropertyFormatter.format_value(encoding, :degrees_celsius) == "REAL: 21.5 °C"
     end
 
+    test "formats IPv4 4-tuples as dotted decimal" do
+      assert PropertyFormatter.format_value({192, 168, 1, 73}, nil) == "192.168.1.73"
+      assert PropertyFormatter.format_value({0, 0, 0, 0}, nil) == "0.0.0.0"
+      assert PropertyFormatter.format_value({255, 255, 255, 255}, nil) == "255.255.255.255"
+    end
+
+    test "formats IPv6 8-tuples via inet.ntoa" do
+      loopback = {0, 0, 0, 0, 0, 0, 0, 1}
+      assert PropertyFormatter.format_value(loopback, nil) == "::1"
+
+      # 2001:0db8:85a3:0000:0000:8a2e:0370:7334
+      address = {0x2001, 0x0DB8, 0x85A3, 0, 0, 0x8A2E, 0x0370, 0x7334}
+
+      assert PropertyFormatter.format_value(address, nil) ==
+               List.to_string(:inet.ntoa(address))
+    end
+
+    test "formats HostNPort {:ip_address, ipv4 | ipv6}" do
+      assert PropertyFormatter.format_value({:ip_address, {10, 0, 0, 1}}, nil) == "10.0.0.1"
+
+      assert PropertyFormatter.format_value({:ip_address, {0, 0, 0, 0, 0, 0, 0, 1}}, nil) ==
+               "::1"
+    end
+
+    test "does not treat non-IP tuples as addresses" do
+      assert PropertyFormatter.format_value({true, false, false, true}, nil) ==
+               inspect({true, false, false, true}, limit: 80)
+
+      assert PropertyFormatter.format_value({300, 1, 1, 1}, nil) ==
+               inspect({300, 1, 1, 1}, limit: 80)
+
+      bad_ipv6 = {0x10000, 0, 0, 0, 0, 0, 0, 1}
+
+      assert PropertyFormatter.format_value(bad_ipv6, nil) ==
+               inspect(bad_ipv6, limit: 80)
+    end
+
     test "formats six-byte BACnet/IP addresses as IPv4 with port" do
       address = %RecipientAddress{network: 0, address: <<192, 168, 1, 73, 186, 192>>}
 

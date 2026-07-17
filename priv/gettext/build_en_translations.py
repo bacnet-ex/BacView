@@ -552,6 +552,7 @@ TRANSLATIONS: dict[str, str] = {
     "Zyklus": "Cycle",
     "close": "close",
     "erwartet Zahl": "expected number",
+    "erwartet IPv4- oder IPv6-Adresse": "expected IPv4 or IPv6 address",
     "erwartet true/false": "expected true/false",
     "true oder false": "true or false",
     "%{count} Geräte": "%{count} devices",

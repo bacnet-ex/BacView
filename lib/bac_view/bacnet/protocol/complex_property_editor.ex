@@ -56,15 +56,24 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     Map.new(fields, fn %{path: path, value: value} -> {path, value} end)
   end
 
+  # Root scalar form fields (empty path) use this key so the HTML name is
+  # `field[_]` instead of invalid `field[]` (which Phoenix parses as a list).
+  @root_field_path "_"
+
   @doc """
   Strips LiveView `_unused_*` form keys that appear when only a subset of inputs change.
+
+  Also accepts a list (Phoenix form of `field[]`) and treats it as no updates so a
+  mis-shaped submit cannot crash the LiveView.
   """
-  @spec normalize_field_params(map()) :: map()
+  @spec normalize_field_params(map() | list()) :: map()
   def normalize_field_params(fields) when is_map(fields) do
     fields
     |> Enum.reject(fn {key, _value} -> unused_field_key?(key) end)
     |> Map.new()
   end
+
+  def normalize_field_params(fields) when is_list(fields), do: %{}
 
   @spec apply_form_fields(map(), term()) :: {:ok, term()} | {:error, term()}
   def apply_form_fields(params, template) do
@@ -368,6 +377,18 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
+  defp parse_field_value({:ip_address, current_ip}, string_value, nil)
+       when is_tuple(current_ip) do
+    with {:ok, ip} <- parse_ip_address_string(string_value) do
+      {:ok, {:ip_address, ip}}
+    end
+  end
+
+  defp parse_field_value(current, string_value, nil)
+       when is_tuple(current) and tuple_size(current) in [4, 8] do
+    parse_ip_address_string(string_value)
+  end
+
   defp parse_field_value(current, string_value, nil) do
     trimmed = String.trim(string_value)
 
@@ -405,6 +426,50 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
+  defp parse_ip_address_string(string_value) when is_binary(string_value) do
+    trimmed = String.trim(string_value)
+
+    if trimmed == "" do
+      {:error, :empty_value}
+    else
+      case :inet.parse_address(String.to_charlist(trimmed)) do
+        {:ok, ip} -> {:ok, ip}
+        {:error, _reason} -> parse_ip_tuple_inspect(trimmed)
+      end
+    end
+  end
+
+  # Accept legacy inspect form from older form drafts: "{192, 168, 1, 81}"
+  defp parse_ip_tuple_inspect("{" <> rest) do
+    with true <- String.ends_with?(rest, "}"),
+         inner = String.trim_trailing(rest, "}"),
+         parts when length(parts) in [4, 8] <- String.split(inner, ","),
+         {:ok, ints} <- parse_ip_tuple_parts(parts) do
+      ip = List.to_tuple(ints)
+
+      case :inet.ntoa(ip) do
+        {:error, _reason} -> {:error, :invalid_ip}
+        _charlist -> {:ok, ip}
+      end
+    else
+      _other -> {:error, :invalid_ip}
+    end
+  end
+
+  defp parse_ip_tuple_inspect(_value), do: {:error, :invalid_ip}
+
+  defp parse_ip_tuple_parts(parts) do
+    case Enum.reduce_while(parts, [], fn part, acc ->
+           case Integer.parse(String.trim(part)) do
+             {int, ""} -> {:cont, [int | acc]}
+             _other -> {:halt, :error}
+           end
+         end) do
+      :error -> {:error, :invalid_ip}
+      ints -> {:ok, Enum.reverse(ints)}
+    end
+  end
+
   defp value_to_string(nil), do: ""
   defp value_to_string(value) when is_boolean(value), do: if(value, do: "true", else: "false")
   defp value_to_string(value) when is_atom(value), do: Atom.to_string(value)
@@ -414,7 +479,19 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     do: :erlang.float_to_binary(value, decimals: 10)
 
   defp value_to_string(value) when is_binary(value), do: value
+
+  defp value_to_string({:ip_address, ip}) when is_tuple(ip), do: value_to_string(ip)
+
+  defp value_to_string(value) when is_tuple(value) and tuple_size(value) in [4, 8] do
+    case :inet.ntoa(value) do
+      {:error, _reason} -> inspect(value, limit: 200)
+      charlist when is_list(charlist) -> List.to_string(charlist)
+    end
+  end
+
   defp value_to_string(value), do: inspect(value, limit: 200)
+
+  defp path_string([]), do: @root_field_path
 
   defp path_string(path_rev) do
     path_rev
@@ -425,6 +502,8 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp segment_to_string(index) when is_integer(index), do: Integer.to_string(index)
   defp segment_to_string(atom) when is_atom(atom), do: Atom.to_string(atom)
   defp segment_to_string(other), do: to_string(other)
+
+  defp parse_path(@root_field_path), do: {:ok, []}
 
   defp parse_path(path) do
     case Enum.reduce_while(String.split(path, "."), {:ok, []}, fn segment, {:ok, acc} ->
@@ -514,6 +593,17 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp encode({tag, value}) when is_atom(tag),
     do: %{"_tag" => Atom.to_string(tag), "value" => encode(value)}
 
+  # IPv4 / IPv6 tuples as dotted / compressed strings (Jason cannot encode tuples)
+  defp encode(ip) when is_tuple(ip) and tuple_size(ip) in [4, 8] do
+    case :inet.ntoa(ip) do
+      charlist when is_list(charlist) -> List.to_string(charlist)
+      {:error, _reason} -> Enum.map(Tuple.to_list(ip), &encode/1)
+    end
+  end
+
+  defp encode(value) when is_tuple(value),
+    do: Enum.map(Tuple.to_list(value), &encode/1)
+
   defp encode(list) when is_list(list), do: Enum.map(list, &encode/1)
   defp encode(nil), do: nil
   defp encode(value) when is_atom(value), do: Atom.to_string(value)
@@ -544,6 +634,11 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp decode(value, _template) when is_integer(value), do: {:ok, value}
   defp decode(value, _template) when is_float(value) or is_boolean(value), do: {:ok, value}
 
+  defp decode(value, template)
+       when is_binary(value) and is_tuple(template) and tuple_size(template) in [4, 8] do
+    parse_ip_address_string(value)
+  end
+
   defp decode(value, template) when is_binary(value) and is_atom(template),
     do: decode_atom_field(value)
 
@@ -555,6 +650,21 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     with {:ok, tag_atom} <- decode_existing_atom(tag),
          {:ok, decoded} <- decode(inner, template_value_template(template, tag_atom)) do
       {:ok, {tag_atom, decoded}}
+    end
+  end
+
+  defp decode(list, template)
+       when is_list(list) and is_tuple(template) and tuple_size(template) in [4, 8] do
+    with true <- length(list) == tuple_size(template),
+         true <- Enum.all?(list, &is_integer/1) do
+      ip = List.to_tuple(list)
+
+      case :inet.ntoa(ip) do
+        {:error, _reason} -> {:error, :invalid_ip}
+        _charlist -> {:ok, ip}
+      end
+    else
+      _other -> {:error, :invalid_ip}
     end
   end
 
@@ -872,6 +982,9 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp template_value_template(_template, :unsigned_integer), do: 0
   defp template_value_template(_template, :signed_integer), do: 0
   defp template_value_template(_template, :character_string), do: ""
+
+  # HostNPort and similar CHOICE tags: unwrap the payload template for the inner value
+  defp template_value_template({tag, inner}, tag) when is_atom(tag), do: inner
   defp template_value_template(template, _tag), do: template
 
   defp finalize_apply_result({:ok, %Encoding{} = value}), do: finalize_encoding(value)

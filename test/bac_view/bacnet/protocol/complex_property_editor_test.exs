@@ -583,4 +583,94 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     assert %BACnetDate{day: 28} = decoded.date
     assert %BACnetTime{hour: 8, minute: 17, second: 43, hundredth: 13} = decoded.time
   end
+
+  test "root IP form fields use a non-empty path so field[] is avoided" do
+    assert [%{path: "_", value: "192.168.1.81"}] =
+             ComplexPropertyEditor.form_fields({192, 168, 1, 81})
+
+    assert %{"field" => %{"_" => "10.0.0.1"}} =
+             Query.decode("field[_]=10.0.0.1")
+
+    assert ComplexPropertyEditor.normalize_field_params(["{192, 168, 1, 81}"]) == %{}
+  end
+
+  test "formats and applies IPv4 / IPv6 form fields" do
+    ipv4 = {192, 168, 1, 81}
+    assert [%{path: "_", value: "192.168.1.81"}] = ComplexPropertyEditor.form_fields(ipv4)
+
+    assert {:ok, {10, 0, 0, 1}} =
+             ComplexPropertyEditor.apply_form_fields(%{"field" => %{"_" => "10.0.0.1"}}, ipv4)
+
+    # Legacy inspect form still accepted
+    assert {:ok, {192, 168, 1, 82}} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"_" => "{192, 168, 1, 82}"}},
+               ipv4
+             )
+
+    ipv6 = {0, 0, 0, 0, 0, 0, 0, 1}
+    assert [%{path: "_", value: "::1"}] = ComplexPropertyEditor.form_fields(ipv6)
+
+    assert {:ok, {0x2001, 0xDB8, 0, 0, 0, 0, 0, 1}} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"_" => "2001:db8::1"}},
+               ipv6
+             )
+
+    assert {:error, :invalid_ip} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"_" => "not-an-ip"}},
+               ipv4
+             )
+  end
+
+  test "applies HostNPort host ip_address tagged field" do
+    hnp = %BACnet.Protocol.HostNPort{
+      host: {:ip_address, {192, 168, 1, 81}},
+      port: 47_808
+    }
+
+    fields = ComplexPropertyEditor.form_fields(hnp)
+    host_field = Enum.find(fields, &(&1.path == "host"))
+    assert host_field.value == "192.168.1.81"
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"host" => "10.1.2.3", "port" => "47809"}},
+               hnp
+             )
+
+    assert updated.host == {:ip_address, {10, 1, 2, 3}}
+    assert updated.port == 47_809
+
+    assert {:ok, updated_v6} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"host" => "::1"}},
+               hnp
+             )
+
+    assert updated_v6.host == {:ip_address, {0, 0, 0, 0, 0, 0, 0, 1}}
+  end
+
+  test "JSON-encodes IP tuples so the field editor opens by default" do
+    ipv4 = {192, 168, 1, 81}
+    assert {:ok, json} = ComplexPropertyEditor.encode_json(ipv4)
+    assert json =~ "192.168.1.81"
+    assert {:ok, ^ipv4} = ComplexPropertyEditor.decode_json(json, ipv4)
+
+    ipv6 = {0, 0, 0, 0, 0, 0, 0, 1}
+    assert {:ok, json_v6} = ComplexPropertyEditor.encode_json(ipv6)
+    assert json_v6 =~ "::1"
+    assert {:ok, ^ipv6} = ComplexPropertyEditor.decode_json(json_v6, ipv6)
+
+    hnp = %BACnet.Protocol.HostNPort{
+      host: {:ip_address, {192, 168, 1, 81}},
+      port: 47_808
+    }
+
+    assert {:ok, hnp_json} = ComplexPropertyEditor.encode_json(hnp)
+    assert {:ok, decoded_hnp} = ComplexPropertyEditor.decode_json(hnp_json, hnp)
+    assert decoded_hnp.host == {:ip_address, {192, 168, 1, 81}}
+    assert decoded_hnp.port == 47_808
+  end
 end

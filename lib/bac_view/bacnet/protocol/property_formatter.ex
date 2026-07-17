@@ -179,6 +179,22 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
     format_value(address, nil)
   end
 
+  # BACnet HostNPort host choice `{:ip_address, :inet.ip_address()}` (IPv4 or IPv6)
+  def format_value({:ip_address, ip}, _units) when is_tuple(ip) do
+    case format_ip_address(ip) do
+      {:ok, formatted} -> formatted
+      :error -> inspect({:ip_address, ip}, limit: 80)
+    end
+  end
+
+  # Raw IPv4 (4-tuple) / IPv6 (8-tuple) addresses from Network Port and related properties
+  def format_value(ip, _units) when is_tuple(ip) and tuple_size(ip) in [4, 8] do
+    case format_ip_address(ip) do
+      {:ok, formatted} -> formatted
+      :error -> inspect(ip, limit: 80)
+    end
+  end
+
   def format_value(%_nil{} = value, units) do
     case Map.get(value, :value) do
       nil -> PropertyDisplay.summary(PropertyDisplay.build(value))
@@ -191,6 +207,13 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   end
 
   def format_value(value, _units), do: inspect(value, limit: 80)
+
+  defp format_ip_address(ip) when is_tuple(ip) do
+    case :inet.ntoa(ip) do
+      {:error, _reason} -> :error
+      charlist when is_list(charlist) -> {:ok, List.to_string(charlist)}
+    end
+  end
 
   @min_port 1
   @max_port 65_535

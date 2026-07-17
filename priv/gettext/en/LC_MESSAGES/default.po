@@ -1551,6 +1551,9 @@ msgstr "Cycle"
 msgid "close"
 msgstr "close"
 
+msgid "erwartet IPv4- oder IPv6-Adresse"
+msgstr "expected IPv4 or IPv6 address"
+
 msgid "erwartet Zahl"
 msgstr "expected number"
 

@@ -12,17 +12,20 @@ defmodule BacView.BACnet.ClientTest do
     destination = {{10, 0, 0, 5}, 47_808}
 
     log =
-      capture_log(fn ->
-        SilenceLogger.with_logging(fn ->
-          Client.log_read_error(
-            :read_property,
-            destination,
-            object,
-            :present_value,
-            :timeout
-          )
-        end)
-      end)
+      SilenceLogger.with_logging(
+        fn ->
+          capture_log(fn ->
+            Client.log_read_error(
+              :read_property,
+              destination,
+              object,
+              :present_value,
+              :timeout
+            )
+          end)
+        end,
+        unsilence: [Client]
+      )
 
     assert log =~ "BACnet read_property failed"
     assert log =~ "analog_input:1"
@@ -38,11 +41,14 @@ defmodule BacView.BACnet.ClientTest do
 
     log =
       try do
-        SilenceLogger.with_logging(fn ->
-          capture_log([level: :debug], fn ->
-            Client.log_read_error(:read_object, nil, nil, nil, :timeout, level: :debug)
-          end)
-        end)
+        SilenceLogger.with_logging(
+          fn ->
+            capture_log([level: :debug], fn ->
+              Client.log_read_error(:read_object, nil, nil, nil, :timeout, level: :debug)
+            end)
+          end,
+          unsilence: [Client]
+        )
       after
         Logger.configure(level: previous)
       end
