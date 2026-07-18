@@ -263,7 +263,7 @@ defmodule BacViewWeb.ObjectTable do
               <th>
                 <.sort_header
                   column="present_value"
-                  label={t(@locale, @locale_version, "Present_Value")}
+                  label={t(@locale, @locale_version, "Present Value")}
                   sort_by={@sort_by}
                   sort_dir={@sort_dir}
                 />

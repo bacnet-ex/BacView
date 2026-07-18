@@ -105,6 +105,8 @@ defmodule BacViewWeb.ObjectDetail do
               <StatusFlagsIcons.status_flags_icons
                 flags={@object.status_flags}
                 mode={:stats}
+                locale={@locale}
+                locale_version={@locale_version}
               />
             </div>
           </div>

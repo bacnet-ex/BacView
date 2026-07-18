@@ -6,6 +6,9 @@ msgstr ""
 msgid "%{class}: %{code}"
 msgstr "%{class}: %{code}"
 
+msgid "%{count} %{label}"
+msgstr "%{count} %{label}"
+
 msgid "%{count} COV aktiv"
 msgstr "%{count} active COV"
 
@@ -83,6 +86,9 @@ msgstr "%{size} bytes"
 
 msgid "%{succeeded} Objekte nachgelesen, %{failed} fehlgeschlagen."
 msgstr "%{succeeded} objects re-read, %{failed} failed."
+
+msgid "-"
+msgstr "-"
 
 msgid "0 Geräte"
 msgstr "0 devices"
@@ -225,14 +231,29 @@ msgstr "Execute"
 msgid "Ausgewählte kündigen"
 msgstr "Cancel selected"
 
+msgid "Ausser Betrieb"
+msgstr "Out of service"
+
 msgid "Ausserhalb Bereich"
 msgstr "Out of range"
 
 msgid "Auswahl aufheben"
 msgstr "Clear selection"
 
+msgid "Auto"
+msgstr "Auto"
+
 msgid "Autor"
 msgstr "Author"
+
+msgid "BACnet / IP · Who-Is / I-Am Discovery"
+msgstr "BACnet/IP · Who-Is / I-Am discovery"
+
+msgid "BACnet MS/TP"
+msgstr "BACnet MS/TP"
+
+msgid "BACnet MS/TP · Who-Is / I-Am Discovery"
+msgstr "BACnet MS/TP · Who-Is / I-Am discovery"
 
 msgid "BACnet Netzwerk-Explorer"
 msgstr "BACnet Network Explorer"
@@ -245,6 +266,9 @@ msgstr "BACnet stack is not running."
 
 msgid "BACnet-Stack neu gestartet."
 msgstr "BACnet stack restarted."
+
+msgid "BACnet/IP"
+msgstr "BACnet/IP"
 
 msgid "BBMD / Foreign Device"
 msgstr "BBMD / Foreign Device"
@@ -416,6 +440,9 @@ msgstr "Failed to write file: %{detail}"
 
 msgid "Dateiübertragung"
 msgstr "File transfer"
+
+msgid "Datensatz-Zugriff"
+msgstr "Record access"
 
 msgid "Dauer (Minuten, leer = unbegrenzt)"
 msgstr "Duration (minutes, empty = indefinite)"
@@ -657,6 +684,9 @@ msgstr "Invalid device range: 'from' must be less than or equal to 'to'."
 msgid "Gerätedaten sind noch nicht geladen."
 msgstr "Device data is not loaded yet."
 
+msgid "Gerätedienst"
+msgstr "Device service"
+
 msgid "Gerätedienste"
 msgstr "Device services"
 
@@ -692,6 +722,12 @@ msgstr "Reading device object…"
 
 msgid "Geräteobjekt öffnen"
 msgstr "Open device object"
+
+msgid "Geschriebener Wert weicht vom gelesenen Present Value ab: %{value}"
+msgstr "Written value differs from the read present value: %{value}"
+
+msgid "Geschriebener Wert weicht vom gelesenen Wert ab: %{value}"
+msgstr "Written value differs from the read value: %{value}"
 
 msgid "Grenzwert"
 msgstr "Limit"
@@ -735,8 +771,17 @@ msgstr "Help"
 msgid "Hilfe schliessen"
 msgstr "Close help"
 
+msgid "In Alarm"
+msgstr "In alarm"
+
 msgid "In flacher Liste anzeigen"
 msgstr "Show in flat list"
+
+msgid "Inaktiv"
+msgstr "Inactive"
+
+msgid "Initialisiere"
+msgstr "Initializing"
 
 msgid "Initiierung deaktivieren"
 msgstr "Disable initiation"
@@ -777,6 +822,9 @@ msgstr "No notification classes found on this device."
 msgid "Keine Netzwerkschnittstelle für BACnet/IP verfügbar."
 msgstr "No network interface available for BACnet/IP."
 
+msgid "Keine Netzwerkschnittstellen gefunden."
+msgstr "No network interfaces found."
+
 msgid "Keine Objekte konnten nachgelesen werden."
 msgstr "No objects could be re-read."
 
@@ -815,6 +863,9 @@ msgstr "No editable fields for this value. Switch to JSON."
 
 msgid "Keine exportierbaren Objekte geladen."
 msgstr "No exportable objects loaded."
+
+msgid "Keine plottbaren COV-Meldungen im gewählten Zeitraum."
+msgstr "No plottable COV notifications in the selected time range."
 
 msgid "Keine plottbaren Datensätze im gewählten Zeitraum."
 msgstr "No plottable records in the selected time range."
@@ -932,6 +983,9 @@ msgstr "Network number"
 
 msgid "Netzwerkscan abgeschlossen."
 msgstr "Network scan completed."
+
+msgid "Netzwerkschnittstelle"
+msgstr "Network interface"
 
 msgid "Netzwerkschnittstelle nicht gefunden."
 msgstr "Network interface not found."
@@ -1062,6 +1116,9 @@ msgstr "Fetching object list…"
 msgid "Objekttypen"
 msgstr "Object types"
 
+msgid "Offline"
+msgstr "Offline"
+
 msgid "Optionaler Instanzbereich für Who-Is (0–4194303)."
 msgstr "Optional instance range for Who-Is (0–4194303)."
 
@@ -1097,9 +1154,6 @@ msgstr "Present value is read-only."
 
 msgid "Present Value schreiben"
 msgstr "Write present value"
-
-msgid "Present_Value"
-msgstr "Present_Value"
 
 msgid "Priorität"
 msgstr "Priority"
@@ -1140,6 +1194,9 @@ msgstr "Register"
 msgid "Registrieren Sie BacView als Foreign Device bei einem BBMD. Who-Is wird dann per Distribute-Broadcast-To-Network gesendet."
 msgstr "Register BacView as a Foreign Device with a BBMD. Who-Is is then sent via Distribute-Broadcast-To-Network."
 
+msgid "Registriert"
+msgstr "Registered"
+
 msgid "Remote-Netzwerk-Zugang"
 msgstr "Remote network access"
 
@@ -1163,6 +1220,9 @@ msgstr "Close"
 
 msgid "Schnittstelle ist erforderlich."
 msgstr "Interface is required."
+
+msgid "Schnittstelle nicht verfügbar."
+msgstr "Interface unavailable."
 
 msgid "Schnittstellen aktualisieren"
 msgstr "Refresh interfaces"
@@ -1190,6 +1250,9 @@ msgstr "Slash (/)"
 
 msgid "Semantische Version (MAJOR.MINOR.PATCH), z. B. 1.0.0"
 msgstr "Semantic version (MAJOR.MINOR.PATCH), e.g. 1.0.0"
+
+msgid "Serieller Port"
+msgstr "Serial port"
 
 msgid "Serieller Port ist belegt."
 msgstr "Serial port is busy."
@@ -1238,6 +1301,9 @@ msgstr "Status"
 
 msgid "Status-Flags"
 msgstr "Status flags"
+
+msgid "Stream-Zugriff"
+msgstr "Stream access"
 
 msgid "Strukturansichten verwenden"
 msgstr "Use structured views"
@@ -1313,6 +1379,9 @@ msgstr "Type"
 
 msgid "UDP-Port"
 msgstr "UDP port"
+
+msgid "UDP-Port ist bereits belegt (eaddrinuse). Möglicherweise läuft bereits eine andere BACnet-Anwendung auf diesem Port."
+msgstr "UDP port is already in use (eaddrinuse). Another BACnet application may already be running on this port."
 
 msgid "UTC"
 msgstr "UTC"
@@ -1440,6 +1509,9 @@ msgstr "Warm start"
 msgid "Warte auf BACnet-Antwort…"
 msgstr "Waiting for BACnet response…"
 
+msgid "Warte auf BBMD"
+msgstr "Waiting for BBMD"
+
 msgid "Wert"
 msgstr "Value"
 
@@ -1463,6 +1535,9 @@ msgstr "Re-reading…"
 
 msgid "Wochenplan bearbeiten"
 msgstr "Edit weekly schedule"
+
+msgid "Wochenplan-Einträge erlauben nur primitive BACnet-Werte (z. B. REAL, BOOLEAN, ENUMERATED)."
+msgstr "Weekly schedule entries only allow primitive BACnet values (e.g. REAL, BOOLEAN, ENUMERATED)."
 
 msgid "Wochentage"
 msgstr "Weekdays"
@@ -1548,6 +1623,9 @@ msgstr "State change"
 msgid "Zyklus"
 msgstr "Cycle"
 
+msgid "aktiv"
+msgstr "active"
+
 msgid "close"
 msgstr "close"
 
@@ -1560,6 +1638,9 @@ msgstr "expected number"
 msgid "erwartet true/false"
 msgstr "expected true/false"
 
+msgid "inaktiv"
+msgstr "inactive"
+
 msgid "true oder false"
 msgstr "true or false"
 
@@ -1571,3 +1652,6 @@ msgstr "e.g. 21.5"
 
 msgid "Änderungen aktivieren"
 msgstr "Activate changes"
+
+msgid "Übersteuert"
+msgstr "Overridden"

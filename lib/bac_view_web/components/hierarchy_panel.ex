@@ -240,7 +240,7 @@ defmodule BacViewWeb.HierarchyPanel do
               </th>
               <th>{t(@locale, @locale_version, "Name")}</th>
               <th class="w-36">{t(@locale, @locale_version, "Status")}</th>
-              <th class="text-right">{t(@locale, @locale_version, "Present_Value")}</th>
+              <th class="text-right">{t(@locale, @locale_version, "Present Value")}</th>
             </tr>
           </thead>
           <tbody>

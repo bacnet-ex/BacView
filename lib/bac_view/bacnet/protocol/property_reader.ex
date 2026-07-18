@@ -809,8 +809,16 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp property_type(nil, _display, :boolean), do: "BOOLEAN"
   defp property_type(nil, _display, :real), do: "REAL"
   defp property_type(nil, _display, :double), do: "REAL"
-  defp property_type(nil, _display, :string), do: "CHARACTER STRING"
   defp property_type(nil, _display, :bitstring), do: "BITSTRING"
+
+  # bacstack object schemas use `:string` for character strings (`String.t()`)
+  # and `:octet_string` for raw binaries. ApplicationTags use `:character_string`.
+  defp property_type(_value, _display, bac_type)
+       when bac_type in [:string, :character_string],
+       do: "CHARACTER STRING"
+
+  defp property_type(_value, _display, :octet_string), do: "OCTET STRING"
+
   defp property_type(nil, _display, _bac_type), do: "-"
 
   defp property_type(_value, %{kind: :array}, _bac_type), do: "ARRAY"

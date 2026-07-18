@@ -10,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 TRANSLATIONS: dict[str, str] = {
     "%{class}: %{code}": "%{class}: %{code}",
+    "%{count} %{label}": "%{count} %{label}",
     "%{count} COV aktiv": "%{count} active COV",
     "%{count} Datensätze": "%{count} records",
     "%{count} Eigenschaften": "%{count} properties",
@@ -33,6 +34,7 @@ TRANSLATIONS: dict[str, str] = {
     "%{sec}s": "%{sec}s",
     "%{shown} von %{total} Geräten": "%{shown} of %{total} devices",
     "%{size} Bytes": "%{size} bytes",
+    "-": "-",
     "0 Geräte": "0 devices",
     "Abbrechen": "Cancel",
     "Autor": "Author",
@@ -55,12 +57,14 @@ TRANSLATIONS: dict[str, str] = {
     "Als Hex": "As hex",
     "Als Text": "As text",
     "Aktiv": "Active",
+    "aktiv": "active",
     "Offline": "Offline",
     "Aktive Alarme": "Active alarms",
     "Aktive COV-Abonnements": "Active COV subscriptions",
     "Aktive Priorität": "Active priority",
     "Aktiv seit": "Active since",
     "Auto": "Auto",
+    "Ausser Betrieb": "Out of service",
     "Aktualisieren": "Refresh",
     "Aktualisiert": "Updated",
     "Aktuellen Ordner durchsuchen…": "Search current folder…",
@@ -129,6 +133,14 @@ TRANSLATIONS: dict[str, str] = {
     "Aus empfangenen COV-Meldungen": "From received COV notifications",
     "Keine plottbaren COV-Meldungen im gewählten Zeitraum.": "No plottable COV notifications in the selected time range.",
     "Keine plottbaren Datensätze im gewählten Zeitraum.": "No plottable records in the selected time range.",
+    "In Alarm": "In alarm",
+    "Inaktiv": "Inactive",
+    "inaktiv": "inactive",
+    "Initialisiere": "Initializing",
+    "In Alarm": "In alarm",
+    "Inaktiv": "Inactive",
+    "inaktiv": "inactive",
+    "Initialisiere": "Initializing",
     "Inkrement": "Increment",
     "Lifetime (Sek.)": "Lifetime (sec.)",
     "Leer = Objektstandard": "Empty = object default",
@@ -397,7 +409,6 @@ TRANSLATIONS: dict[str, str] = {
     "Present Value erfolgreich geschrieben.": "Present value written successfully.",
     "Present Value ist schreibgeschützt.": "Present value is read-only.",
     "Present Value schreiben": "Write present value",
-    "Present_Value": "Present_Value",
     "Priorität": "Priority",
     "Priorität %{priority} zurückgesetzt (null).": "Priority %{priority} reset (null).",
     "Priorität zurücksetzen fehlgeschlagen.": "Failed to reset priority.",
@@ -408,6 +419,7 @@ TRANSLATIONS: dict[str, str] = {
     "Quittierung": "Acknowledgement",
     "Quittierung erforderlich": "Acknowledgement required",
     "Registrieren": "Register",
+    "Registriert": "Registered",
     "Registrieren Sie BacView als Foreign Device bei einem BBMD. Who-Is wird dann per Distribute-Broadcast-To-Network gesendet.": "Register BacView as a Foreign Device with a BBMD. Who-Is is then sent via Distribute-Broadcast-To-Network.",
     "Remote-Netzwerk-Zugang": "Remote network access",
     "Ressourcenfehler": "Resource error",
@@ -427,6 +439,10 @@ TRANSLATIONS: dict[str, str] = {
     "Schreiben": "Write",
     "Schreiben OK, aber Rücklesen fehlgeschlagen: %{detail}": "Write OK, but read-back failed: %{detail}",
     "Schreiben fehlgeschlagen: %{detail}": "Write failed: %{detail}",
+    "Geschriebener Wert weicht vom gelesenen Present Value ab: %{value}":
+        "Written value differs from the read present value: %{value}",
+    "Geschriebener Wert weicht vom gelesenen Wert ab: %{value}":
+        "Written value differs from the read value: %{value}",
     "Schreibgeschützt": "Read-only",
     "Stream-Zugriff": "Stream access",
     "Schreibzugriff verweigert.": "Write access denied.",
@@ -505,6 +521,7 @@ TRANSLATIONS: dict[str, str] = {
     "Verbleibend": "Remaining",
     "Von": "From",
     "Warte auf BACnet-Antwort…": "Waiting for BACnet response…",
+    "Warte auf BBMD": "Waiting for BBMD",
     "Verbindung zum Server nicht möglich": "Unable to connect to server",
     "Wertvalidierung überspringen": "Skip value validation",
     "Wert": "Value",
@@ -512,6 +529,8 @@ TRANSLATIONS: dict[str, str] = {
     "Wird geladen…": "Loading…",
     "Wird nachgelesen…": "Re-reading…",
     "Wochenplan bearbeiten": "Edit weekly schedule",
+    "Wochenplan-Einträge erlauben nur primitive BACnet-Werte (z. B. REAL, BOOLEAN, ENUMERATED).":
+        "Weekly schedule entries only allow primitive BACnet values (e.g. REAL, BOOLEAN, ENUMERATED).",
     "Wochentage": "Weekdays",
     "Wurzel": "Root",
     "Wählen Sie ein Objekt aus der Liste.": "Select an object from the list.",
@@ -562,23 +581,42 @@ TRANSLATIONS: dict[str, str] = {
     "Eintrag in die Empfängerliste fehlgeschlagen.": "Failed to enroll in recipient list.",
     "Ungültiger Zeitraum. Bitte Start- und Endzeit prüfen.": "Invalid time range. Please check start and end time.",
     "Here is the string to translate": "Here is the string to translate",
+    "Übersteuert": "Overridden",
 }
+
+
+# Call-site patterns for German msgids used as Gettext keys.
+# Covers t/gt/gettext/translate! with any second-arg name (locale_version, lv, v, …)
+# and multi-line forms. Intentionally does NOT match dgettext("errors", …).
+_MSGID_PATTERNS: list[re.Pattern[str]] = [
+    # t(locale_or_@locale, ANY, "msgid")  including multi-line after comma
+    re.compile(
+        r"\bt\(\s*(?:@)?locale\s*,\s*[^,\n]+,\s*\n?\s*\"((?:\\.|[^\"\\])*)\"",
+        re.M,
+    ),
+    # BacViewWeb.GettextLC.t(locale, v, "msgid")
+    re.compile(
+        r"GettextLC\.t\(\s*[^,\n]+,\s*[^,\n]+,\s*\n?\s*\"((?:\\.|[^\"\\])*)\"",
+        re.M,
+    ),
+    # gt("msgid") / gt(\n "msgid")
+    re.compile(r"\bgt\(\s*\n?\s*\"((?:\\.|[^\"\\])*)\"", re.M),
+    # gettext("msgid") / gettext(\n "msgid")  — word boundary excludes dgettext
+    re.compile(r"\bgettext\(\s*\n?\s*\"((?:\\.|[^\"\\])*)\"", re.M),
+    # translate!("msgid")
+    re.compile(r"\btranslate!\(\s*\n?\s*\"((?:\\.|[^\"\\])*)\"", re.M),
+]
 
 
 def collect_msgids() -> list[str]:
     msgids: set[str] = set()
 
     for path in (ROOT / "lib").rglob("*.ex"):
-        text = path.read_text()
-        msgids.update(re.findall(r't\(@locale, @locale_version,\s*"([^"]+)"', text))
-        msgids.update(re.findall(r't\(locale, locale_version,\s*"([^"]+)"', text))
-        msgids.update(re.findall(r't\(@locale, @locale_version,\s*\n\s*"([^"]+)"', text))
-        msgids.update(re.findall(r't\(\s*@locale,\s*@locale_version,\s*\n\s*"([^"]+)"', text))
-        msgids.update(re.findall(r't\(\s*locale,\s*locale_version,\s*\n\s*"([^"]+)"', text))
-        msgids.update(re.findall(r'gt\("([^"]+)"(?:,|\))', text))
-        msgids.update(re.findall(r'\bgettext\("([^"]+)"(?:,|\))', text))
+        text = path.read_text(encoding="utf-8")
+        for pattern in _MSGID_PATTERNS:
+            msgids.update(pattern.findall(text))
 
-    pot = (ROOT / "priv/gettext/default.pot").read_text()
+    pot = (ROOT / "priv/gettext/default.pot").read_text(encoding="utf-8")
     msgids.update(re.findall(r'^msgid "([^"]+)"', pot, re.M))
     msgids.discard("")
     return sorted(msgids)

@@ -7,7 +7,9 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     ObjectIdentifier,
     ObjectTypes.AnalogInput,
     ObjectTypes.AnalogOutput,
+    ObjectTypes.CharacterStringValue,
     ObjectTypes.IntegerValue,
+    ObjectTypes.OctetStringValue,
     ObjectsUtility
   }
 
@@ -1024,6 +1026,81 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       assert row.property_name == "property 512"
       assert row.value == 42
+    end
+
+    test "labels character-string schema types as CHARACTER STRING" do
+      {:ok, object} =
+        CharacterStringValue.create(40, "Message", %{present_value: "Hello"})
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:present_value],
+          %{present_value: "Hello"},
+          object
+        )
+
+      assert row.type == "CHARACTER STRING"
+      assert row.bac_type == :string
+    end
+
+    test "labels octet-string schema types as OCTET STRING" do
+      binary = <<1, 2, 3>>
+
+      {:ok, object} =
+        OctetStringValue.create(50, "Data", %{present_value: binary})
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:present_value],
+          %{present_value: binary},
+          object
+        )
+
+      assert row.type == "OCTET STRING"
+      assert row.bac_type == :octet_string
+    end
+
+    test "labels printable octet-string present values as OCTET STRING via schema" do
+      # Printable bytes still match is_binary/1; schema must win over value shape.
+      binary = "ABCD"
+
+      {:ok, object} =
+        OctetStringValue.create(51, "Data", %{present_value: binary})
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:present_value],
+          %{present_value: binary},
+          object
+        )
+
+      assert row.type == "OCTET STRING"
+    end
+
+    test "labels nil octet-string properties from schema" do
+      {:ok, object} =
+        OctetStringValue.create(52, "Data", %{present_value: <<>>})
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:description],
+          %{description: nil},
+          object
+        )
+
+      # description is :string on this object type
+      assert row.bac_type == :string
+      assert row.type == "CHARACTER STRING"
+
+      [pv_row] =
+        PropertyReader.format_property_rows(
+          [:present_value],
+          %{present_value: nil},
+          object
+        )
+
+      assert pv_row.bac_type == :octet_string
+      assert pv_row.type == "OCTET STRING"
     end
   end
 

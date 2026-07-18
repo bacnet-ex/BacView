@@ -104,6 +104,59 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "In Alarm (inaktiv)"
   end
 
+  test "renders status flags header tiles in English when locale is en" do
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      status_flags: %StatusFlags{
+        in_alarm: false,
+        fault: true,
+        overridden: false,
+        out_of_service: false
+      },
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    properties = [
+      %{
+        property: :status_flags,
+        property_name: "Status Flags",
+        type: "Status Flags",
+        value: object.status_flags,
+        value_display: %{kind: :scalar, formatted: "-", fields: [], items: []},
+        value_formatted: "-",
+        writable: false
+      }
+    ]
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: properties,
+          properties_loading: false,
+          locale: "en",
+          locale_version: 1
+        }
+      )
+
+    assert html =~ "Fault (active)"
+    assert html =~ "In alarm (inactive)"
+    assert html =~ "Overridden (inactive)"
+    assert html =~ "Out of service (inactive)"
+    refute html =~ "Störung"
+    refute html =~ "Übersteuert"
+    refute html =~ "Ausser Betrieb"
+  end
+
   test "renders writable property write actions without locale error" do
     prop = %{
       type: "REAL",

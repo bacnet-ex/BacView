@@ -84,4 +84,29 @@ defmodule BacViewWeb.StatusFlagsIconsTest do
     assert html =~ StatusFlagsIcons.flag_class(:in_alarm)
     assert html =~ StatusFlagsIcons.flag_icon_class(flags, :fault)
   end
+
+  test "mode :stats uses English labels when locale is en" do
+    flags = %StatusFlags{
+      in_alarm: true,
+      fault: false,
+      overridden: true,
+      out_of_service: false
+    }
+
+    html =
+      render_component(&StatusFlagsIcons.status_flags_icons/1, %{
+        flags: flags,
+        mode: :stats,
+        locale: "en",
+        locale_version: 1
+      })
+
+    assert html =~ "In alarm"
+    assert html =~ "Fault"
+    assert html =~ "Overridden"
+    assert html =~ "Out of service"
+    refute html =~ "Störung"
+    refute html =~ "Übersteuert"
+    refute html =~ "Ausser Betrieb"
+  end
 end
