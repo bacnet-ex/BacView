@@ -61,8 +61,11 @@ fn create_window(app_handle: &tauri::AppHandle, endpoint_url: &[u8]) {
             .unwrap(),
     );
 
+    let mut title = String::from("BacView v");
+    title.push_str(&app_handle.package_info().version.to_string());
+
     tauri::WebviewWindowBuilder::new(app_handle, "main", url)
-        .title("BacView")
+        .title(title.as_mut_str())
         .visible(false)
         .build()
         .unwrap();
