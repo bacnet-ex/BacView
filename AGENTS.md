@@ -30,6 +30,30 @@ There is **no user auth / `current_scope`** in this app. Do not invent scope plu
 - Do **not** add Ecto schemas/repos for BACnet domain data unless explicitly requested. Runtime state uses **ETS** (see `BacView.BACnet.Cache`) and JSON settings (`BacView.Settings` / `runtime_settings.json`).
 - Prefer mechanical, behavior-preserving refactors over “clever” rewrites of the BACnet stack.
 
+### Credo / precommit hygiene (strict)
+
+`mix precommit` runs **Credo `--strict --all`**. Avoid patterns that commonly fail the suite:
+
+- **Unused bindings**: never bare `_`. Use a **meaningful** name with underscore prefix, e.g. `_reason`, `_send_result`, `_attach_result`, `_write_result`, `_time`. (Credo consistency: unused vars should look like `_foo`, not `_`.)
+- **One-step pipelines**: do not pipe into a single call. Prefer a plain call or bind intermediate results.
+
+      # bad
+      value |> foo()
+      Enum.filter(list, fun) |> List.last()
+
+      # good
+      foo(value)
+      candidates = Enum.filter(list, fun)
+      List.last(candidates)
+
+- **Pipe chains must start with a raw value**, not a function call result left in the pipe mid-expression (bind first when needed).
+- **`cond`**: needs at least two real branches besides `true`. For a single condition use `if`/`else`.
+- **List growth**: `list ++ [item]` is fine as a **one-off** (not inside a loop / reduce / recursive path). For a deliberate one-off append that Credo flags, disable the check on the preceding line, e.g. `# credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem`. When building many items, **do not** reverse on every append (`reverse ++ [item]` / reverse-take-reverse each time) — that is also O(n²). Prefer:
+  - prepend with `[item | acc]` and **a single** `Enum.reverse/1` at the end when order matters, or
+  - `:queue` (or similar) when you need efficient push/pop at both ends / a bounded ring buffer.
+- **`alias` groups**: keep aliases **alphabetically ordered** within each group (Credo will fail otherwise).
+- Run `mix credo --strict --all` on touched modules before finishing larger changes so these do not pile up at precommit.
+
 ### Localization (DE/EN)
 
 - UI copy uses **German msgids** via `t(@locale, @locale_version, "...")` in templates and `gt("...")` / `gt("...", opts)` in LiveView modules and helpers.

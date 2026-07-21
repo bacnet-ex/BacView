@@ -693,8 +693,13 @@ body.bac-col-resizing * {
 }
 
 .bac-filter-menu-list {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 0.375rem;
+  /* Avoid horizontal jump when the scrollbar appears */
+  scrollbar-gutter: stable;
 }
 
 .bac-filter-menu-item {
@@ -1023,7 +1028,8 @@ body.bac-col-resizing * {
   color: var(--bac-accent);
 }
 
-.bac-collapsible[open] .bac-collapsible-icon {
+/* Only rotate this details' own chevron — not nested collapsibles. */
+.bac-collapsible[open] > .bac-collapsible-summary > .bac-collapsible-icon {
   transform: rotate(90deg);
 }
 

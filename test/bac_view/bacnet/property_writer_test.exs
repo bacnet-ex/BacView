@@ -35,6 +35,35 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
     end
   end
 
+  describe "parse_hex_input/1" do
+    test "parses colon-separated and plain hex" do
+      assert PropertyWriter.parse_hex_input("41:00:42") == {:ok, <<0x41, 0, 0x42>>}
+      assert PropertyWriter.parse_hex_input("410042") == {:ok, <<0x41, 0, 0x42>>}
+      assert PropertyWriter.parse_hex_input("41 00 42") == {:ok, <<0x41, 0, 0x42>>}
+    end
+
+    test "rejects invalid hex" do
+      assert PropertyWriter.parse_hex_input("") == {:error, :empty_value}
+      assert PropertyWriter.parse_hex_input("41:0") == {:error, :invalid_hex}
+      assert PropertyWriter.parse_hex_input("zz") == {:error, :invalid_hex}
+    end
+  end
+
+  describe "parse_write_params with hex encoding" do
+    test "parses hex when encoding is hex" do
+      prop = %{
+        type: "CHARACTER STRING",
+        value: "ab",
+        value_display: %{kind: :scalar, formatted: "ab", fields: [], items: []}
+      }
+
+      assert PropertyWriter.parse_write_params(
+               %{"value" => "61:00:62", "encoding" => "hex"},
+               prop
+             ) == {:ok, <<0x61, 0, 0x62>>}
+    end
+  end
+
   describe "write_opts/3" do
     test "includes priority for commandable present_value" do
       object = %{commandable: true}

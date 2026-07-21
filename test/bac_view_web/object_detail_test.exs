@@ -886,6 +886,69 @@ defmodule BacViewWeb.ObjectDetailTest do
     refute unknown_section =~ "subscribe_cov"
   end
 
+  test "shows hex toggle for known non-printable string properties" do
+    raw = "a\0b"
+
+    prop = %{
+      property: :description,
+      property_name: "description",
+      type: "CHARACTER STRING",
+      value: raw,
+      value_display: %{kind: :scalar, formatted: raw, fields: [], items: []},
+      value_formatted: raw,
+      string_value?: true,
+      hex_toggle?: true,
+      raw_binary: raw,
+      writable: false
+    }
+
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      status_flags: nil,
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(id="prop-hex-toggle-description")
+    assert html =~ "Als Hex"
+
+    hex_html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          property_hex_keys: MapSet.new([:description]),
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert hex_html =~ "61:00:62"
+    assert hex_html =~ "Als Text"
+  end
+
   defp render_writable_property(prop) do
     object = %{
       name: "Test Object",

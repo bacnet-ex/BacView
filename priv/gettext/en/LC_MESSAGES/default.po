@@ -69,6 +69,9 @@ msgstr "%{count} selected"
 msgid "%{count} unbekannte Eigenschaften"
 msgstr "%{count} unknown properties"
 
+msgid "%{count} unbekannte/proprietäre Objekttypen übersprungen"
+msgstr "%{count} unknown/proprietary object types skipped"
+
 msgid "%{count} übersprungen"
 msgstr "%{count} skipped"
 
@@ -90,8 +93,14 @@ msgstr "%{succeeded} objects re-read, %{failed} failed."
 msgid "-"
 msgstr "-"
 
+msgid "0 = unbekannt (automatisch lernen). 1–65534 = konfiguriert."
+msgstr "0 = unknown (auto-learn). 1–65534 = configured."
+
 msgid "0 Geräte"
 msgstr "0 devices"
+
+msgid "50–1476. Bestätigt-Requests nutzen die nächstkleinere BACnet-Stufe (z. B. 1000 → 480); Segmentierung nutzt den effektiven Rohwert mit dem Gerät."
+msgstr "50–1476. Confirmed requests use the next smaller BACnet size (e.g. 1000 → 480); segmentation uses the effective raw value with the device."
 
 msgid "Abbrechen"
 msgstr "Cancel"
@@ -330,6 +339,9 @@ msgstr "Please enter a value."
 msgid "Bitte wählen…"
 msgstr "Please select…"
 
+msgid "Build"
+msgstr "Build"
+
 msgid "Bulk-Abonnement abgeschlossen."
 msgstr "Bulk subscription completed."
 
@@ -483,6 +495,9 @@ msgstr "This property does not support COV notifications."
 msgid "Diese Hilfe ein-/ausblenden"
 msgstr "Toggle this help"
 
+msgid "Diese Objekttypen sind dem Scanner nicht bekannt und wurden nicht gelesen."
+msgstr "These object types are unknown to the scanner and were not read."
+
 msgid "Diese Änderungen erfordern einen Neustart des BACnet-Stacks. Aktive COV-Abonnements werden neu aufgebaut."
 msgstr "These changes require restarting the BACnet stack. Active COV subscriptions will be re-established."
 
@@ -599,6 +614,9 @@ msgstr "Failed to fetch events: %{detail}"
 
 msgid "Ereignisse aktualisiert."
 msgstr "Events updated."
+
+msgid "Erlernt"
+msgstr "Learned"
 
 msgid "Erneut abonnieren"
 msgstr "Resubscribe"
@@ -747,6 +765,9 @@ msgstr "Vendor ID (optional)"
 msgid "Herunterladen"
 msgstr "Download"
 
+msgid "Hex z. B. 41:42:00"
+msgstr "Hex e.g. 41:42:00"
+
 msgid "Hierarchie"
 msgstr "Hierarchy"
 
@@ -815,6 +836,9 @@ msgstr "No properties available."
 
 msgid "Keine Ereignisse. Klicken Sie auf „Ereignisse abrufen“, um GetAlarmSummary abzufragen."
 msgstr "No events. Click \"Fetch events\" to query GetAlarmSummary."
+
+msgid "Keine Log-Einträge."
+msgstr "No log entries."
 
 msgid "Keine Meldungsklassen auf diesem Gerät gefunden."
 msgstr "No notification classes found on this device."
@@ -909,6 +933,9 @@ msgstr "Empty = object default"
 msgid "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
 msgstr "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is."
 
+msgid "Leeren"
+msgstr "Clear"
+
 msgid "Leerzeichen"
 msgstr "Space"
 
@@ -938,6 +965,9 @@ msgstr "Local time"
 
 msgid "MS/TP-Adresse"
 msgstr "MS/TP address"
+
+msgid "Max. APDU-Länge"
+msgstr "Max. APDU length"
 
 msgid "Meldung"
 msgstr "Message"
@@ -1170,6 +1200,9 @@ msgstr "Project name"
 msgid "Projektname fehlt oder ist ungültig."
 msgstr "Project name is missing or invalid."
 
+msgid "Protokolle"
+msgstr "Logs"
+
 msgid "Puffer bereit"
 msgstr "Buffer ready"
 
@@ -1308,6 +1341,9 @@ msgstr "Stream access"
 msgid "Strukturansichten verwenden"
 msgstr "Use structured views"
 
+msgid "Stufe"
+msgstr "Level"
+
 msgid "Störung"
 msgstr "Fault"
 
@@ -1415,6 +1451,9 @@ msgstr "Invalid device instance (0–4194303)."
 
 msgid "Ungültige Hersteller-ID (0–65535)."
 msgstr "Invalid vendor ID (0–65535)."
+
+msgid "Ungültige Hex-Zeichenkette"
+msgstr "Invalid hex string"
 
 msgid "Ungültige IP-Adresse."
 msgstr "Invalid IP address."

@@ -3,6 +3,7 @@ import Config
 config :bacview, :desktop_mode, false
 config :bacview, :mstp_enabled, true
 config :bacview, start_bacnet: false
+config :bacview, :log_store_enabled, false
 
 config :bacview,
   runtime_settings_path: Path.expand("../tmp/test_runtime_settings.json", __DIR__)

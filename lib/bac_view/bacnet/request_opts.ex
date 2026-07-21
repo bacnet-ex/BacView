@@ -2,6 +2,7 @@ defmodule BacView.BACnet.RequestOpts do
   @moduledoc false
 
   alias BACnet.Protocol.NpciTarget
+  alias BacView.BACnet.ApduSize
   alias BacView.BACnet.Discovery
 
   @doc """
@@ -14,6 +15,7 @@ defmodule BacView.BACnet.RequestOpts do
   | `remote_device_id` | Object cast / remote object metadata (device instance) |
   | `device_id` | bacstack **invoke-id** partition key (only when routed and destination is unique) |
   | `destination` | NPCI destination `NpciTarget` learned from I-Am |
+  | `max_apdu` / `max_apdu_length` | Effective APDU size: min(local setting, remote max) |
 
   Callers should pass the BacView device instance as `:device_id` and/or
   `:remote_device_id` in `base` (aliases accepted for one transition window).
@@ -24,18 +26,19 @@ defmodule BacView.BACnet.RequestOpts do
   def for_device(device_id, base \\ []) when is_integer(device_id) and is_list(base) do
     case Discovery.get_device(device_id) do
       {:ok, device} -> merge_for_device(device_id, device, base)
-      :error -> base
+      :error -> put_apdu_opts(base, nil)
     end
   end
 
   @doc """
   Merges routing opts when `base` carries `:device_id` or `:remote_device_id`.
+  Always injects effective APDU size opts unless already present.
   """
   @spec merge(keyword()) :: keyword()
   def merge(opts) when is_list(opts) do
     case device_id_from(opts) do
       id when is_integer(id) -> for_device(id, opts)
-      _other -> opts
+      _other -> put_apdu_opts(opts, nil)
     end
   end
 
@@ -48,6 +51,15 @@ defmodule BacView.BACnet.RequestOpts do
     |> Keyword.put_new(:remote_device_id, device_id)
     |> maybe_put_npci_destination(device)
     |> maybe_put_invoke_device_id(device_id, device)
+    |> put_apdu_opts(device)
+  end
+
+  defp put_apdu_opts(opts, device) do
+    if Keyword.has_key?(opts, :max_apdu) or Keyword.has_key?(opts, :max_apdu_length) do
+      opts
+    else
+      Keyword.merge(opts, ApduSize.to_opts(device))
+    end
   end
 
   defp maybe_put_npci_destination(opts, %{npci_source: %NpciTarget{} = source}),

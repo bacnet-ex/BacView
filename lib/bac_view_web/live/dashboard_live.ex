@@ -11,7 +11,6 @@ defmodule BacViewWeb.DashboardLive do
   alias BacView.BACnet.VendorNames
 
   alias BacView.Settings
-  alias BacView.Timezone
 
   alias BacViewWeb.ActiveAlarmsAssigns
   alias BacViewWeb.ActiveAlarmsPopup
@@ -22,6 +21,8 @@ defmodule BacViewWeb.DashboardLive do
   alias BacViewWeb.DeviceServiceModals
   alias BacViewWeb.DeviceServicesMenu
   alias BacViewWeb.LiveFlash
+  alias BacViewWeb.LogViewerLive
+  alias BacViewWeb.LogViewerModal
   alias BacViewWeb.ScanPanel
   alias BacViewWeb.StackSettingsPanel
   alias BacViewWeb.StackStatusPolling
@@ -57,6 +58,8 @@ defmodule BacViewWeb.DashboardLive do
      |> assign(:stack_status_fast_poll_until, nil)
      |> assign(:stack_restart_confirm, false)
      |> assign(:stack_pending_updates, nil)
+     |> assign(:learned_network_number, learned_network_number())
+     |> LogViewerLive.init()
      |> assign(:vendor_names, VendorNames.names())
      |> assign(:device_view, :grid)
      |> assign(:device_search, "")
@@ -125,6 +128,31 @@ defmodule BacViewWeb.DashboardLive do
      socket
      |> assign(:stack_restart_confirm, false)
      |> assign(:stack_pending_updates, nil)}
+  end
+
+  @impl true
+  def handle_event("open_log_viewer", _params, socket) do
+    {:noreply, LogViewerLive.open(socket)}
+  end
+
+  @impl true
+  def handle_event("close_log_viewer", _params, socket) do
+    {:noreply, LogViewerLive.close(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_refresh", _params, socket) do
+    {:noreply, LogViewerLive.refresh(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_clear", _params, socket) do
+    {:noreply, LogViewerLive.clear(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_filter", %{"level" => level}, socket) do
+    {:noreply, LogViewerLive.filter(socket, level)}
   end
 
   @impl true
@@ -443,6 +471,10 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
+  def handle_info({:log_entry, entry}, socket) do
+    {:noreply, LogViewerLive.append_entry(socket, entry)}
+  end
+
   def handle_info({:bbmd_updated, status}, socket) do
     {:noreply,
      socket
@@ -511,6 +543,7 @@ defmodule BacViewWeb.DashboardLive do
               interface_options={@stack_interface_options}
               confirm_restart?={@stack_restart_confirm}
               apply_disabled?={@stack_settings.interface_error != nil}
+              learned_network_number={@learned_network_number}
               locale={@locale}
               locale_version={@locale_version}
             />
@@ -560,17 +593,7 @@ defmodule BacViewWeb.DashboardLive do
         </main>
       </div>
 
-      <footer class="bac-footer">
-        <span>
-          BacView v{Application.spec(:bacview, :vsn)}
-          <span :if={@last_scan_at}>
-            · {t(@locale, @locale_version, "Letzter Scan")}: {Timezone.format(@last_scan_at, "%H:%M:%S")}
-          </span>
-        </span>
-        <span class="bac-text-faint">
-          {transport_footer_label(@stack_settings.transport, @locale, @locale_version)}
-        </span>
-      </footer>
+      <Layouts.app_footer locale={@locale} locale_version={@locale_version} />
       <% end %>
     </Layouts.app>
 
@@ -591,6 +614,15 @@ defmodule BacViewWeb.DashboardLive do
       grouped?={@cov_popup_grouped?}
       device_groups={@active_cov_device_groups}
       total_count={DeviceBadgeCounts.total_cov_count(@device_badge_counts)}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <LogViewerModal.modal
+      open={@log_viewer_open}
+      entries={@log_viewer_entries}
+      level_filter={@log_viewer_level}
+      log_path={@log_path}
       locale={@locale}
       locale_version={@locale_version}
     />
@@ -809,6 +841,7 @@ defmodule BacViewWeb.DashboardLive do
       "device_id" => Integer.to_string(settings.device_id),
       "ipv4_port" => Integer.to_string(settings.ipv4_port),
       "network_number" => Integer.to_string(settings.network_number),
+      "max_apdu_length" => Integer.to_string(settings.max_apdu_length),
       "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
       "cov_increment" => cov_increment_form_value(settings.cov_increment),
       "cov_confirmed" => if(settings.cov_confirmed, do: "true", else: "false"),
@@ -824,6 +857,7 @@ defmodule BacViewWeb.DashboardLive do
       "device_id" => form[:device_id].value,
       "ipv4_port" => form[:ipv4_port].value,
       "network_number" => form[:network_number].value,
+      "max_apdu_length" => form[:max_apdu_length].value,
       "cov_lifetime_seconds" => form[:cov_lifetime_seconds].value,
       "cov_increment" => form[:cov_increment].value,
       "cov_confirmed" => form[:cov_confirmed].value,
@@ -845,9 +879,13 @@ defmodule BacViewWeb.DashboardLive do
     ipv4_port_param =
       params["ipv4_port"] || Integer.to_string(current_settings.ipv4_port)
 
+    max_apdu_param =
+      params["max_apdu_length"] || Integer.to_string(current_settings.max_apdu_length)
+
     with {:ok, device_id} <- parse_required_int(params["device_id"], 0, 4_194_303),
          {:ok, ipv4_port} <- parse_required_int(ipv4_port_param, 47_808, 65_535),
-         {:ok, network_number} <- parse_required_int(params["network_number"], 1, 65_535),
+         {:ok, network_number} <- parse_required_int(params["network_number"], 0, 65_534),
+         {:ok, max_apdu_length} <- parse_required_int(max_apdu_param, 50, 1476),
          {:ok, cov_lifetime} <- parse_required_int(params["cov_lifetime_seconds"], 0, 864_000),
          {:ok, cov_increment} <- parse_cov_increment(params["cov_increment"]),
          {:ok, mstp_local_address} <-
@@ -861,6 +899,7 @@ defmodule BacViewWeb.DashboardLive do
          ipv4_port: ipv4_port,
          device_id: device_id,
          network_number: network_number,
+         max_apdu_length: max_apdu_length,
          cov_lifetime_seconds: cov_lifetime,
          cov_increment: cov_increment,
          cov_confirmed: cov_confirmed?(params["cov_confirmed"]),
@@ -870,6 +909,10 @@ defmodule BacViewWeb.DashboardLive do
     else
       {:error, reason} -> {:error, reason}
     end
+  end
+
+  defp learned_network_number() do
+    BacView.BACnet.NetworkNumber.learned()
   end
 
   defp cov_confirmed?(value) when value in [true, "true", "on"], do: true
@@ -954,10 +997,13 @@ defmodule BacViewWeb.DashboardLive do
 
     case Settings.update(updates) do
       {:ok, settings} ->
+        BacView.BACnet.NetworkNumber.reload_from_settings()
+
         socket =
           socket
           |> assign_stack_settings(settings)
           |> assign(:stack_status, Stack.status())
+          |> assign(:learned_network_number, learned_network_number())
           |> put_flash(:info, gt("Stack-Einstellungen gespeichert."))
 
         socket =
@@ -994,10 +1040,4 @@ defmodule BacViewWeb.DashboardLive do
 
   defp stack_settings_error(_invalid_settings),
     do: gt("Stack-Einstellungen konnten nicht gespeichert werden.")
-
-  defp transport_footer_label("mstp", locale, lv),
-    do: t(locale, lv, "BACnet MS/TP · Who-Is / I-Am Discovery")
-
-  defp transport_footer_label(_transport_footer_label, locale, lv),
-    do: t(locale, lv, "BACnet / IP · Who-Is / I-Am Discovery")
 end

@@ -10,6 +10,8 @@ defmodule BacViewWeb.PropertyValue do
   attr(:property, :any, default: nil)
   attr(:writing, :boolean, default: false)
   attr(:collapse_nested, :boolean, default: false)
+  # When false, expand content directly (parent already provided the collapsible summary).
+  attr(:collapsible, :boolean, default: true)
   attr(:dom_id_prefix, :string, default: "row")
 
   def property_value(assigns) do
@@ -17,7 +19,7 @@ defmodule BacViewWeb.PropertyValue do
     <div class="bac-property-value min-w-0">
       <%= case @display.kind do %>
         <% :struct -> %>
-          <%= if collapsible?(@display, @writable) do %>
+          <%= if @collapsible and collapsible?(@display, @writable) do %>
             <.collapsible_block
               id={collapsible_id(@dom_id_prefix, @property, "struct")}
               summary={PropertyDisplay.brief_summary(@display)}
@@ -48,39 +50,51 @@ defmodule BacViewWeb.PropertyValue do
             />
           <% end %>
         <% :priority_array -> %>
-          <.collapsible_block
-            id={collapsible_id(@dom_id_prefix, @property, "priority-array")}
-            summary={PropertyDisplay.brief_summary(@display)}
-            locale={@locale}
-            locale_version={@locale_version}
-          >
+          <%= if @collapsible do %>
+            <.collapsible_block
+              id={collapsible_id(@dom_id_prefix, @property, "priority-array")}
+              summary={PropertyDisplay.brief_summary(@display)}
+              locale={@locale}
+              locale_version={@locale_version}
+            >
+              <.priority_array_items items={@display.items} />
+            </.collapsible_block>
+          <% else %>
             <.priority_array_items items={@display.items} />
-          </.collapsible_block>
+          <% end %>
         <% kind when kind in [:array, :list] -> %>
-          <.collapsible_block
-            id={collapsible_id(@dom_id_prefix, @property, Atom.to_string(kind))}
-            summary={
-              t(@locale, @locale_version, "%{count} Einträge",
-                count: length(@display.items)
-              )
-            }
-            locale={@locale}
-            locale_version={@locale_version}
-          >
-            <div class="bac-array-items space-y-1.5">
-              <.array_item
-                :for={item <- @display.items}
-                item={item}
+          <%= if @collapsible do %>
+            <.collapsible_block
+              id={collapsible_id(@dom_id_prefix, @property, Atom.to_string(kind))}
+              summary={
+                t(@locale, @locale_version, "%{count} Einträge",
+                  count: length(@display.items)
+                )
+              }
+              locale={@locale}
+              locale_version={@locale_version}
+            >
+              <.array_items
+                items={@display.items}
                 property={@property}
                 writing={@writing}
                 dom_id_prefix={@dom_id_prefix}
                 locale={@locale}
                 locale_version={@locale_version}
               />
-            </div>
-          </.collapsible_block>
+            </.collapsible_block>
+          <% else %>
+            <.array_items
+              items={@display.items}
+              property={@property}
+              writing={@writing}
+              dom_id_prefix={@dom_id_prefix}
+              locale={@locale}
+              locale_version={@locale_version}
+            />
+          <% end %>
         <% kind when kind in [:object_identifier, :scalar] -> %>
-          <%= if collapsible?(@display, @writable) do %>
+          <%= if @collapsible and collapsible?(@display, @writable) do %>
             <.collapsible_block
               id={collapsible_id(@dom_id_prefix, @property, "value")}
               summary={collapse_summary(@display)}
@@ -138,6 +152,29 @@ defmodule BacViewWeb.PropertyValue do
     """
   end
 
+  attr(:items, :list, required: true)
+  attr(:property, :any, default: nil)
+  attr(:writing, :boolean, default: false)
+  attr(:dom_id_prefix, :string, default: "row")
+  attr(:locale, :string, default: "de")
+  attr(:locale_version, :integer, default: 0)
+
+  defp array_items(assigns) do
+    ~H"""
+    <div class="bac-array-items space-y-1.5">
+      <.array_item
+        :for={item <- @items}
+        item={item}
+        property={@property}
+        writing={@writing}
+        dom_id_prefix={@dom_id_prefix}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+    </div>
+    """
+  end
+
   attr(:item, :map, required: true)
   attr(:property, :any, default: nil)
   attr(:writing, :boolean, default: false)
@@ -167,6 +204,7 @@ defmodule BacViewWeb.PropertyValue do
           writable={false}
           property={@property}
           writing={@writing}
+          collapsible={false}
           collapse_nested={true}
           dom_id_prefix={@dom_id_prefix}
           locale={@locale}
@@ -248,7 +286,8 @@ defmodule BacViewWeb.PropertyValue do
               writable={false}
               property={@property}
               writing={@writing}
-              collapse_nested={false}
+              collapsible={false}
+              collapse_nested={true}
               dom_id_prefix={@dom_id_prefix}
               locale={@locale}
               locale_version={@locale_version}
@@ -284,17 +323,14 @@ defmodule BacViewWeb.PropertyValue do
             locale_version={@locale_version}
             class="py-0.5"
           >
-            <div class="bac-array-items space-y-1.5">
-              <.array_item
-                :for={item <- @field.items}
-                item={item}
-                property={@property}
-                writing={@writing}
-                dom_id_prefix={@dom_id_prefix}
-                locale={@locale}
-                locale_version={@locale_version}
-              />
-            </div>
+            <.array_items
+              items={@field.items}
+              property={@property}
+              writing={@writing}
+              dom_id_prefix={@dom_id_prefix}
+              locale={@locale}
+              locale_version={@locale_version}
+            />
           </.collapsible_block>
         <% true -> %>
           <div class="flex flex-wrap items-baseline gap-2 py-1">

@@ -86,6 +86,60 @@ defmodule BacViewWeb.PropertyValueTest do
     assert html =~ "1 Einträge"
     assert html =~ "[1] 2 Felder"
     assert html =~ ~s(id="bac-collapsible-row--array-item-1")
+    # Item collapsible opens fields directly — no intermediate "2 Felder" struct wrap.
+    refute html =~ ~s(id="bac-collapsible-row--struct")
+    assert html =~ "Recipient"
+    assert html =~ "Process Id"
+  end
+
+  test "nested struct fields open directly without intermediate field-count collapsible" do
+    display = %{
+      kind: :struct,
+      formatted: "nested",
+      fields: [
+        %{
+          key: :recipient,
+          label: "Recipient",
+          kind: :struct,
+          formatted: "Network: 1, Address: aa",
+          fields: [
+            %{
+              key: :network,
+              label: "Network",
+              kind: :scalar,
+              formatted: "1",
+              fields: []
+            },
+            %{
+              key: :address,
+              label: "Address",
+              kind: :scalar,
+              formatted: "aa",
+              fields: []
+            }
+          ],
+          items: []
+        }
+      ],
+      items: []
+    }
+
+    html =
+      render_component(&PropertyValue.property_value/1, %{
+        display: display,
+        property: :recipient_list,
+        locale: "de",
+        locale_version: 0
+      })
+
+    assert html =~ ~s(id="bac-collapsible-row-recipient_list-struct")
+    assert html =~ "1 Felder"
+    assert html =~ ~s(id="bac-collapsible-row-recipient_list-field-recipient")
+    assert html =~ "Recipient: 2 Felder"
+    # Nested field opens its fields directly — no second "2 Felder" struct wrap.
+    refute html =~ ~s(id="bac-collapsible-row-recipient_list-struct-")
+    assert html =~ "Network"
+    assert html =~ "Address"
   end
 
   test "renders structs collapsed by default with field count" do

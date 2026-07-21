@@ -25,7 +25,8 @@ defmodule BacView.Application do
           BacView.BACnet.Discovery,
           BacView.BACnet.SubscriptionManager,
           BacView.BACnet.NotificationClassRecipient,
-          BacView.BACnet.AlarmEvent
+          BacView.BACnet.AlarmEvent,
+          BacView.BACnet.NetworkNumber
         ] ++ session_children
       else
         session_children
@@ -36,7 +37,8 @@ defmodule BacView.Application do
       [
         BacViewWeb.Telemetry,
         {Phoenix.PubSub, name: BacView.PubSub},
-        BacView.Settings
+        BacView.Settings,
+        BacView.LogStore
       ] ++
         bacnet_children ++
         [BacViewWeb.Endpoint] ++
@@ -46,6 +48,7 @@ defmodule BacView.Application do
 
     case Supervisor.start_link(children, opts) do
       {:ok, _pid} = ok ->
+        _attach_result = BacView.LogStore.attach()
         maybe_start_bacnet_runtime()
         ok
 

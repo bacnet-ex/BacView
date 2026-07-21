@@ -11,6 +11,7 @@ defmodule BacViewWeb.StackSettingsPanel do
   attr(:interface_options, :list, required: true)
   attr(:confirm_restart?, :boolean, default: false)
   attr(:apply_disabled?, :boolean, default: false)
+  attr(:learned_network_number, :integer, default: nil)
 
   def stack_settings_panel(assigns) do
     ~H"""
@@ -202,10 +203,43 @@ defmodule BacViewWeb.StackSettingsPanel do
                 <.input
                   field={@form[:network_number]}
                   type="number"
-                  min="1"
-                  max="65535"
+                  min="0"
+                  max="65534"
                   class="bac-input bac-input-sm"
                 />
+                <p class="text-xs bac-text-faint mt-1">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "0 = unbekannt (automatisch lernen). 1–65534 = konfiguriert."
+                  )}
+                </p>
+                <p
+                  :if={@learned_network_number}
+                  id="stack-settings-learned-network"
+                  class="text-xs bac-text-muted mt-1"
+                >
+                  {t(@locale, @locale_version, "Erlernt")}: {@learned_network_number}
+                </p>
+              </div>
+              <div>
+                <label class="bac-label" for={@form[:max_apdu_length].id}>
+                  {t(@locale, @locale_version, "Max. APDU-Länge")}
+                </label>
+                <.input
+                  field={@form[:max_apdu_length]}
+                  type="number"
+                  min="50"
+                  max="1476"
+                  class="bac-input bac-input-sm"
+                />
+                <p class="text-xs bac-text-faint mt-1">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "50–1476. Bestätigt-Requests nutzen die nächstkleinere BACnet-Stufe (z. B. 1000 → 480); Segmentierung nutzt den effektiven Rohwert mit dem Gerät."
+                  )}
+                </p>
               </div>
             </div>
           </details>

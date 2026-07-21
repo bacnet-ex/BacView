@@ -380,7 +380,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   end
 
   defp local_network_number() do
-    BacView.Settings.network_number()
+    BacView.BACnet.NetworkNumber.effective()
   end
 
   defp notification_confirmed?() do

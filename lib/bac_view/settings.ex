@@ -18,7 +18,8 @@ defmodule BacView.Settings do
           interface: String.t() | nil,
           ipv4_port: pos_integer(),
           device_id: pos_integer(),
-          network_number: pos_integer(),
+          network_number: non_neg_integer(),
+          max_apdu_length: 50..1476,
           cov_lifetime_seconds: non_neg_integer(),
           cov_confirmed: boolean(),
           cov_increment: float() | nil,
@@ -58,8 +59,11 @@ defmodule BacView.Settings do
   @spec device_id() :: pos_integer()
   def device_id(), do: get().device_id
 
-  @spec network_number() :: pos_integer()
+  @spec network_number() :: non_neg_integer()
   def network_number(), do: get().network_number
+
+  @spec max_apdu_length() :: 50..1476
+  def max_apdu_length(), do: get().max_apdu_length
 
   @spec transport() :: String.t()
   def transport(), do: get().transport
@@ -74,7 +78,8 @@ defmodule BacView.Settings do
       interface: nil,
       ipv4_port: Address.default_ipv4_port(),
       device_id: 4_194_302,
-      network_number: 1,
+      network_number: 0,
+      max_apdu_length: 1476,
       cov_lifetime_seconds: 3600,
       cov_confirmed: false,
       cov_increment: nil,
@@ -155,8 +160,11 @@ defmodule BacView.Settings do
       {:device_id, value}, {:ok, acc} when is_integer(value) and value in 0..4_194_303 ->
         {:cont, {:ok, %{acc | device_id: value}}}
 
-      {:network_number, value}, {:ok, acc} when is_integer(value) and value in 1..65_535 ->
+      {:network_number, value}, {:ok, acc} when is_integer(value) and value in 0..65_534 ->
         {:cont, {:ok, %{acc | network_number: value}}}
+
+      {:max_apdu_length, value}, {:ok, acc} when is_integer(value) and value in 50..1476 ->
+        {:cont, {:ok, %{acc | max_apdu_length: value}}}
 
       {:cov_lifetime_seconds, value}, {:ok, acc} when is_integer(value) and value >= 0 ->
         {:cont, {:ok, %{acc | cov_lifetime_seconds: value}}}
@@ -257,8 +265,32 @@ defmodule BacView.Settings do
     |> update_in([:cov_increment], &parse_cov_increment/1)
     |> update_in([:mstp_baud_rate], &normalize_mstp_baud_rate/1)
     |> update_in([:bbmd_host], &empty_to_nil/1)
+    |> update_in([:network_number], &normalize_network_number/1)
+    |> update_in([:max_apdu_length], &normalize_max_apdu_length/1)
     |> maybe_coerce_mstp_transport()
   end
+
+  defp normalize_network_number(value) when is_integer(value) and value in 0..65_534, do: value
+
+  defp normalize_network_number(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> normalize_network_number(int)
+      _other -> 0
+    end
+  end
+
+  defp normalize_network_number(_value), do: 0
+
+  defp normalize_max_apdu_length(value) when is_integer(value) and value in 50..1476, do: value
+
+  defp normalize_max_apdu_length(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> normalize_max_apdu_length(int)
+      _other -> 1476
+    end
+  end
+
+  defp normalize_max_apdu_length(_value), do: 1476
 
   if not @mstp_enabled do
     defp maybe_coerce_mstp_transport(%{transport: "mstp"} = settings) do

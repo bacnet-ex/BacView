@@ -36,22 +36,17 @@ defmodule BacView.BACnet.ClientTest do
   end
 
   test "log_read_error can use debug level for expected fallbacks" do
-    previous = Logger.level()
-    Logger.configure(level: :debug)
-
     log =
-      try do
-        SilenceLogger.with_logging(
-          fn ->
-            capture_log([level: :debug], fn ->
-              Client.log_read_error(:read_object, nil, nil, nil, :timeout, level: :debug)
-            end)
-          end,
-          unsilence: [Client]
-        )
-      after
-        Logger.configure(level: previous)
-      end
+      SilenceLogger.with_logging(
+        fn ->
+          Logger.put_module_level(Client, :debug)
+
+          capture_log([level: :debug], fn ->
+            Client.log_read_error(:read_object, nil, nil, nil, :timeout, level: :debug)
+          end)
+        end,
+        unsilence: [Client]
+      )
 
     assert log =~ "BACnet read_object failed"
     refute log =~ "[warning]"

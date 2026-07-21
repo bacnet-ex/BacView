@@ -136,10 +136,48 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
         parse_struct_params(params, prop, fields)
 
       _params ->
-        params
-        |> Map.get("value", "")
-        |> normalize_param_value()
-        |> parse_scalar_value(prop)
+        value =
+          params
+          |> Map.get("value", "")
+          |> normalize_param_value()
+
+        if hex_encoding?(params) do
+          parse_hex_input(value)
+        else
+          parse_scalar_value(value, prop)
+        end
+    end
+  end
+
+  defp hex_encoding?(%{"encoding" => encoding}) when encoding in ["hex", :hex], do: true
+  defp hex_encoding?(_params), do: false
+
+  @doc """
+  Parses a hex string (`AA:BB:00` or `AABB00`) into a binary.
+  """
+  @spec parse_hex_input(String.t()) :: {:ok, binary()} | {:error, term()}
+  def parse_hex_input(value) when is_binary(value) do
+    cleaned =
+      value
+      |> String.trim()
+      |> String.replace(~r/[\s:_\-]/, "")
+      |> String.downcase()
+
+    cond do
+      cleaned == "" ->
+        {:error, :empty_value}
+
+      rem(String.length(cleaned), 2) != 0 ->
+        {:error, :invalid_hex}
+
+      not Regex.match?(~r/^[0-9a-f]+$/, cleaned) ->
+        {:error, :invalid_hex}
+
+      true ->
+        case Base.decode16(cleaned, case: :lower) do
+          {:ok, binary} -> {:ok, binary}
+          :error -> {:error, :invalid_hex}
+        end
     end
   end
 

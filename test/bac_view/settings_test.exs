@@ -20,6 +20,27 @@ defmodule BacView.SettingsTest do
     assert defaults.ipv4_port == 47_808
     assert defaults.device_id == 4_194_302
     assert defaults.mstp_baud_rate == :auto
+    assert defaults.network_number == 0
+    assert defaults.max_apdu_length == 1476
+  end
+
+  test "accepts network_number 0 and rejects 65535" do
+    assert {:ok, settings} = Settings.update(network_number: 0)
+    assert settings.network_number == 0
+
+    assert {:ok, settings} = Settings.update(network_number: 65_534)
+    assert settings.network_number == 65_534
+
+    assert {:error, :invalid_settings} = Settings.update(network_number: 65_535)
+    assert {:error, :invalid_settings} = Settings.update(network_number: -1)
+  end
+
+  test "accepts max_apdu_length in range" do
+    assert {:ok, settings} = Settings.update(max_apdu_length: 480)
+    assert settings.max_apdu_length == 480
+
+    assert {:error, :invalid_settings} = Settings.update(max_apdu_length: 49)
+    assert {:error, :invalid_settings} = Settings.update(max_apdu_length: 1477)
   end
 
   test "update persists and reloads settings" do

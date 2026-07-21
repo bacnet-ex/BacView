@@ -38,6 +38,8 @@ defmodule BacViewWeb.ObjectLive do
   alias BacViewWeb.CovNotificationChartModal
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.LiveFlash
+  alias BacViewWeb.LogViewerLive
+  alias BacViewWeb.LogViewerModal
   alias BacViewWeb.ObjectDetail
   alias BacViewWeb.TrendLogChartModal
   alias BacViewWeb.WriteFormParams
@@ -102,6 +104,7 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:unknown_properties_sort_by, nil)
            |> assign(:unknown_properties_sort_dir, :asc)
            |> assign(:unknown_property_hex_keys, MapSet.new())
+           |> assign(:property_hex_keys, MapSet.new())
            |> assign(:trend_chart_modal_open, false)
            |> assign(:trend_chart_loading, false)
            |> assign(:trend_chart_error, nil)
@@ -132,6 +135,7 @@ defmodule BacViewWeb.ObjectLive do
            |> ActiveAlarmsAssigns.init()
            |> ActiveCovSubscriptionsAssigns.init()
            |> CovNotificationChartLive.init_assigns()
+           |> LogViewerLive.init()
            |> refresh_cov_state()
            |> refresh_alarm_state()}
 
@@ -177,6 +181,10 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   @impl true
+  def handle_info({:log_entry, entry}, socket) do
+    {:noreply, LogViewerLive.append_entry(socket, entry)}
+  end
+
   def handle_info(:load_object, socket) do
     parent = self()
     device_id = socket.assigns.device_id
@@ -240,6 +248,7 @@ defmodule BacViewWeb.ObjectLive do
       |> assign(:properties, properties)
       |> assign(:unknown_properties, unknown_properties)
       |> assign(:unknown_property_hex_keys, MapSet.new())
+      |> assign(:property_hex_keys, MapSet.new())
       |> assign(:properties_loading, properties_loading)
       |> assign(:properties_progress, nil)
       |> assign(:page_title, page_title)
@@ -489,6 +498,7 @@ defmodule BacViewWeb.ObjectLive do
           |> assign(:properties, enriched)
           |> assign(:unknown_properties, unknown)
           |> assign(:unknown_property_hex_keys, MapSet.new())
+          |> assign(:property_hex_keys, MapSet.new())
           |> assign(:properties_loading, false)
           |> assign(:properties_progress, nil)
           |> assign(:writing_property, nil)
@@ -1061,6 +1071,21 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   @impl true
+  def handle_event("toggle_property_hex", %{"property" => property_name}, socket) do
+    {:ok, property} = parse_property(property_name)
+    keys = socket.assigns.property_hex_keys
+
+    new_keys =
+      if MapSet.member?(keys, property) do
+        MapSet.delete(keys, property)
+      else
+        MapSet.put(keys, property)
+      end
+
+    {:noreply, assign(socket, :property_hex_keys, new_keys)}
+  end
+
+  @impl true
   def handle_event("sort_unknown_properties", %{"column" => column}, socket) do
     case BacViewWeb.PropertyTable.normalize_unknown_sort_column(column) do
       nil ->
@@ -1144,6 +1169,31 @@ defmodule BacViewWeb.ObjectLive do
   @impl true
   def handle_event("toggle_shortcuts", _params, socket) do
     {:noreply, BacViewWeb.Shortcuts.toggle_shortcuts(socket)}
+  end
+
+  @impl true
+  def handle_event("open_log_viewer", _params, socket) do
+    {:noreply, LogViewerLive.open(socket)}
+  end
+
+  @impl true
+  def handle_event("close_log_viewer", _params, socket) do
+    {:noreply, LogViewerLive.close(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_refresh", _params, socket) do
+    {:noreply, LogViewerLive.refresh(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_clear", _params, socket) do
+    {:noreply, LogViewerLive.clear(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_filter", %{"level" => level}, socket) do
+    {:noreply, LogViewerLive.filter(socket, level)}
   end
 
   @impl true
@@ -1618,6 +1668,7 @@ defmodule BacViewWeb.ObjectLive do
 
   defp format_parse_error(:invalid_boolean), do: gt("erwartet true/false")
   defp format_parse_error(:invalid_number), do: gt("erwartet Zahl")
+  defp format_parse_error(:invalid_hex), do: gt("Ungültige Hex-Zeichenkette")
 
   defp format_parse_error(:unsupported_struct),
     do: gt("Dieser Strukturtyp kann noch nicht geschrieben werden")
@@ -2052,6 +2103,7 @@ defmodule BacViewWeb.ObjectLive do
           unknown_properties_sort_by={@unknown_properties_sort_by}
           unknown_properties_sort_dir={@unknown_properties_sort_dir}
           unknown_property_hex_keys={@unknown_property_hex_keys}
+          property_hex_keys={@property_hex_keys}
           file_metadata={@file_metadata}
           file_content={@file_content}
           file_transfer_busy={@file_transfer_busy}
@@ -2060,6 +2112,8 @@ defmodule BacViewWeb.ObjectLive do
           locale_version={@locale_version}
         />
       <% end %>
+
+      <Layouts.app_footer locale={@locale} locale_version={@locale_version} />
     </Layouts.app>
 
     <ActiveAlarmsPopup.active_alarms_panel
@@ -2073,6 +2127,15 @@ defmodule BacViewWeb.ObjectLive do
     <ActiveCovSubscriptionsPopup.active_cov_panel
       open={@cov_popup_open}
       entries={@active_cov_entries}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <LogViewerModal.modal
+      open={@log_viewer_open}
+      entries={@log_viewer_entries}
+      level_filter={@log_viewer_level}
+      log_path={@log_path}
       locale={@locale}
       locale_version={@locale_version}
     />

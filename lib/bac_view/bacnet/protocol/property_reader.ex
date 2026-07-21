@@ -772,25 +772,69 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     properties
     |> Enum.map(fn property ->
       value = Map.get(results, property)
-      display = PropertyDisplay.build(value)
       bac_type = Map.get(type_map, property)
+      binary_meta = binary_presentation(value, bac_type)
+      display = property_display(value, binary_meta)
 
       %{
         property: property,
         property_name: property_name(property),
         value: value,
         value_display: display,
-        value_formatted: display.formatted,
+        value_formatted: Map.get(binary_meta, :formatted, display.formatted),
         bac_type: bac_type,
         type: property_type(value, display, bac_type),
         writable: writable_property?(bacnet_object, property, results),
-        updated_at: DateTime.utc_now()
+        updated_at: DateTime.utc_now(),
+        string_value?: Map.get(binary_meta, :string_value?, false),
+        hex_toggle?: Map.get(binary_meta, :hex_toggle?, false),
+        raw_binary: Map.get(binary_meta, :raw_binary)
       }
       |> PropertyEnumeration.enrich_property(bac_type)
       |> Text.sanitize_property_row()
     end)
     |> Enum.sort_by(& &1.property_name)
   end
+
+  defp property_display(_value, %{string_value?: true, formatted: formatted}) do
+    %{kind: :scalar, formatted: formatted, fields: [], items: []}
+  end
+
+  defp property_display(value, _binary_meta), do: PropertyDisplay.build(value)
+
+  # Binary / character presentation for known properties (hex toggle support).
+  # Octet strings default to hex display; character strings to sanitized text.
+  # Non-printable values get `hex_toggle?: true` so the UI can switch views.
+  defp binary_presentation(value, bac_type) when is_binary(value) do
+    octet? = bac_type == :octet_string
+    printable? = Text.printable_text?(value)
+
+    formatted =
+      if octet? do
+        PropertyFormatter.format_binary_hex(value)
+      else
+        Text.sanitize_utf8(value)
+      end
+
+    %{
+      string_value?: true,
+      hex_toggle?: not printable?,
+      raw_binary: value,
+      formatted: formatted
+    }
+  end
+
+  defp binary_presentation(%Encoding{type: :character_string, value: inner}, _bac_type)
+       when is_binary(inner) do
+    binary_presentation(inner, :character_string)
+  end
+
+  defp binary_presentation(%Encoding{type: :octet_string, value: inner}, _bac_type)
+       when is_binary(inner) do
+    binary_presentation(inner, :octet_string)
+  end
+
+  defp binary_presentation(_value, _bac_type), do: %{}
 
   defp properties_type_map(bacnet_object) when is_object(bacnet_object) do
     mod = bacnet_object.__struct__

@@ -64,10 +64,14 @@ defmodule BacView.BACnet.RequestOptsTest do
     assert merged[:remote_device_id] == 100
     refute Keyword.has_key?(merged, :device_id)
     refute Keyword.has_key?(merged, :destination)
+    assert is_integer(merged[:max_apdu])
+    assert merged[:max_apdu] == merged[:max_apdu_length]
   end
 
-  test "merge leaves bare opts when device is unknown" do
-    assert RequestOpts.merge(device_id: 404) == [device_id: 404]
+  test "merge injects apdu opts when device is unknown" do
+    merged = RequestOpts.merge(device_id: 404)
+    assert merged[:device_id] == 404
+    assert is_integer(merged[:max_apdu])
   end
 
   test "for_device adds npci destination but not invoke device_id on shared addresses" do

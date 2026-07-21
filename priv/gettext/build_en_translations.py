@@ -37,6 +37,23 @@ TRANSLATIONS: dict[str, str] = {
     "-": "-",
     "0 Geräte": "0 devices",
     "Abbrechen": "Cancel",
+    "Build": "Build",
+    "Hex z. B. 41:42:00": "Hex e.g. 41:42:00",
+    "Ungültige Hex-Zeichenkette": "Invalid hex string",
+    "%{count} unbekannte/proprietäre Objekttypen übersprungen":
+        "%{count} unknown/proprietary object types skipped",
+    "Diese Objekttypen sind dem Scanner nicht bekannt und wurden nicht gelesen.":
+        "These object types are unknown to the scanner and were not read.",
+    "0 = unbekannt (automatisch lernen). 1–65534 = konfiguriert.":
+        "0 = unknown (auto-learn). 1–65534 = configured.",
+    "Erlernt": "Learned",
+    "Max. APDU-Länge": "Max. APDU length",
+    "50–1476. Bestätigt-Requests nutzen die nächstkleinere BACnet-Stufe (z. B. 1000 → 480); Segmentierung nutzt den effektiven Rohwert mit dem Gerät.":
+        "50–1476. Confirmed requests use the next smaller BACnet size (e.g. 1000 → 480); segmentation uses the effective raw value with the device.",
+    "Protokolle": "Logs",
+    "Stufe": "Level",
+    "Leeren": "Clear",
+    "Keine Log-Einträge.": "No log entries.",
     "Autor": "Author",
     "Alle Sonderzeichen": "All special characters",
     "Alle Validierung überspringen": "Skip all validation",

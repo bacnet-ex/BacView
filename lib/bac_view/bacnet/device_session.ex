@@ -515,7 +515,7 @@ defmodule BacView.BACnet.DeviceSession do
              PropertyLoad.device_scan_opts(device_id, device_obj)
            ),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
-         {:ok, scanned, scan_errors} <-
+         {:ok, scanned, scan_errors, skipped_objects} <-
            scan_object_list(device_id, address, device_obj, object_ids) do
       scanned = upsert_device_object_scan(scanned, device_obj, device)
       scanned_len = length(scanned)
@@ -550,7 +550,9 @@ defmodule BacView.BACnet.DeviceSession do
           loaded_at: DateTime.utc_now(),
           objects: objects,
           hierarchy: hierarchy,
-          scan_errors: scan_errors
+          scan_errors: scan_errors,
+          skipped_objects: skipped_objects,
+          skipped_object_count: length(skipped_objects)
         })
 
       {:ok, loaded, scanned}
@@ -678,127 +680,136 @@ defmodule BacView.BACnet.DeviceSession do
 
   defp scan_object_list(device_id, address, device_obj, object_ids) do
     total = length(object_ids)
+    {supported_ids, skipped_upfront} = partition_scan_object_ids(object_ids)
+    skipped_upfront_count = length(skipped_upfront)
 
     report_progress(device_id, %{
       stage: :scanning_objects,
-      done: 0,
+      done: skipped_upfront_count,
       total: total,
       errors: 0,
-      skipped: 0
+      skipped: skipped_upfront_count
     })
 
     if total == 0 do
-      {:ok, [], []}
+      {:ok, [], [], []}
     else
       scan_opts = PropertyLoad.device_scan_opts(device_id, device_obj)
 
       done_counter = :counters.new(1, [])
       error_counter = :counters.new(1, [])
       skip_counter = :counters.new(1, [])
+      :counters.add(done_counter, 1, skipped_upfront_count)
+      :counters.add(skip_counter, 1, skipped_upfront_count)
 
-      {scanned, error_log} =
-        object_ids
-        |> Task.async_stream(
-          fn object_id ->
-            case ObjectScanRead.read_object_fallback(address, object_id, scan_opts) do
-              {:ok, obj} -> {:ok, {object_id, obj}}
-              {:error, :unsupported_object_type} -> {:skipped, object_id}
-              {:error, reason} -> {:error, object_id, reason}
-            end
-          end,
-          max_concurrency: PropertyReader.scan_concurrency(device_id),
-          ordered: false,
-          timeout: :infinity
-        )
-        |> Enum.reduce({[], []}, fn
-          {:ok, {:ok, pair}}, {acc, error_log} ->
-            bump_scan_progress(
-              device_id,
-              done_counter,
-              error_counter,
-              skip_counter,
-              total,
-              pair,
-              error_log
-            )
+      {scanned, error_log, runtime_skipped} =
+        if supported_ids == [] do
+          {[], [], []}
+        else
+          supported_ids
+          |> Task.async_stream(
+            fn object_id ->
+              case ObjectScanRead.read_object_fallback(address, object_id, scan_opts) do
+                {:ok, obj} -> {:ok, {object_id, obj}}
+                {:error, :unsupported_object_type} -> {:skipped, object_id}
+                {:error, reason} -> {:error, object_id, reason}
+              end
+            end,
+            max_concurrency: PropertyReader.scan_concurrency(device_id),
+            ordered: false,
+            timeout: :infinity
+          )
+          |> Enum.reduce({[], [], []}, fn
+            {:ok, {:ok, pair}}, {acc, error_log, skipped} ->
+              bump_scan_progress(
+                device_id,
+                done_counter,
+                error_counter,
+                skip_counter,
+                total,
+                pair,
+                error_log
+              )
 
-            {[pair | acc], error_log}
+              {[pair | acc], error_log, skipped}
 
-          {:ok, {:skipped, object_id}}, {acc, error_log} ->
-            :counters.add(skip_counter, 1, 1)
+            {:ok, {:skipped, object_id}}, {acc, error_log, skipped} ->
+              :counters.add(skip_counter, 1, 1)
 
-            bump_scan_progress(
-              device_id,
-              done_counter,
-              error_counter,
-              skip_counter,
-              total,
-              object_id,
-              error_log
-            )
+              bump_scan_progress(
+                device_id,
+                done_counter,
+                error_counter,
+                skip_counter,
+                total,
+                object_id,
+                error_log
+              )
 
-            {acc, error_log}
+              {acc, error_log, [skipped_object_entry(object_id) | skipped]}
 
-          {:ok, {:error, object_id, reason}}, {acc, error_log} ->
-            Logger.warning(
-              "Failed to read object #{format_current_object(object_id)}: #{inspect(reason)}"
-            )
+            {:ok, {:error, object_id, reason}}, {acc, error_log, skipped} ->
+              Logger.warning(
+                "Failed to read object #{format_current_object(object_id)}: #{inspect(reason)}"
+              )
 
-            :counters.add(error_counter, 1, 1)
+              :counters.add(error_counter, 1, 1)
 
-            error_log = prepend_scan_error(error_log, object_id, reason)
+              error_log = prepend_scan_error(error_log, object_id, reason)
 
-            bump_scan_progress(
-              device_id,
-              done_counter,
-              error_counter,
-              skip_counter,
-              total,
-              nil,
-              error_log
-            )
+              bump_scan_progress(
+                device_id,
+                done_counter,
+                error_counter,
+                skip_counter,
+                total,
+                nil,
+                error_log
+              )
 
-            {acc, error_log}
+              {acc, error_log, skipped}
 
-          {:exit, exit_reason}, {acc, error_log} ->
-            Logger.warning("Object read task exited: #{inspect(exit_reason)}")
-            :counters.add(error_counter, 1, 1)
+            {:exit, exit_reason}, {acc, error_log, skipped} ->
+              Logger.warning("Object read task exited: #{inspect(exit_reason)}")
+              :counters.add(error_counter, 1, 1)
 
-            error_log = prepend_scan_error(error_log, nil, exit_reason)
+              error_log = prepend_scan_error(error_log, nil, exit_reason)
 
-            bump_scan_progress(
-              device_id,
-              done_counter,
-              error_counter,
-              skip_counter,
-              total,
-              nil,
-              error_log
-            )
+              bump_scan_progress(
+                device_id,
+                done_counter,
+                error_counter,
+                skip_counter,
+                total,
+                nil,
+                error_log
+              )
 
-            {acc, error_log}
+              {acc, error_log, skipped}
 
-          other, {acc, error_log} ->
-            Logger.warning("Unexpected object read stream result: #{inspect(other)}")
-            :counters.add(error_counter, 1, 1)
+            other, {acc, error_log, skipped} ->
+              Logger.warning("Unexpected object read stream result: #{inspect(other)}")
+              :counters.add(error_counter, 1, 1)
 
-            error_log = prepend_scan_error(error_log, nil, other)
+              error_log = prepend_scan_error(error_log, nil, other)
 
-            bump_scan_progress(
-              device_id,
-              done_counter,
-              error_counter,
-              skip_counter,
-              total,
-              nil,
-              error_log
-            )
+              bump_scan_progress(
+                device_id,
+                done_counter,
+                error_counter,
+                skip_counter,
+                total,
+                nil,
+                error_log
+              )
 
-            {acc, error_log}
-        end)
+              {acc, error_log, skipped}
+          end)
+        end
 
       scanned = Enum.reverse(scanned)
       error_log = Enum.reverse(error_log)
+      skipped_objects = skipped_upfront ++ Enum.reverse(runtime_skipped)
 
       report_progress(device_id, %{
         stage: :scanning_objects,
@@ -809,8 +820,45 @@ defmodule BacView.BACnet.DeviceSession do
         error_log: error_log
       })
 
-      {:ok, scanned, recoverable_scan_errors(error_log)}
+      {:ok, scanned, recoverable_scan_errors(error_log), skipped_objects}
     end
+  end
+
+  defp partition_scan_object_ids(object_ids) when is_list(object_ids) do
+    {supported, skipped} =
+      Enum.reduce(object_ids, {[], []}, fn
+        %ObjectIdentifier{type: type} = object_id, {supported_acc, skipped_acc} ->
+          if ObjectTypes.supported?(type) do
+            {[object_id | supported_acc], skipped_acc}
+          else
+            {supported_acc, [skipped_object_entry(object_id) | skipped_acc]}
+          end
+
+        other, {supported_acc, skipped_acc} ->
+          {[other | supported_acc], skipped_acc}
+      end)
+
+    {Enum.reverse(supported), Enum.reverse(skipped)}
+  end
+
+  defp skipped_object_entry(%ObjectIdentifier{} = object_id) do
+    %{
+      object_id: object_id,
+      type: object_id.type,
+      instance: object_id.instance,
+      label: format_current_object(object_id),
+      reason: :unsupported_object_type
+    }
+  end
+
+  defp skipped_object_entry(object_id) do
+    %{
+      object_id: object_id,
+      type: nil,
+      instance: nil,
+      label: format_current_object(object_id),
+      reason: :unsupported_object_type
+    }
   end
 
   defp bump_scan_progress(

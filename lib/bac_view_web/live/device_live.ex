@@ -33,11 +33,14 @@ defmodule BacViewWeb.DeviceLive do
   alias BacViewWeb.DeviceServiceModals
   alias BacViewWeb.DeviceServicesHandlers
   alias BacViewWeb.DeviceServicesMenu
+  alias BacViewWeb.DeviceSkippedObjects
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.EdeExportModal
   alias BacViewWeb.HierarchyExplorer
   alias BacViewWeb.HierarchyPanel
   alias BacViewWeb.LiveFlash
+  alias BacViewWeb.LogViewerLive
+  alias BacViewWeb.LogViewerModal
   alias BacViewWeb.ObjectSelectionBar
   alias BacViewWeb.ObjectTable
   alias BacViewWeb.ObjectTypeIcon
@@ -149,6 +152,7 @@ defmodule BacViewWeb.DeviceLive do
          |> DeviceServicesHandlers.init_assigns()
          |> ActiveAlarmsAssigns.init()
          |> ActiveCovSubscriptionsAssigns.init()
+         |> LogViewerLive.init()
          |> refresh_alarm_state()
          |> refresh_notification_class_counts()}
 
@@ -236,6 +240,11 @@ defmodule BacViewWeb.DeviceLive do
   @impl true
   def handle_info({:device_load_progress, progress}, socket) do
     {:noreply, assign(socket, :load_progress, progress)}
+  end
+
+  @impl true
+  def handle_info({:log_entry, entry}, socket) do
+    {:noreply, LogViewerLive.append_entry(socket, entry)}
   end
 
   @impl true
@@ -1510,6 +1519,31 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
+  def handle_event("open_log_viewer", _params, socket) do
+    {:noreply, LogViewerLive.open(socket)}
+  end
+
+  @impl true
+  def handle_event("close_log_viewer", _params, socket) do
+    {:noreply, LogViewerLive.close(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_refresh", _params, socket) do
+    {:noreply, LogViewerLive.refresh(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_clear", _params, socket) do
+    {:noreply, LogViewerLive.clear(socket)}
+  end
+
+  @impl true
+  def handle_event("log_viewer_filter", %{"level" => level}, socket) do
+    {:noreply, LogViewerLive.filter(socket, level)}
+  end
+
+  @impl true
   def handle_event("toggle_alarm_popup", _params, socket) do
     {:noreply,
      ActiveAlarmsAssigns.toggle(socket,
@@ -2777,6 +2811,13 @@ defmodule BacViewWeb.DeviceLive do
           locale_version={@locale_version}
         />
 
+        <DeviceSkippedObjects.skipped_panel
+          :if={!@loading}
+          skipped_objects={Map.get(@device, :skipped_objects, [])}
+          locale={@locale}
+          locale_version={@locale_version}
+        />
+
         <div class="flex flex-1 min-h-0">
           <section class="flex-1 min-w-0 p-5 overflow-auto w-full">
             <ObjectSelectionBar.selection_bar
@@ -2893,20 +2934,7 @@ defmodule BacViewWeb.DeviceLive do
           </section>
         </div>
 
-        <footer class="bac-footer">
-          <span>
-            {t(@locale, @locale_version, "%{count} Objekte", count: length(@objects))}
-            <span :if={@hierarchy.structured_view_count > 0}>
-              · {t(@locale, @locale_version, "%{count} Strukturansichten", count: @hierarchy.structured_view_count)}
-            </span>
-            <span :if={@cov_count > 0}>
-              · {t(@locale, @locale_version, "%{count} COV aktiv", count: @cov_count)}
-            </span>
-            <span :if={@alarm_tab_count > 0}>
-              · {t(@locale, @locale_version, "%{count} aktive Alarme", count: @alarm_tab_count)}
-            </span>
-          </span>
-        </footer>
+        <Layouts.app_footer locale={@locale} locale_version={@locale_version} />
       </div>
 
       <WritePresentValueModal.modal
@@ -2953,6 +2981,15 @@ defmodule BacViewWeb.DeviceLive do
     <ActiveCovSubscriptionsPopup.active_cov_panel
       open={@cov_popup_open}
       entries={@active_cov_entries}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+
+    <LogViewerModal.modal
+      open={@log_viewer_open}
+      entries={@log_viewer_entries}
+      level_filter={@log_viewer_level}
+      log_path={@log_path}
       locale={@locale}
       locale_version={@locale_version}
     />

@@ -175,6 +175,7 @@ defmodule BacView.BACnet.Stack.Boot do
   defp resubscribe_dependents() do
     SubscriptionManager.resubscribe_client()
     AlarmEvent.resubscribe_client()
+    BacView.BACnet.NetworkNumber.resubscribe_client()
     SubscriptionManager.resubscribe_all_active()
   end
 

@@ -67,13 +67,13 @@ defmodule BacView.BACnet.IAmCollectorTest do
       is_network_message: false
     }
 
-    previous_level = Logger.level()
-    on_exit(fn -> Logger.configure(level: previous_level) end)
+    # Module level only — never raise the global Logger level in async tests
+    # (that leaks Phoenix request logs from concurrent conn tests).
+    Logger.put_module_level(IAmCollector, :info)
+    on_exit(fn -> Logger.delete_module_level(IAmCollector) end)
 
     log =
       capture_log(fn ->
-        Logger.configure(level: :info)
-
         source = {{10, 130, 0, 221}, 47_808}
         addr_info = {source, :original_unicast, npci}
         send(self(), {:bacnet_client, make_ref(), @iam_apdu, addr_info, self()})

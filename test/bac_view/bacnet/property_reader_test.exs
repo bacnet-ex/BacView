@@ -1,8 +1,6 @@
 defmodule BacView.BACnet.Protocol.PropertyReaderTest do
   use ExUnit.Case, async: true
 
-  require Logger
-
   alias BACnet.Protocol.{
     ObjectIdentifier,
     ObjectTypes.AnalogInput,
@@ -390,13 +388,14 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
     test "emits debug logs for individual schema fallback reads" do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
-      previous_level = Logger.level()
       previous_flag = Application.get_env(:bacview, :debug_log_property_reader)
+
+      # Module level only — never raise the global Logger level in async tests.
+      Logger.put_module_level(PropertyReader, :debug)
+      on_exit(fn -> Logger.delete_module_level(PropertyReader) end)
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
-          Logger.configure(level: :debug)
-
           try do
             Application.put_env(:bacview, :debug_log_property_reader, true)
 
@@ -409,7 +408,6 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
             )
           after
             Application.put_env(:bacview, :debug_log_property_reader, previous_flag)
-            Logger.configure(level: previous_level)
           end
         end)
 

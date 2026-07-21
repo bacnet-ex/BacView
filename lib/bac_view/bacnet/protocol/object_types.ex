@@ -4,6 +4,8 @@ defmodule BacView.BACnet.Protocol.ObjectTypes do
   """
   use Gettext, backend: BacViewWeb.Gettext
 
+  alias BACnet.Protocol.ObjectsUtility
+
   @labels %{
     access_credential: {"Zugangsberechtigung", "Access Credential"},
     access_door: {"Zugangstür", "Access Door"},
@@ -102,6 +104,19 @@ defmodule BacView.BACnet.Protocol.ObjectTypes do
   end
 
   def short_label(type) when is_integer(type), do: Integer.to_string(type)
+
+  @doc """
+  Returns true when bacstack has an implementable object schema for this type.
+
+  Integer proprietary types and standard enum atoms without a bacstack
+  `ObjectTypes` module are not supported for full property scans.
+  """
+  @spec supported?(atom() | integer() | term()) :: boolean()
+  def supported?(type) when is_atom(type) do
+    Map.has_key?(ObjectsUtility.get_object_type_mappings(), type)
+  end
+
+  def supported?(_type), do: false
 
   defp localized_pair(type), do: Map.get(@labels, type)
 

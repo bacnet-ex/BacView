@@ -5,6 +5,8 @@ defmodule BacViewWeb.Layouts do
   """
   use BacViewWeb, :html
 
+  alias BacView.BuildInfo
+
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
   # skeleton of your application, namely HTML headers
@@ -62,6 +64,16 @@ defmodule BacViewWeb.Layouts do
           {render_slot(@topbar_end)}
           <button
             type="button"
+            id="open-log-viewer-btn"
+            phx-click="open_log_viewer"
+            class="bac-btn bac-btn-ghost bac-btn-xs"
+            title={t(@locale, @locale_version, "Protokolle")}
+          >
+            <.icon name="hero-document-text" class="size-3.5" />
+            <span class="hidden sm:inline">{t(@locale, @locale_version, "Protokolle")}</span>
+          </button>
+          <button
+            type="button"
             phx-click="toggle_shortcuts"
             class="bac-btn bac-btn-ghost bac-btn-xs"
             title={t(@locale, @locale_version, "Tastaturkürzel")}
@@ -90,6 +102,34 @@ defmodule BacViewWeb.Layouts do
 
       <.flash_group flash={@flash} locale={@locale} locale_version={@locale_version} />
     <% end %>
+    """
+  end
+
+  @doc """
+  Shared page footer with BacView version and build time (same on every page).
+  """
+  attr(:locale, :string, default: "de")
+  attr(:locale_version, :integer, default: 0)
+  attr(:id, :string, default: "app-footer")
+
+  def app_footer(assigns) do
+    assigns =
+      assigns
+      |> assign(:version_label, BuildInfo.version_label())
+      |> assign(:built_at, BuildInfo.built_at())
+
+    ~H"""
+    <footer id={@id} class="bac-footer">
+      <span class="min-w-0 flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+        <span id={"#{@id}-version"}>
+          BacView v{@version_label}
+        </span>
+        <span class="bac-text-faint" aria-hidden="true">·</span>
+        <span id={"#{@id}-build"} title={@built_at}>
+          {t(@locale, @locale_version, "Build")}: {@built_at}
+        </span>
+      </span>
+    </footer>
     """
   end
 

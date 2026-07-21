@@ -3,6 +3,7 @@ defmodule BacViewWeb.ObjectDetail do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BACnet.Protocol.ApplicationTags.Encoding
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyEnumeration
@@ -40,6 +41,7 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:unknown_properties_sort_by, :string, default: nil)
   attr(:unknown_properties_sort_dir, :atom, default: :asc)
   attr(:unknown_property_hex_keys, :any, default: MapSet.new())
+  attr(:property_hex_keys, :any, default: MapSet.new())
   attr(:loading, :boolean, default: false)
   attr(:properties_loading, :boolean, default: false)
   attr(:properties_progress, :map, default: nil)
@@ -396,10 +398,9 @@ defmodule BacViewWeb.ObjectDetail do
                   <td class="bac-mono align-top">{prop.property_name}</td>
                   <td class="align-top min-w-0">
                     <div :if={!property_writable_in_ui?(prop)}>
-                      <PropertyValue.property_value
-                        display={prop.value_display}
-                        writable={false}
-                        property={prop.property}
+                      <.known_property_value
+                        prop={prop}
+                        hex_keys={@property_hex_keys}
                         locale={@locale}
                         locale_version={@locale_version}
                       />
@@ -469,6 +470,12 @@ defmodule BacViewWeb.ObjectDetail do
                         name="priority"
                         value={@write_priority}
                       />
+                      <input
+                        :if={property_hex_mode?(prop, @property_hex_keys)}
+                        type="hidden"
+                        name="encoding"
+                        value="hex"
+                      />
                       <label :if={boolean_property?(prop)} class="flex items-center gap-2">
                         <input type="hidden" name="value" value="false" />
                         <input
@@ -504,8 +511,15 @@ defmodule BacViewWeb.ObjectDetail do
                         :if={!boolean_property?(prop) && !enumeration_property?(prop)}
                         type="text"
                         name="value"
-                        value={input_value(prop, @object)}
-                        placeholder={write_placeholder(prop, @locale, @locale_version)}
+                        value={input_value(prop, @object, @property_hex_keys)}
+                        placeholder={
+                          write_placeholder(
+                            prop,
+                            @locale,
+                            @locale_version,
+                            property_hex_mode?(prop, @property_hex_keys)
+                          )
+                        }
                         class="bac-input bac-input-sm bac-mono w-full"
                       />
                       <.write_actions
@@ -513,6 +527,7 @@ defmodule BacViewWeb.ObjectDetail do
                         prop={prop}
                         writing_property={@writing_property}
                         write_priority={@write_priority}
+                        hex_keys={@property_hex_keys}
                         locale={@locale}
                         locale_version={@locale_version}
                       />
@@ -650,24 +665,24 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:locale, :string, required: true)
   attr(:locale_version, :integer, required: true)
 
-  defp unknown_property_value(assigns) do
+  defp known_property_value(assigns) do
     assigns =
-      assign(assigns, :hex_mode?, MapSet.member?(assigns.hex_keys, assigns.prop.property))
+      assign(assigns, :hex_mode?, property_hex_mode?(assigns.prop, assigns.hex_keys))
 
     ~H"""
     <div :if={@prop[:string_value?]} class="space-y-2">
       <span class="bac-mono text-sm text-[var(--bac-text)] break-all">
-        {unknown_property_display_text(@prop, @hex_mode?)}
+        {binary_property_display_text(@prop, @hex_mode?)}
       </span>
       <button
         :if={@prop[:hex_toggle?]}
         type="button"
-        id={"unknown-prop-hex-toggle-#{@prop.property}"}
-        phx-click="toggle_unknown_property_hex"
+        id={"prop-hex-toggle-#{@prop.property}"}
+        phx-click="toggle_property_hex"
         phx-value-property={property_param(@prop.property)}
         class="bac-btn bac-btn-ghost bac-btn-xs"
       >
-        {unknown_property_hex_toggle_label(@hex_mode?, @locale, @locale_version)}
+        {hex_toggle_label(@hex_mode?, @locale, @locale_version)}
       </button>
     </div>
     <PropertyValue.property_value
@@ -681,18 +696,55 @@ defmodule BacViewWeb.ObjectDetail do
     """
   end
 
-  defp unknown_property_display_text(%{raw_binary: binary, value_formatted: formatted}, false)
+  defp unknown_property_value(assigns) do
+    assigns =
+      assign(assigns, :hex_mode?, MapSet.member?(assigns.hex_keys, assigns.prop.property))
+
+    ~H"""
+    <div :if={@prop[:string_value?]} class="space-y-2">
+      <span class="bac-mono text-sm text-[var(--bac-text)] break-all">
+        {binary_property_display_text(@prop, @hex_mode?)}
+      </span>
+      <button
+        :if={@prop[:hex_toggle?]}
+        type="button"
+        id={"unknown-prop-hex-toggle-#{@prop.property}"}
+        phx-click="toggle_unknown_property_hex"
+        phx-value-property={property_param(@prop.property)}
+        class="bac-btn bac-btn-ghost bac-btn-xs"
+      >
+        {hex_toggle_label(@hex_mode?, @locale, @locale_version)}
+      </button>
+    </div>
+    <PropertyValue.property_value
+      :if={!@prop[:string_value?]}
+      display={@prop.value_display}
+      writable={false}
+      property={@prop.property}
+      locale={@locale}
+      locale_version={@locale_version}
+    />
+    """
+  end
+
+  defp binary_property_display_text(%{raw_binary: binary, value_formatted: formatted}, false)
        when is_binary(binary),
        do: formatted
 
-  defp unknown_property_display_text(%{raw_binary: binary}, true) when is_binary(binary),
+  defp binary_property_display_text(%{raw_binary: binary}, true) when is_binary(binary),
     do: PropertyFormatter.format_binary_hex(binary)
 
-  defp unknown_property_hex_toggle_label(true, locale, locale_version),
+  defp binary_property_display_text(%{value_formatted: formatted}, _hex_mode?),
+    do: formatted || "-"
+
+  defp hex_toggle_label(true, locale, locale_version),
     do: t(locale, locale_version, "Als Text")
 
-  defp unknown_property_hex_toggle_label(false, locale, locale_version),
+  defp hex_toggle_label(false, locale, locale_version),
     do: t(locale, locale_version, "Als Hex")
+
+  defp property_hex_mode?(%{property: property}, hex_keys),
+    do: MapSet.member?(hex_keys, property)
 
   defp subscribed?(keys, object, property) when is_map(object) do
     MapSet.member?(keys, {object.type, object.instance, normalize_property(property)})
@@ -822,6 +874,7 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:prop, :map, required: true)
   attr(:writing_property, :any, default: nil)
   attr(:write_priority, :integer, default: 8)
+  attr(:hex_keys, :any, default: MapSet.new())
   attr(:locale, :string, default: "de")
   attr(:locale_version, :integer, default: 0)
 
@@ -852,21 +905,45 @@ defmodule BacViewWeb.ObjectDetail do
       >
         {t(@locale, @locale_version, "Null")}
       </button>
+      <button
+        :if={@prop[:hex_toggle?]}
+        type="button"
+        id={"prop-hex-toggle-#{@prop.property}"}
+        phx-click="toggle_property_hex"
+        phx-value-property={property_param(@prop.property)}
+        class="bac-btn bac-btn-ghost bac-btn-xs"
+      >
+        {hex_toggle_label(property_hex_mode?(@prop, @hex_keys), @locale, @locale_version)}
+      </button>
     </div>
     """
   end
 
-  defp input_value(prop, object) do
-    PropertyFormatter.format_edit_value(Map.get(prop, :value), object, prop)
+  defp input_value(prop, object, hex_keys) do
+    if property_hex_mode?(prop, hex_keys) do
+      case Map.get(prop, :raw_binary) || extract_binary_value(Map.get(prop, :value)) do
+        binary when is_binary(binary) -> PropertyFormatter.format_binary_hex(binary)
+        _other -> PropertyFormatter.format_edit_value(Map.get(prop, :value), object, prop)
+      end
+    else
+      PropertyFormatter.format_edit_value(Map.get(prop, :value), object, prop)
+    end
   end
 
-  defp write_placeholder(%{property: :present_value, type: "REAL"}, locale, locale_version),
+  defp extract_binary_value(value) when is_binary(value), do: value
+  defp extract_binary_value(%Encoding{value: inner}) when is_binary(inner), do: inner
+  defp extract_binary_value(_value), do: nil
+
+  defp write_placeholder(_prop, locale, locale_version, true),
+    do: t(locale, locale_version, "Hex z. B. 41:42:00")
+
+  defp write_placeholder(%{property: :present_value, type: "REAL"}, locale, locale_version, _hex),
     do: t(locale, locale_version, "z. B. 21.5")
 
-  defp write_placeholder(%{type: "BOOLEAN"}, locale, locale_version),
+  defp write_placeholder(%{type: "BOOLEAN"}, locale, locale_version, _hex),
     do: t(locale, locale_version, "true oder false")
 
-  defp write_placeholder(_prop, locale, locale_version),
+  defp write_placeholder(_prop, locale, locale_version, _hex),
     do: t(locale, locale_version, "Neuer Wert")
 
   defp format_time(nil), do: "-"

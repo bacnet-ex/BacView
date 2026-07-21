@@ -64,7 +64,8 @@ defmodule BacViewWeb.StackSettingsPanelTest do
       "cov_lifetime_seconds" => "3600",
       "cov_increment" => "",
       "cov_confirmed" => "false",
-      "network_number" => "1",
+      "network_number" => "0",
+      "max_apdu_length" => "1476",
       "mstp_local_address" => "127",
       "mstp_baud_rate" => "auto"
     }
