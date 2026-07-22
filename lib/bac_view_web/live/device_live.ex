@@ -1234,6 +1234,14 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
+  def handle_event("scan_device", _params, socket) do
+    # Full object scan with progress UI (same path as the refresh button).
+    {:noreply,
+     socket
+     |> assign(:device_service_menu, nil)
+     |> start_device_reload()}
+  end
+
   def handle_event(event, params, socket)
       when event in [
              "toggle_device_services_menu",
@@ -1581,14 +1589,19 @@ defmodule BacViewWeb.DeviceLive do
     |> assign(:nc_total, nc_object_count(socket.assigns.objects))
   end
 
-  defp spawn_nc_sync(socket) do
+  defp spawn_nc_sync(socket, opts) do
     if nc_object_count(socket.assigns.objects) > 0 do
       parent = self()
       device_id = socket.assigns.device_id
       objects = socket.assigns.objects
+      use_scanned = Keyword.get(opts, :use_scanned, false)
 
       Task.start(fn ->
-        result = NotificationClassRecipient.sync_enrollment_state(device_id, objects)
+        result =
+          NotificationClassRecipient.sync_enrollment_state(device_id, objects,
+            use_scanned: use_scanned
+          )
+
         send(parent, {:nc_sync_done, result})
       end)
     end
@@ -2119,7 +2132,7 @@ defmodule BacViewWeb.DeviceLive do
     |> refresh_cov_notifications()
     |> refresh_active_alarm_objects()
     |> refresh_notification_class_counts()
-    |> spawn_nc_sync()
+    |> spawn_nc_sync(use_scanned: Map.get(loaded, :from_cache) == false)
   end
 
   defp normalize_objects(objects) when is_list(objects) do

@@ -1,5 +1,7 @@
 defmodule BacView.BACnet.AlarmEventTest do
-  use ExUnit.Case, async: true
+  # Shares :bacview_notification_log with Discovery/Cache.clear_all_device_data/0.
+  # Must not run parallel with async cases that cancel/clear devices (cast wipe).
+  use ExUnit.Case, async: false
 
   alias BACnet.Protocol.BACnetTimestamp
   alias BACnet.Protocol.EventInformation

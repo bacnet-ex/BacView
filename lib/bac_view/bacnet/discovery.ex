@@ -12,7 +12,10 @@ defmodule BacView.BACnet.Discovery do
   alias BACnet.Protocol.Services.WhoIs
   alias BACnet.Stack.Client, as: StackClient
   alias BacView.BACnet.Address
+  alias BacView.BACnet.Cache
   alias BacView.BACnet.Client
+  alias BacView.BACnet.DeviceSession
+  alias BacView.BACnet.DeviceSessionSupervisor
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.IAmCollector
   alias BacView.BACnet.Protocol.PropertyReader
@@ -22,6 +25,8 @@ defmodule BacView.BACnet.Discovery do
   @table :bacview_devices
   @share_table :bacview_device_share
   @topic "devices"
+  @topic_cov "cov:updates"
+  @topic_alarms "alarms:updates"
   @bbmd_collect_extra_ms 8_000
   @min_timeout 500
   @default_timeout 5_000
@@ -37,6 +42,58 @@ defmodule BacView.BACnet.Discovery do
 
   @spec min_timeout() :: pos_integer()
   def min_timeout(), do: @min_timeout
+
+  @type acceptance_filters :: %{
+          low_limit: non_neg_integer() | nil,
+          high_limit: non_neg_integer() | nil,
+          vendor_id: non_neg_integer() | nil
+        }
+
+  # Stored in app env so filters work even when the Discovery GenServer is not
+  # started (e.g. `config :bacview, start_bacnet: false` in tests).
+  @acceptance_filters_env_key :discovery_acceptance_filters
+
+  @doc """
+  Returns the current device acceptance filters (scan panel device-ID range + vendor).
+  """
+  @spec acceptance_filters() :: acceptance_filters()
+  def acceptance_filters() do
+    case Application.get_env(:bacview, @acceptance_filters_env_key) do
+      %{} = filters -> normalize_acceptance_filters(filters)
+      _missing -> default_acceptance_filters()
+    end
+  end
+
+  @doc """
+  Updates filters used when adding **new** devices (I-Am, restart COV, etc.).
+
+  Accepts the same keys as scan opts: `:low_limit`, `:high_limit`, `:vendor_id`.
+  """
+  @spec set_acceptance_filters(keyword() | map()) :: :ok
+  def set_acceptance_filters(opts) when is_list(opts) or is_map(opts) do
+    filters = normalize_acceptance_filters(opts)
+    Application.put_env(:bacview, @acceptance_filters_env_key, filters)
+    :ok
+  end
+
+  @doc """
+  True when a **new** device with the given instance and vendor may be added.
+
+  Existing devices in the list are never rejected by this check.
+  """
+  @spec accepts_new_device?(integer(), term(), acceptance_filters() | nil) :: boolean()
+  def accepts_new_device?(instance, vendor_id, filters \\ nil)
+
+  def accepts_new_device?(instance, vendor_id, nil) when is_integer(instance) do
+    accepts_new_device?(instance, vendor_id, acceptance_filters())
+  end
+
+  def accepts_new_device?(instance, vendor_id, filters)
+      when is_integer(instance) and is_map(filters) do
+    instance_accepted?(instance, filters) and vendor_accepted?(vendor_id, filters)
+  end
+
+  def accepts_new_device?(_instance, _vendor_id, _filters), do: false
 
   @doc """
   Parses and validates scan parameters from the UI.
@@ -79,8 +136,10 @@ defmodule BacView.BACnet.Discovery do
   end
 
   @doc """
-  Cancels an in-flight scan (if any), clears discovered devices, and notifies
-  subscribers. In-flight I-Am handlers and scan completion are ignored.
+  Cancels an in-flight scan (if any), purges all discovered device data, and
+  notifies subscribers. In-flight I-Am handlers and scan completion are ignored.
+
+  Same data wipe as `clear_devices/0` (sessions stopped, ETS caches emptied).
   """
   @spec cancel_scan() :: :ok
   def cancel_scan() do
@@ -92,7 +151,13 @@ defmodule BacView.BACnet.Discovery do
     :ok
   end
 
-  @doc false
+  @doc """
+  Purges every discovered device and all associated scanned data.
+
+  Stops all `DeviceSession` processes and clears device-related ETS tables
+  (objects, properties, hierarchy, subscriptions, events, skip modes, etc.) so
+  a later Who-Is rediscovery starts from a cold cache.
+  """
   @spec clear_devices() :: :ok
   def clear_devices() do
     case Process.whereis(__MODULE__) do
@@ -127,6 +192,176 @@ defmodule BacView.BACnet.Discovery do
   @spec upsert_iam_device(IAm.t(), term(), term(), term()) :: map() | nil
   def upsert_iam_device(iam, address, npci_source \\ nil, source_address \\ nil),
     do: store_device(iam, address, npci_source, source_address)
+
+  @doc """
+  Ensures a minimal device entry exists so `DeviceSession` can load it.
+
+  Used when a device restart COV arrives before an I-Am has been stored.
+  """
+  @spec ensure_discovered_device(ObjectIdentifier.t(), term()) :: {:ok, map()} | :error
+  def ensure_discovered_device(
+        %ObjectIdentifier{type: :device, instance: instance} = object,
+        address
+      )
+      when is_integer(instance) do
+    if :ets.whereis(@table) == :undefined do
+      :error
+    else
+      normalized_address = Address.normalize_destination(address)
+      %{ip: ip, port: port, label: address_label} = Address.destination_meta(normalized_address)
+
+      case get_device(instance) do
+        {:ok, device} ->
+          refresh_discovered_device_address(
+            device,
+            object,
+            normalized_address,
+            ip,
+            port,
+            address_label
+          )
+
+        :error ->
+          # Unknown device: Who-Is → I-Am, then acceptance filters (device ID + vendor).
+          discover_unknown_device_via_who_is(instance, normalized_address)
+      end
+    end
+  end
+
+  def ensure_discovered_device(_object, _address), do: :error
+
+  # Unsolicited restart COV (or similar) for a device we have never listed.
+  # Probe with a targeted Who-Is so vendor / max_apdu come from the real I-Am and
+  # scan-panel filters can be applied before the device appears in the UI.
+  @who_is_probe_timeout_ms 3_000
+
+  defp discover_unknown_device_via_who_is(instance, address) do
+    filters = acceptance_filters()
+
+    if instance_accepted?(instance, filters) do
+      case probe_device_iam(instance, address) do
+        {:ok, iam, resolved_address, npci_source, source_address} ->
+          case store_device(iam, resolved_address, npci_source, source_address) do
+            %{} = device ->
+              {:ok, device}
+
+            nil ->
+              Logger.debug(
+                "Discovery rejected new device #{instance} after I-Am: does not match scan panel filters"
+              )
+
+              :error
+          end
+
+        {:error, reason} ->
+          Logger.debug(
+            "Discovery Who-Is probe failed for unknown device #{instance}: #{inspect(reason)}"
+          )
+
+          :error
+      end
+    else
+      Logger.debug(
+        "Discovery rejected new device #{instance}: outside scan panel device-ID filter"
+      )
+
+      :error
+    end
+  end
+
+  defp probe_device_iam(instance, address) do
+    probe = Application.get_env(:bacview, :device_iam_probe, &default_device_iam_probe/2)
+    probe.(instance, address)
+  end
+
+  defp default_device_iam_probe(instance, address) do
+    opts = [
+      destination: [address],
+      low_limit: instance,
+      high_limit: instance
+    ]
+
+    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms) do
+      {:ok, responses} ->
+        match =
+          Enum.find_value(responses, fn
+            {addr, %IAm{device: %{instance: ^instance}} = iam, npci_source, source_address} ->
+              {:ok, iam, addr, npci_source, source_address}
+
+            {_addr, %IAm{}, _npci, _src} ->
+              nil
+
+            # collect_while typespec mentions 2-tuples; accept either shape
+            {addr, %IAm{device: %{instance: ^instance}} = iam} ->
+              {:ok, iam, addr, nil, nil}
+
+            _other ->
+              nil
+          end)
+
+        match || {:error, :no_iam}
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  defp refresh_discovered_device_address(
+         device,
+         object,
+         normalized_address,
+         ip,
+         port,
+         address_label
+       ) do
+    same_address? = Address.same_destination?(Map.get(device, :address), normalized_address)
+    same_object? = Map.get(device, :object) == object
+
+    if same_address? and same_object? do
+      {:ok, device}
+    else
+      previous = device
+
+      updated =
+        device
+        |> Map.put(:address, normalized_address)
+        |> Map.put(:ip, ip)
+        |> Map.put(:port, port)
+        |> Map.put(:address_label, address_label)
+        |> Map.put(:object, object)
+
+      :ets.insert(@table, {device.id, updated})
+      update_share_indexes(previous, updated)
+      broadcast_devices()
+      {:ok, updated}
+    end
+  end
+
+  @doc """
+  Starts a device scan when "scan devices as they come online" is enabled.
+
+  * Default: scan only when the device is not already loaded and no load is in progress.
+  * `force: true`: reload even when already loaded (e.g. device restart COV).
+  """
+  @spec maybe_scan_device_online(integer(), keyword()) :: :ok
+  def maybe_scan_device_online(device_id, opts \\ []) when is_integer(device_id) do
+    force? = Keyword.get(opts, :force, false)
+
+    if Settings.scan_on_online?() and not DeviceSession.loading?(device_id) do
+      cond do
+        force? ->
+          start_online_scan(device_id, :reload)
+
+        device_loaded?(device_id) ->
+          :ok
+
+        true ->
+          start_online_scan(device_id, :load)
+      end
+    end
+
+    :ok
+  end
 
   @doc false
   @spec apply_shared_source_max_concurrency() :: :ok
@@ -175,17 +410,14 @@ defmodule BacView.BACnet.Discovery do
     {:reply, true, state}
   end
 
-  @impl true
   def handle_call({:scan_active?, _scan_gen}, _from, state) do
     {:reply, false, state}
   end
 
-  @impl true
   def handle_call({:scan, _opts}, _from, %{scanning: true} = state) do
     {:reply, {:error, :already_scanning}, state}
   end
 
-  @impl true
   def handle_call({:scan, opts}, _from, state) do
     {result, new_state} = run_scan(opts, state)
     {:reply, result, new_state}
@@ -325,6 +557,13 @@ defmodule BacView.BACnet.Discovery do
     vendor_id = Keyword.get(opts, :vendor_id)
     destination = Keyword.get(opts, :destination)
 
+    # Keep acceptance filters in sync with the active scan panel criteria.
+    set_acceptance_filters(
+      low_limit: low_limit,
+      high_limit: high_limit,
+      vendor_id: vendor_id
+    )
+
     who_is_opts =
       []
       |> maybe_put(:low_limit, low_limit)
@@ -339,7 +578,7 @@ defmodule BacView.BACnet.Discovery do
     )
 
     on_iam = fn address, %IAm{} = iam, npci_source, source_address ->
-      if vendor_matches?(iam, vendor_id) do
+      if accepts_iam?(iam, low_limit, high_limit, vendor_id) do
         GenServer.cast(
           __MODULE__,
           {:device_discovered, scan_gen, address, iam, npci_source, source_address}
@@ -357,7 +596,7 @@ defmodule BacView.BACnet.Discovery do
           devices =
             responses
             |> Enum.filter(fn {_address, %IAm{} = iam, _npci_source, _source_address} ->
-              vendor_matches?(iam, vendor_id)
+              accepts_iam?(iam, low_limit, high_limit, vendor_id)
             end)
             |> Enum.map(fn {address, %IAm{} = iam, npci_source, source_address} ->
               store_device(iam, address, npci_source, source_address)
@@ -425,15 +664,20 @@ defmodule BacView.BACnet.Discovery do
     end
   end
 
-  defp send_unicast_who_is({ip, port}, opts) do
+  defp send_unicast_who_is(destination, opts) do
     client = Client.stack_client()
 
     with {:ok, apdu} <- build_who_is_apdu(opts),
-         :ok <- StackClient.send(client, {ip, port}, apdu, []) do
-      Logger.info("Who-Is unicast → #{Address.format_ip(ip)}:#{port}")
+         :ok <- StackClient.send(client, destination, apdu, []) do
+      Logger.info("Who-Is unicast → #{format_single_destination(destination)}")
       :ok
     end
   end
+
+  defp format_single_destination({ip, port}) when is_tuple(ip) and is_integer(port),
+    do: "#{Address.format_ip(ip)}:#{port}"
+
+  defp format_single_destination(other), do: Address.format_destination(other)
 
   defp build_who_is_apdu(opts) do
     WhoIs.to_apdu(
@@ -487,21 +731,66 @@ defmodule BacView.BACnet.Discovery do
         [] -> nil
       end
 
-    device =
-      case previous do
-        nil -> new_discovered_device(incoming)
-        existing -> merge_discovered_device(existing, incoming)
-      end
+    case previous do
+      nil ->
+        if accepts_new_device?(instance, iam.vendor_id) do
+          device = new_discovered_device(incoming)
+          :ets.insert(@table, {instance, device})
+          update_share_indexes(nil, device)
+          GenServer.cast(__MODULE__, {:schedule_name_fetch, instance})
+          maybe_scan_device_online(instance)
+          device
+        else
+          Logger.debug(
+            "Discovery ignored new I-Am for device #{instance} (vendor=#{inspect(iam.vendor_id)}): " <>
+              "does not match scan panel filters"
+          )
 
-    :ets.insert(@table, {instance, device})
-    update_share_indexes(previous, device)
-    GenServer.cast(__MODULE__, {:schedule_name_fetch, instance})
-    device
+          nil
+        end
+
+      existing ->
+        device = merge_discovered_device(existing, incoming)
+        :ets.insert(@table, {instance, device})
+        update_share_indexes(previous, device)
+        GenServer.cast(__MODULE__, {:schedule_name_fetch, instance})
+        maybe_scan_device_online(instance)
+        device
+    end
   end
 
   defp store_device(%IAm{} = iam, _address, _npci_source, _source_address) do
     Logger.warning("Discovery ignored I-Am without device object identifier: #{inspect(iam)}")
     nil
+  end
+
+  defp device_loaded?(device_id) do
+    case get_device(device_id) do
+      {:ok, %{status: :loaded}} -> true
+      _other -> false
+    end
+  end
+
+  defp start_online_scan(device_id, mode) when mode in [:load, :reload] do
+    Task.start(fn ->
+      result =
+        case mode do
+          :load -> DeviceSession.load(device_id)
+          :reload -> DeviceSession.reload(device_id)
+        end
+
+      case result do
+        {:ok, _loaded} ->
+          Logger.info("Scanned device #{device_id} as it came online (#{mode})")
+
+        {:error, reason} ->
+          Logger.debug(
+            "Scan-on-online failed for device #{device_id} (#{mode}): #{inspect(reason)}"
+          )
+      end
+    end)
+
+    :ok
   end
 
   defp new_discovered_device(incoming) do
@@ -515,9 +804,9 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp merge_discovered_device(existing, incoming) do
-    if preserve_loaded_status?(existing, incoming) do
+    if preserve_device_status?(existing, incoming) do
       Map.merge(incoming, %{
-        status: :loaded,
+        status: existing.status,
         name: existing.name,
         description: Map.get(existing, :description),
         object_count: existing.object_count,
@@ -528,12 +817,14 @@ defmodule BacView.BACnet.Discovery do
     end
   end
 
-  defp preserve_loaded_status?(%{status: :loaded} = existing, incoming) do
+  # Keep loaded/loading when the same device I-Ams again (do not flash back to "Entdeckt").
+  defp preserve_device_status?(%{status: status} = existing, incoming)
+       when status in [:loaded, :loading] do
     existing.id == incoming.id and
       Address.same_destination?(existing.address, incoming.address)
   end
 
-  defp preserve_loaded_status?(_existing, _incoming), do: false
+  defp preserve_device_status?(_existing, _incoming), do: false
 
   defp maybe_put_npci_source(device, %BACnet.Protocol.NpciTarget{} = npci_source),
     do: Map.put(device, :npci_source, npci_source)
@@ -692,19 +983,20 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp do_clear_devices() do
-    if :ets.whereis(@table) != :undefined do
-      :ets.delete_all_objects(@table)
-    end
-
-    if :ets.whereis(@share_table) != :undefined do
-      :ets.delete_all_objects(@share_table)
-    end
-
+    # Stop sessions first so in-flight loads cannot re-insert into ETS after wipe.
+    DeviceSessionSupervisor.stop_all()
+    Cache.clear_all_device_data()
     broadcast_devices()
+    broadcast_cleared_side_channels()
   end
 
   defp broadcast_devices() do
     Phoenix.PubSub.broadcast(BacView.PubSub, @topic, {:devices_updated, list_devices()})
+  end
+
+  defp broadcast_cleared_side_channels() do
+    Phoenix.PubSub.broadcast(BacView.PubSub, @topic_cov, :cov_updated)
+    Phoenix.PubSub.broadcast(BacView.PubSub, @topic_alarms, :alarms_updated)
   end
 
   defp maybe_put(opts, _key, nil), do: opts
@@ -806,11 +1098,61 @@ defmodule BacView.BACnet.Discovery do
 
   defp validate_vendor_id(_id), do: {:error, :invalid_vendor_id}
 
-  defp vendor_matches?(%IAm{vendor_id: vendor_id}, filter_vendor_id)
-       when is_integer(filter_vendor_id),
-       do: vendor_id == filter_vendor_id
+  defp accepts_iam?(%IAm{device: %ObjectIdentifier{instance: instance}} = iam, low, high, vendor) do
+    accepts_new_device?(
+      instance,
+      iam.vendor_id,
+      %{low_limit: low, high_limit: high, vendor_id: vendor}
+    )
+  end
 
-  defp vendor_matches?(_iam, _filter_vendor_id), do: true
+  defp accepts_iam?(_iam, _low, _high, _vendor), do: false
+
+  defp default_acceptance_filters() do
+    %{low_limit: nil, high_limit: nil, vendor_id: nil}
+  end
+
+  defp normalize_acceptance_filters(opts) when is_list(opts) do
+    normalize_acceptance_filters(Map.new(opts))
+  end
+
+  defp normalize_acceptance_filters(opts) when is_map(opts) do
+    %{
+      low_limit: filter_int(Map.get(opts, :low_limit) || Map.get(opts, "low_limit")),
+      high_limit: filter_int(Map.get(opts, :high_limit) || Map.get(opts, "high_limit")),
+      vendor_id: filter_int(Map.get(opts, :vendor_id) || Map.get(opts, "vendor_id"))
+    }
+  end
+
+  defp filter_int(nil), do: nil
+  defp filter_int(value) when is_integer(value), do: value
+
+  defp filter_int(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> int
+      _other -> nil
+    end
+  end
+
+  defp filter_int(_value), do: nil
+
+  defp instance_accepted?(_instance, %{low_limit: nil, high_limit: nil}), do: true
+
+  defp instance_accepted?(instance, %{low_limit: low, high_limit: high})
+       when is_integer(instance) do
+    min_id = if is_integer(low), do: low, else: 0
+    max_id = if is_integer(high), do: high, else: @max_device_instance
+    instance >= min_id and instance <= max_id
+  end
+
+  defp vendor_accepted?(_vendor_id, %{vendor_id: nil}), do: true
+
+  defp vendor_accepted?(vendor_id, %{vendor_id: required})
+       when is_integer(required) and is_integer(vendor_id),
+       do: vendor_id == required
+
+  # Unknown vendor while a filter is active → reject (do not show until verified).
+  defp vendor_accepted?(_vendor_id, %{vendor_id: required}) when is_integer(required), do: false
 
   defp format_destination(destinations) when is_list(destinations) do
     ips = Enum.map(destinations, fn {ip, _port} -> Address.format_ip(ip) end)

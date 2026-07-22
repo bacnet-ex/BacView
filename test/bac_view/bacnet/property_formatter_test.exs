@@ -189,10 +189,15 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
                "::1"
     end
 
-    test "does not treat non-IP tuples as addresses" do
+    test "formats boolean bitstring tuples without inspect" do
       assert PropertyFormatter.format_value({true, false, false, true}, nil) ==
-               inspect({true, false, false, true}, limit: 80)
+               "true, false, false, true"
 
+      assert PropertyFormatter.format_value({:bitstring, {false, true, false, false}}, nil) ==
+               "false, true, false, false"
+    end
+
+    test "does not treat non-IP non-bitstring tuples as addresses" do
       assert PropertyFormatter.format_value({300, 1, 1, 1}, nil) ==
                inspect({300, 1, 1, 1}, limit: 80)
 
@@ -200,6 +205,37 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
 
       assert PropertyFormatter.format_value(bad_ipv6, nil) ==
                inspect(bad_ipv6, limit: 80)
+    end
+
+    test "format_property_value formats present_value with object context" do
+      object = %{type: :analog_value, units: :degrees_celsius}
+
+      assert PropertyFormatter.format_property_value(:present_value, 21.5, object) == "21.5 °C"
+    end
+
+    test "format_property_value formats status_flags as labeled fields" do
+      flags = {false, true, false, false}
+
+      formatted = PropertyFormatter.format_property_value(:status_flags, flags, nil)
+
+      assert formatted =~ "Fault: Ja"
+      assert formatted =~ "In Alarm: Nein"
+      refute formatted =~ "inspect"
+      refute formatted =~ "{"
+    end
+
+    test "format_property_value formats Encoding status_flags bitstrings" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :bitstring,
+        value: {true, false, false, false},
+        extras: []
+      }
+
+      formatted = PropertyFormatter.format_property_value(:status_flags, encoding, nil)
+
+      assert formatted =~ "In Alarm: Ja"
+      assert formatted =~ "Fault: Nein"
     end
 
     test "formats six-byte BACnet/IP addresses as IPv4 with port" do

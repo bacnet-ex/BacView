@@ -54,6 +54,8 @@ defmodule BacViewWeb.DeviceServicesMenuLiveTest do
 
     assert html =~ "device-services-menu-42"
     assert html =~ "Zeitsynchronisation"
+    assert has_element?(view, "#device-services-scan-42")
+    assert html =~ "Gerät scannen"
   end
 
   test "toggle closes device services menu on second click", %{conn: conn} do
@@ -64,5 +66,17 @@ defmodule BacViewWeb.DeviceServicesMenuLiveTest do
 
     view |> element("#device-services-trigger-42") |> render_click()
     refute has_element?(view, "#device-services-menu-42")
+  end
+
+  test "scan device from dashboard menu closes menu and starts scan", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view |> element("#device-services-trigger-42") |> render_click()
+    assert has_element?(view, "#device-services-scan-42")
+
+    html = view |> element("#device-services-scan-42") |> render_click()
+
+    refute has_element?(view, "#device-services-menu-42")
+    assert html =~ "Gerätescan gestartet."
   end
 end

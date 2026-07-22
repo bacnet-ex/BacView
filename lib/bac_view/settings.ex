@@ -22,6 +22,7 @@ defmodule BacView.Settings do
           max_apdu_length: 50..1476,
           cov_lifetime_seconds: non_neg_integer(),
           cov_confirmed: boolean(),
+          scan_on_online: boolean(),
           cov_increment: float() | nil,
           mstp_local_address: 0..127,
           mstp_baud_rate: :auto | pos_integer(),
@@ -53,6 +54,9 @@ defmodule BacView.Settings do
   @spec cov_confirmed?() :: boolean()
   def cov_confirmed?(), do: get().cov_confirmed
 
+  @spec scan_on_online?() :: boolean()
+  def scan_on_online?(), do: get().scan_on_online
+
   @spec cov_increment() :: float() | nil
   def cov_increment(), do: get().cov_increment
 
@@ -82,6 +86,7 @@ defmodule BacView.Settings do
       max_apdu_length: 1476,
       cov_lifetime_seconds: 3600,
       cov_confirmed: false,
+      scan_on_online: false,
       cov_increment: nil,
       mstp_local_address: 127,
       mstp_baud_rate: :auto,
@@ -172,6 +177,9 @@ defmodule BacView.Settings do
       {:cov_confirmed, value}, {:ok, acc} when is_boolean(value) ->
         {:cont, {:ok, %{acc | cov_confirmed: value}}}
 
+      {:scan_on_online, value}, {:ok, acc} when is_boolean(value) ->
+        {:cont, {:ok, %{acc | scan_on_online: value}}}
+
       {:cov_increment, nil}, {:ok, acc} ->
         {:cont, {:ok, %{acc | cov_increment: nil}}}
 
@@ -216,8 +224,13 @@ defmodule BacView.Settings do
     case File.read(path) do
       {:ok, contents} ->
         case Jason.decode(contents) do
-          {:ok, map} when is_map(map) -> merge_defaults(map)
-          _load_settings -> defaults()
+          {:ok, map} when is_map(map) ->
+            map
+            |> migrate_legacy_keys()
+            |> merge_defaults()
+
+          _load_settings ->
+            defaults()
         end
 
       {:error, :enoent} ->
@@ -225,6 +238,14 @@ defmodule BacView.Settings do
 
       {:error, _load_settings} ->
         defaults()
+    end
+  end
+
+  # Persist key was renamed; keep existing user preference.
+  defp migrate_legacy_keys(map) do
+    case Map.pop(map, "auto_scan_on_iam") do
+      {nil, rest} -> rest
+      {value, rest} -> Map.put_new(rest, "scan_on_online", value)
     end
   end
 
@@ -262,6 +283,7 @@ defmodule BacView.Settings do
   defp normalize_loaded(settings) do
     settings
     |> update_in([:cov_confirmed], &to_bool/1)
+    |> update_in([:scan_on_online], &to_bool/1)
     |> update_in([:cov_increment], &parse_cov_increment/1)
     |> update_in([:mstp_baud_rate], &normalize_mstp_baud_rate/1)
     |> update_in([:bbmd_host], &empty_to_nil/1)

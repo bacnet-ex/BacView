@@ -19,6 +19,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyDisplay
+  alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.Text
 
   @max_float_decimals 10
@@ -101,6 +102,28 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
       end
 
     base
+  end
+
+  @doc """
+  Formats a property value for compact list/table display (e.g. COV notification log).
+
+  Uses present-value rules when `property` is `:present_value`, normalizes
+  `:status_flags` into labeled fields, and otherwise falls back to `format_value/2`.
+  """
+  @spec format_property_value(atom() | integer(), term(), map() | nil) :: String.t()
+  def format_property_value(:present_value, value, object) do
+    format_present_value(value, object)
+  end
+
+  def format_property_value(:status_flags, value, _object) do
+    case StatusFlagsParser.normalize(value) do
+      nil -> format_value(value, nil)
+      flags -> PropertyDisplay.summary(PropertyDisplay.build(flags))
+    end
+  end
+
+  def format_property_value(_property, value, _object) do
+    format_value(value, nil)
   end
 
   @spec format_float(float()) :: String.t()
@@ -187,11 +210,23 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
     end
   end
 
-  # Raw IPv4 (4-tuple) / IPv6 (8-tuple) addresses from Network Port and related properties
-  def format_value(ip, _units) when is_tuple(ip) and tuple_size(ip) in [4, 8] do
-    case format_ip_address(ip) do
-      {:ok, formatted} -> formatted
-      :error -> inspect(ip, limit: 80)
+  # Tagged bitstring from application tags / COV unwrap paths
+  def format_value({:bitstring, value}, units), do: format_value(value, units)
+
+  # Boolean bitstrings (status flags, limit enable, etc.) before IPv4 4-tuples
+  def format_value(value, _units) when is_tuple(value) and tuple_size(value) > 0 do
+    cond do
+      bitstring_value?(value) ->
+        format_bitstring_tuple(value)
+
+      tuple_size(value) in [4, 8] ->
+        case format_ip_address(value) do
+          {:ok, formatted} -> formatted
+          :error -> inspect(value, limit: 80)
+        end
+
+      true ->
+        inspect(value, limit: 80)
     end
   end
 
@@ -207,6 +242,12 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   end
 
   def format_value(value, _units), do: inspect(value, limit: 80)
+
+  defp format_bitstring_tuple(value) when is_tuple(value) do
+    value
+    |> Tuple.to_list()
+    |> Enum.map_join(", ", &format_value(&1, nil))
+  end
 
   defp format_ip_address(ip) when is_tuple(ip) do
     case :inet.ntoa(ip) do

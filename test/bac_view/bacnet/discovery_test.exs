@@ -1,5 +1,6 @@
 defmodule BacView.BACnet.DiscoveryTest do
-  use ExUnit.Case, async: true
+  # Shared Discovery GenServer acceptance filters — not async-safe.
+  use ExUnit.Case, async: false
 
   alias BACnet.Protocol.APDU.UnconfirmedServiceRequest
   alias BACnet.Protocol.ObjectIdentifier
@@ -32,49 +33,70 @@ defmodule BacView.BACnet.DiscoveryTest do
     assert String.valid?(Discovery.normalize_device_description(latin1))
   end
 
+  @clear_tables [
+    {:bacview_devices, [:named_table, :set, :public]},
+    {:bacview_device_share, [:named_table, :set, :public]},
+    {:bacview_objects, [:named_table, :set, :public]},
+    {:bacview_properties, [:named_table, :set, :public]},
+    {:bacview_hierarchy, [:named_table, :set, :public]},
+    {:bacview_name_hierarchy, [:named_table, :set, :public]},
+    {:bacview_subscriptions, [:named_table, :set, :public]},
+    {:bacview_events, [:named_table, :set, :public]},
+    {:bacview_validation_skip_modes, [:named_table, :set, :public]}
+  ]
+
   describe "cancel_scan/0" do
-    setup do
-      if :ets.whereis(:bacview_devices) == :undefined do
-        :ets.new(:bacview_devices, [:named_table, :set, :public])
-      end
-
-      on_exit(fn ->
-        if :ets.whereis(:bacview_devices) != :undefined do
-          :ets.delete(:bacview_devices)
-        end
-      end)
-
-      :ok
-    end
-
     test "removes all discovered devices" do
-      :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42}})
+      BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+        :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42}})
 
-      assert Discovery.cancel_scan() == :ok
-      assert Discovery.list_devices() == []
+        assert Discovery.cancel_scan() == :ok
+        assert Discovery.list_devices() == []
+      end)
     end
   end
 
   describe "clear_devices/0" do
-    setup do
-      if :ets.whereis(:bacview_devices) == :undefined do
-        :ets.new(:bacview_devices, [:named_table, :set, :public])
-      end
+    test "removes all discovered devices" do
+      BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+        :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42}})
 
-      on_exit(fn ->
-        if :ets.whereis(:bacview_devices) != :undefined do
-          :ets.delete(:bacview_devices)
-        end
+        assert Discovery.clear_devices() == :ok
+        assert Discovery.list_devices() == []
       end)
-
-      :ok
     end
 
-    test "removes all discovered devices" do
-      :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42}})
+    test "purges associated scan caches and stops device sessions" do
+      BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+        device_id = 9_001_042
+        object = %ObjectIdentifier{type: :analog_input, instance: 1}
 
-      assert Discovery.clear_devices() == :ok
-      assert Discovery.list_devices() == []
+        :ets.insert(:bacview_devices, {device_id, %{id: device_id, instance: device_id}})
+        :ets.insert(:bacview_objects, {device_id, [%{type: :analog_input, instance: 1}]})
+
+        :ets.insert(
+          :bacview_properties,
+          {{device_id, :analog_input, 1}, [%{property: :present_value}]}
+        )
+
+        :ets.insert(:bacview_hierarchy, {device_id, %{roots: [], empty?: true}})
+        :ets.insert(:bacview_name_hierarchy, {device_id, %{split: nil, fingerprint: []}})
+        :ets.insert(:bacview_validation_skip_modes, {{device_id, :analog_input, 1}, :value})
+
+        assert {:ok, pid} = BacView.BACnet.DeviceSessionSupervisor.ensure_session(device_id)
+        assert Process.alive?(pid)
+
+        assert Discovery.clear_devices() == :ok
+
+        assert Discovery.list_devices() == []
+        assert :ets.lookup(:bacview_objects, device_id) == []
+        assert :ets.lookup(:bacview_properties, {device_id, object.type, object.instance}) == []
+        assert :ets.lookup(:bacview_hierarchy, device_id) == []
+        assert :ets.lookup(:bacview_name_hierarchy, device_id) == []
+        assert :ets.lookup(:bacview_validation_skip_modes, {device_id, :analog_input, 1}) == []
+        refute Process.alive?(pid)
+        assert BacView.BACnet.DeviceSessionSupervisor.session_pid(device_id) == nil
+      end)
     end
   end
 
@@ -88,7 +110,11 @@ defmodule BacView.BACnet.DiscoveryTest do
         end
       end
 
+      Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
+
       on_exit(fn ->
+        Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
+
         for table <- [:bacview_devices, :bacview_device_share] do
           if :ets.whereis(table) != :undefined do
             :ets.delete_all_objects(table)
@@ -167,7 +193,11 @@ defmodule BacView.BACnet.DiscoveryTest do
         :ets.new(:bacview_devices, [:named_table, :set, :public])
       end
 
+      Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
+
       on_exit(fn ->
+        Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
+
         if :ets.whereis(:bacview_devices) != :undefined do
           :ets.delete(:bacview_devices)
         end
@@ -275,6 +305,192 @@ defmodule BacView.BACnet.DiscoveryTest do
                Discovery.upsert_iam_device(iam, new_address)
 
       assert {:ok, %{status: :discovered, address: ^new_address}} = Discovery.get_device(42)
+    end
+
+    test "does not crash when scan_on_online is enabled for a new device", %{
+      iam: iam,
+      address: address
+    } do
+      previous = Settings.get().scan_on_online
+
+      on_exit(fn ->
+        _result = Settings.update(scan_on_online: previous)
+      end)
+
+      assert {:ok, _} = Settings.update(scan_on_online: true)
+
+      assert %{status: :discovered, id: 42} = Discovery.upsert_iam_device(iam, address)
+      # Task may start DeviceSession.load; without stack/session this is a no-op error path.
+      Process.sleep(20)
+      assert {:ok, %{status: :discovered}} = Discovery.get_device(42)
+    end
+
+    test "ensure_discovered_device probes Who-Is/I-Am for unknown devices", %{
+      address: address,
+      iam: iam
+    } do
+      object = %ObjectIdentifier{type: :device, instance: 42}
+
+      install_iam_probe(fn instance, probe_address ->
+        assert instance == 42
+        assert probe_address == address
+        {:ok, iam, address, nil, nil}
+      end)
+
+      assert {:ok, %{id: 42, status: :discovered, vendor_id: 999, address: ^address}} =
+               Discovery.ensure_discovered_device(object, address)
+
+      assert {:ok, %{id: 42, vendor_id: 999}} = Discovery.get_device(42)
+
+      # Second call for a known device is a no-op refresh (no Who-Is).
+      assert {:ok, %{id: 42}} = Discovery.ensure_discovered_device(object, address)
+    end
+
+    test "ensure_discovered_device refreshes address when source changes", %{
+      address: address
+    } do
+      object = %ObjectIdentifier{type: :device, instance: 88}
+      new_address = {{10, 0, 0, 99}, 47_808}
+
+      # Known device — no Who-Is probe required.
+      loaded_at = ~U[2026-01-15 12:00:00Z]
+
+      :ets.insert(:bacview_devices, {
+        88,
+        %{
+          id: 88,
+          instance: 88,
+          address: address,
+          ip: "10.0.0.42",
+          port: 47_808,
+          address_label: "10.0.0.42:47808",
+          object: object,
+          status: :loaded,
+          name: "Controller",
+          object_count: 3,
+          loaded_at: loaded_at,
+          discovered_at: loaded_at
+        }
+      })
+
+      assert {:ok,
+              %{
+                id: 88,
+                address: ^new_address,
+                status: :loaded,
+                name: "Controller",
+                object_count: 3
+              }} =
+               Discovery.ensure_discovered_device(object, new_address)
+
+      assert {:ok, %{address: ^new_address, status: :loaded}} = Discovery.get_device(88)
+    end
+
+    test "upsert_iam_device ignores new devices outside vendor filter", %{
+      iam: iam,
+      address: address
+    } do
+      Discovery.set_acceptance_filters(vendor_id: 222)
+      # I-Am fixture vendor is 999
+      assert is_nil(Discovery.upsert_iam_device(iam, address))
+      assert :error = Discovery.get_device(42)
+    end
+
+    test "upsert_iam_device ignores new devices outside device-ID range", %{
+      iam: iam,
+      address: address
+    } do
+      Discovery.set_acceptance_filters(low_limit: 100, high_limit: 200)
+      assert is_nil(Discovery.upsert_iam_device(iam, address))
+      assert :error = Discovery.get_device(42)
+    end
+
+    test "upsert_iam_device still updates existing devices outside filters", %{
+      iam: iam,
+      address: address
+    } do
+      assert %{status: :discovered} = Discovery.upsert_iam_device(iam, address)
+      Discovery.set_acceptance_filters(vendor_id: 222)
+
+      assert %{status: :discovered, id: 42, vendor_id: 999} =
+               Discovery.upsert_iam_device(iam, address)
+
+      assert {:ok, %{id: 42}} = Discovery.get_device(42)
+    end
+
+    test "ensure_discovered_device rejects new devices outside device-ID range before Who-Is", %{
+      address: address
+    } do
+      Discovery.set_acceptance_filters(low_limit: 1000, high_limit: 2000)
+      object = %ObjectIdentifier{type: :device, instance: 77}
+
+      install_iam_probe(fn _instance, _address ->
+        flunk("Who-Is probe must not run when device-ID filter rejects")
+      end)
+
+      assert :error = Discovery.ensure_discovered_device(object, address)
+      assert :error = Discovery.get_device(77)
+    end
+
+    test "ensure_discovered_device rejects unknown devices whose I-Am vendor fails filter", %{
+      address: address,
+      iam: iam
+    } do
+      Discovery.set_acceptance_filters(vendor_id: 222)
+      object = %ObjectIdentifier{type: :device, instance: 42}
+
+      install_iam_probe(fn _instance, _address ->
+        {:ok, iam, address, nil, nil}
+      end)
+
+      assert :error = Discovery.ensure_discovered_device(object, address)
+      assert :error = Discovery.get_device(42)
+    end
+
+    test "ensure_discovered_device still refreshes existing devices outside filters", %{
+      address: address
+    } do
+      object = %ObjectIdentifier{type: :device, instance: 77}
+
+      :ets.insert(:bacview_devices, {
+        77,
+        %{
+          id: 77,
+          instance: 77,
+          address: address,
+          ip: "10.0.0.42",
+          port: 47_808,
+          address_label: "10.0.0.42:47808",
+          object: object,
+          status: :discovered,
+          name: nil,
+          object_count: nil,
+          loaded_at: nil,
+          discovered_at: DateTime.utc_now()
+        }
+      })
+
+      Discovery.set_acceptance_filters(vendor_id: 222, low_limit: 1, high_limit: 10)
+      new_address = {{10, 0, 0, 55}, 47_808}
+
+      assert {:ok, %{id: 77, address: ^new_address}} =
+               Discovery.ensure_discovered_device(object, new_address)
+    end
+  end
+
+  describe "accepts_new_device?/3" do
+    test "accepts all when filters are empty" do
+      filters = %{low_limit: nil, high_limit: nil, vendor_id: nil}
+      assert Discovery.accepts_new_device?(42, 999, filters)
+      assert Discovery.accepts_new_device?(0, nil, filters)
+    end
+
+    test "enforces vendor and device-ID range" do
+      filters = %{low_limit: 10, high_limit: 100, vendor_id: 222}
+      assert Discovery.accepts_new_device?(50, 222, filters)
+      refute Discovery.accepts_new_device?(50, 999, filters)
+      refute Discovery.accepts_new_device?(5, 222, filters)
+      refute Discovery.accepts_new_device?(50, nil, filters)
     end
   end
 
@@ -395,5 +611,18 @@ defmodule BacView.BACnet.DiscoveryTest do
       assert Discovery.parse_scan_params(%{"vendor_id" => "70000"}) ==
                {:error, :invalid_vendor_id}
     end
+  end
+
+  defp install_iam_probe(fun) when is_function(fun, 2) do
+    previous = Application.get_env(:bacview, :device_iam_probe)
+    Application.put_env(:bacview, :device_iam_probe, fun)
+
+    on_exit(fn ->
+      if previous do
+        Application.put_env(:bacview, :device_iam_probe, previous)
+      else
+        Application.delete_env(:bacview, :device_iam_probe)
+      end
+    end)
   end
 end

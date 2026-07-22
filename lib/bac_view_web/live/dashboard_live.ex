@@ -5,6 +5,7 @@ defmodule BacViewWeb.DashboardLive do
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.InterfaceSelection
+  alias BacView.BACnet.NetworkNumber
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Stack
   alias BacView.BACnet.StackLifecycle
@@ -37,6 +38,7 @@ defmodule BacViewWeb.DashboardLive do
       Phoenix.PubSub.subscribe(BacView.PubSub, "alarms:updates")
       Phoenix.PubSub.subscribe(BacView.PubSub, "cov:updates")
       Phoenix.PubSub.subscribe(BacView.PubSub, "bbmd:updates")
+      Phoenix.PubSub.subscribe(BacView.PubSub, NetworkNumber.topic())
       Process.send_after(self(), :refresh_stack_status, StackStatusPolling.normal_poll_ms())
     end
 
@@ -107,10 +109,27 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("stack_restart_request", _params, socket) do
+    {:noreply,
+     socket
+     |> assign(:stack_restart_confirm, true)
+     |> assign(:stack_pending_updates, :manual)}
+  end
+
+  @impl true
   def handle_event("stack_settings_confirm_restart", _params, socket) do
     case socket.assigns.stack_pending_updates do
       nil ->
         {:noreply, assign(socket, :stack_restart_confirm, false)}
+
+      :manual ->
+        {:noreply,
+         socket
+         |> assign(:stack_restart_confirm, false)
+         |> assign(:stack_pending_updates, nil)
+         |> assign(:scanning, false)
+         |> begin_fast_stack_status_poll()
+         |> start_stack_restart_async()}
 
       updates ->
         socket = save_stack_settings(socket, updates, restart?: true)
@@ -194,11 +213,15 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_event("scan_form_restore", %{"scan" => scan_params}, socket) do
-    {:noreply, assign(socket, :scan_form, scan_form(scan_params))}
+    form = scan_form(scan_params)
+    sync_discovery_acceptance_filters(form)
+    {:noreply, assign(socket, :scan_form, form)}
   end
 
   def handle_event("scan_form_change", %{"scan" => scan_params}, socket) do
-    {:noreply, assign(socket, :scan_form, scan_form(scan_params))}
+    form = scan_form(scan_params)
+    sync_discovery_acceptance_filters(form)
+    {:noreply, assign(socket, :scan_form, form)}
   end
 
   @impl true
@@ -211,6 +234,8 @@ defmodule BacViewWeb.DashboardLive do
 
     with {:ok, opts} <- Discovery.parse_scan_params(scan_params),
          :ok <- Discovery.scan_async(self(), opts) do
+      Discovery.set_acceptance_filters(opts)
+
       {:noreply,
        socket
        |> assign(:scanning, true)
@@ -336,7 +361,8 @@ defmodule BacViewWeb.DashboardLive do
              "open_device_service_modal",
              "close_device_service_modal",
              "device_service_form_change",
-             "execute_device_service"
+             "execute_device_service",
+             "scan_device"
            ] do
     case DeviceServicesHandlers.handle_event(event, params, socket) do
       {:noreply, socket} -> {:noreply, socket}
@@ -463,7 +489,15 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
-  def handle_info({:device_service_complete, _refresh_stack_status, _socket} = msg, socket) do
+  def handle_info({:device_service_complete, _service, _result} = msg, socket) do
+    case DeviceServicesHandlers.handle_info(msg, socket) do
+      {:noreply, socket} -> {:noreply, socket}
+      :not_handled -> {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_info({:device_scan_complete, _device_id, _result} = msg, socket) do
     case DeviceServicesHandlers.handle_info(msg, socket) do
       {:noreply, socket} -> {:noreply, socket}
       :not_handled -> {:noreply, socket}
@@ -480,6 +514,10 @@ defmodule BacViewWeb.DashboardLive do
      socket
      |> assign(:bbmd_status, status)
      |> assign(:bbmd_form, bbmd_form(status))}
+  end
+
+  def handle_info({:network_number_updated, %{learned: learned}}, socket) do
+    {:noreply, assign(socket, :learned_network_number, learned)}
   end
 
   @impl true
@@ -541,7 +579,8 @@ defmodule BacViewWeb.DashboardLive do
               settings={@stack_settings}
               stack_status={@stack_status}
               interface_options={@stack_interface_options}
-              confirm_restart?={@stack_restart_confirm}
+              confirm_restart?={@stack_restart_confirm and @stack_pending_updates != :manual}
+              manual_restart_confirm?={@stack_restart_confirm and @stack_pending_updates == :manual}
               apply_disabled?={@stack_settings.interface_error != nil}
               learned_network_number={@learned_network_number}
               locale={@locale}
@@ -706,6 +745,17 @@ defmodule BacViewWeb.DashboardLive do
     }
   end
 
+  defp sync_discovery_acceptance_filters(%Phoenix.HTML.Form{} = form) do
+    case Discovery.parse_scan_params(scan_form_params(form)) do
+      {:ok, opts} ->
+        Discovery.set_acceptance_filters(opts)
+
+      {:error, _reason} ->
+        # Intermediate/invalid form input keeps the last valid filters.
+        :ok
+    end
+  end
+
   defp bbmd_form(status) do
     to_form(
       %{
@@ -772,6 +822,7 @@ defmodule BacViewWeb.DashboardLive do
     socket
     |> assign(:devices, [])
     |> assign(:last_scan_at, nil)
+    |> assign(:learned_network_number, learned_network_number())
     |> put_flash(:info, gt("BACnet-Stack neu gestartet."))
   end
 
@@ -845,6 +896,7 @@ defmodule BacViewWeb.DashboardLive do
       "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
       "cov_increment" => cov_increment_form_value(settings.cov_increment),
       "cov_confirmed" => if(settings.cov_confirmed, do: "true", else: "false"),
+      "scan_on_online" => if(settings.scan_on_online, do: "true", else: "false"),
       "mstp_local_address" => Integer.to_string(settings.mstp_local_address),
       "mstp_baud_rate" => mstp_baud_rate_form_value(settings.mstp_baud_rate)
     }
@@ -861,6 +913,7 @@ defmodule BacViewWeb.DashboardLive do
       "cov_lifetime_seconds" => form[:cov_lifetime_seconds].value,
       "cov_increment" => form[:cov_increment].value,
       "cov_confirmed" => form[:cov_confirmed].value,
+      "scan_on_online" => form[:scan_on_online].value,
       "mstp_local_address" => form[:mstp_local_address].value,
       "mstp_baud_rate" => form[:mstp_baud_rate].value
     }
@@ -902,7 +955,8 @@ defmodule BacViewWeb.DashboardLive do
          max_apdu_length: max_apdu_length,
          cov_lifetime_seconds: cov_lifetime,
          cov_increment: cov_increment,
-         cov_confirmed: cov_confirmed?(params["cov_confirmed"]),
+         cov_confirmed: form_checkbox?(params["cov_confirmed"]),
+         scan_on_online: form_checkbox?(params["scan_on_online"]),
          mstp_local_address: mstp_local_address,
          mstp_baud_rate: mstp_baud_rate
        ]}
@@ -912,12 +966,12 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   defp learned_network_number() do
-    BacView.BACnet.NetworkNumber.learned()
+    NetworkNumber.learned()
   end
 
-  defp cov_confirmed?(value) when value in [true, "true", "on"], do: true
-  defp cov_confirmed?(["false", "true"]), do: true
-  defp cov_confirmed?(_value), do: false
+  defp form_checkbox?(value) when value in [true, "true", "on"], do: true
+  defp form_checkbox?(["false", "true"]), do: true
+  defp form_checkbox?(_value), do: false
 
   defp cov_increment_form_value(nil), do: ""
 
@@ -997,7 +1051,7 @@ defmodule BacViewWeb.DashboardLive do
 
     case Settings.update(updates) do
       {:ok, settings} ->
-        BacView.BACnet.NetworkNumber.reload_from_settings()
+        NetworkNumber.reload_from_settings()
 
         socket =
           socket

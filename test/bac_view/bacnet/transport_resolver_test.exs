@@ -11,24 +11,10 @@ defmodule BacView.BACnet.TransportResolverTest do
       path = Application.get_env(:bacview, :runtime_settings_path)
       if path, do: File.rm(path)
 
-      {:ok, _} =
-        Settings.update(
-          transport: "ipv4",
-          interface: first_ipv4_interface(),
-          ipv4_port: Settings.defaults().ipv4_port,
-          device_id: Settings.defaults().device_id,
-          network_number: Settings.defaults().network_number,
-          mstp_local_address: Settings.defaults().mstp_local_address,
-          mstp_baud_rate: Settings.defaults().mstp_baud_rate
-        )
+      _ = reset_stack_settings()
     end)
 
-    {:ok, _} =
-      Settings.update(
-        transport: "ipv4",
-        interface: first_ipv4_interface()
-      )
-
+    assert {:ok, _} = reset_stack_settings()
     :ok
   end
 
@@ -58,6 +44,20 @@ defmodule BacView.BACnet.TransportResolverTest do
     else
       refute BacView.BACnet.Transport.MSTP.available?()
     end
+  end
+
+  defp reset_stack_settings do
+    defaults = Settings.defaults()
+
+    Settings.update(
+      transport: "ipv4",
+      interface: first_ipv4_interface(),
+      ipv4_port: defaults.ipv4_port,
+      device_id: defaults.device_id,
+      network_number: defaults.network_number,
+      mstp_local_address: defaults.mstp_local_address,
+      mstp_baud_rate: defaults.mstp_baud_rate
+    )
   end
 
   defp first_ipv4_interface do

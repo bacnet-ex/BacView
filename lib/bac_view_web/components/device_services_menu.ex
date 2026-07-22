@@ -54,6 +54,17 @@ defmodule BacViewWeb.DeviceServicesMenu do
         <li class="bac-filter-menu-item">
           <button
             type="button"
+            id={"device-services-scan-#{@menu.device_id}"}
+            phx-click="scan_device"
+            phx-value-device-id={@menu.device_id}
+            class="w-full text-left text-sm"
+          >
+            {t(@locale, @locale_version, "Gerät scannen")}
+          </button>
+        </li>
+        <li class="bac-filter-menu-item">
+          <button
+            type="button"
             phx-click="open_device_service_modal"
             phx-value-service="time_sync"
             phx-value-device-id={@menu.device_id}

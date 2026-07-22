@@ -54,6 +54,15 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
+  @doc "Returns true when a full device load/reload is in progress."
+  @spec loading?(integer()) :: boolean()
+  def loading?(device_id) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
+      nil -> false
+      pid -> GenServer.call(pid, :loading?)
+    end
+  end
+
   @doc "Forces a fresh BACnet read even when the session is already loaded."
   @spec reload(integer()) :: {:ok, map()} | {:error, term()}
   def reload(device_id) do
@@ -236,9 +245,14 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   @impl true
+  def handle_call(:loading?, _from, %{status: status} = state) do
+    {:reply, status == :loading, state}
+  end
+
   def handle_call(:load, _from, %{status: :ready, device: device} = state)
       when not is_nil(device) do
-    {:reply, {:ok, loaded_snapshot(state)}, state}
+    loaded = Map.put(loaded_snapshot(state), :from_cache, true)
+    {:reply, {:ok, loaded}, state}
   end
 
   def handle_call(:load, from, %{status: :loading, load_waiters: waiters} = state) do
@@ -246,6 +260,7 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   def handle_call(:load, from, state) do
+    mark_device_status(state.device_id, :loading)
     send(self(), :fetch_device)
     {:noreply, %{state | status: :loading, load_waiters: [from]}}
   end
@@ -255,6 +270,7 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   def handle_call(:reload, from, state) do
+    mark_device_status(state.device_id, :loading)
     send(self(), :fetch_device)
     {:noreply, %{state | status: :loading, load_waiters: [from]}}
   end
@@ -451,8 +467,13 @@ defmodule BacView.BACnet.DeviceSession do
 
       {:ok, loaded, new_state}
     else
-      :error -> {:error, :device_not_found, %{state | status: :error}}
-      {:error, reason} -> {:error, reason, %{state | status: :error}}
+      :error ->
+        mark_device_load_failed(device_id)
+        {:error, :device_not_found, %{state | status: :error}}
+
+      {:error, reason} ->
+        mark_device_load_failed(device_id)
+        {:error, reason, %{state | status: :error}}
     end
   end
 
@@ -548,6 +569,7 @@ defmodule BacView.BACnet.DeviceSession do
           object_count: length(objects),
           status: :loaded,
           loaded_at: DateTime.utc_now(),
+          from_cache: false,
           objects: objects,
           hierarchy: hierarchy,
           scan_errors: scan_errors,
@@ -1391,6 +1413,7 @@ defmodule BacView.BACnet.DeviceSession do
     |> Map.put(:hierarchy, hierarchy)
     |> Map.put(:object_count, length(objects))
     |> Map.put(:scan_errors, Map.get(device, :scan_errors, []))
+    |> Map.put(:from_cache, true)
   end
 
   defp apply_object_property(obj, :present_value, value, _formatted, now) do
@@ -1522,6 +1545,42 @@ defmodule BacView.BACnet.DeviceSession do
         :ok
     end
 
+    broadcast_devices_updated()
+  end
+
+  defp mark_device_status(device_id, status) when status in [:loading, :discovered, :loaded] do
+    case :ets.lookup(@devices_table, device_id) do
+      [{^device_id, device}] ->
+        if Map.get(device, :status) != status do
+          :ets.insert(@devices_table, {device_id, Map.put(device, :status, status)})
+          broadcast_devices_updated()
+        end
+
+      [] ->
+        :ok
+    end
+  end
+
+  # After a failed load/reload, keep "Geladen" if we had a successful scan before;
+  # otherwise fall back to "Entdeckt".
+  defp mark_device_load_failed(device_id) do
+    case :ets.lookup(@devices_table, device_id) do
+      [{^device_id, device}] ->
+        status =
+          if Map.get(device, :loaded_at) do
+            :loaded
+          else
+            :discovered
+          end
+
+        mark_device_status(device_id, status)
+
+      [] ->
+        :ok
+    end
+  end
+
+  defp broadcast_devices_updated() do
     Phoenix.PubSub.broadcast(
       BacView.PubSub,
       "devices",

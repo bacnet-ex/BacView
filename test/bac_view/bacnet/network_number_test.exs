@@ -37,6 +37,8 @@ defmodule BacView.BACnet.NetworkNumberTest do
     assert NetworkNumber.learned() == nil
     assert NetworkNumber.quality() == :unknown
 
+    :ok = Phoenix.PubSub.subscribe(BacView.PubSub, NetworkNumber.topic())
+
     send(
       NetworkNumber,
       {:bacnet_transport, :bacnet_ipv4, {{192, 168, 1, 1}, 47_808},
@@ -48,12 +50,38 @@ defmodule BacView.BACnet.NetworkNumberTest do
         }}, self()}
     )
 
-    # allow handle_info
-    :timer.sleep(20)
+    assert_receive {:network_number_updated, %{learned: 100, quality: :learned}}, 200
 
     assert NetworkNumber.learned() == 100
     assert NetworkNumber.effective() == 100
     assert NetworkNumber.quality() == :learned
+  end
+
+  test "reload with configured number clears learned and broadcasts" do
+    assert {:ok, _} = Settings.update(network_number: 0)
+    NetworkNumber.reload_from_settings()
+
+    send(
+      NetworkNumber,
+      {:bacnet_transport, :bacnet_ipv4, {{192, 168, 1, 1}, 47_808},
+       {:network, :original_broadcast, nil,
+        %NetworkLayerProtocolMessage{
+          network_message_type: :network_number_is,
+          msg_type: nil,
+          data: {55, :configured}
+        }}, self()}
+    )
+
+    :timer.sleep(20)
+    assert NetworkNumber.learned() == 55
+
+    :ok = Phoenix.PubSub.subscribe(BacView.PubSub, NetworkNumber.topic())
+    assert {:ok, _} = Settings.update(network_number: 42)
+    NetworkNumber.reload_from_settings()
+
+    assert_receive {:network_number_updated, %{learned: nil, quality: :configured}}, 200
+    assert NetworkNumber.learned() == nil
+    assert NetworkNumber.effective() == 42
   end
 
   test "configured number is used as effective" do
@@ -64,6 +92,33 @@ defmodule BacView.BACnet.NetworkNumberTest do
     assert NetworkNumber.effective() == 42
     assert NetworkNumber.quality() == :configured
     assert NetworkNumber.learned() == nil
+  end
+
+  test "clear_learned forgets learned number and broadcasts" do
+    assert {:ok, _} = Settings.update(network_number: 0)
+    NetworkNumber.reload_from_settings()
+
+    send(
+      NetworkNumber,
+      {:bacnet_transport, :bacnet_ipv4, {{192, 168, 1, 1}, 47_808},
+       {:network, :original_broadcast, nil,
+        %NetworkLayerProtocolMessage{
+          network_message_type: :network_number_is,
+          msg_type: nil,
+          data: {77, :configured}
+        }}, self()}
+    )
+
+    :timer.sleep(20)
+    assert NetworkNumber.learned() == 77
+
+    :ok = Phoenix.PubSub.subscribe(BacView.PubSub, NetworkNumber.topic())
+    assert :ok = NetworkNumber.clear_learned()
+
+    assert_receive {:network_number_updated, %{learned: nil, quality: :unknown}}, 200
+    assert NetworkNumber.learned() == nil
+    assert NetworkNumber.effective() == 0
+    assert NetworkNumber.quality() == :unknown
   end
 
   test "Network-Number-Is cancels pending configured reply" do

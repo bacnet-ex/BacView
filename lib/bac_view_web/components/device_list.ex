@@ -477,8 +477,9 @@ defmodule BacViewWeb.DeviceList do
   defp device_address_label(device), do: Address.format_device_address(device)
 
   defp status_sort_key(:loaded), do: 0
-  defp status_sort_key(:discovered), do: 1
-  defp status_sort_key(_loaded), do: 2
+  defp status_sort_key(:loading), do: 1
+  defp status_sort_key(:discovered), do: 2
+  defp status_sort_key(_status), do: 3
 
   defp objects_sort_key(nil), do: -1
   defp objects_sort_key(count) when is_integer(count), do: count
@@ -500,16 +501,21 @@ defmodule BacViewWeb.DeviceList do
   defp status_label(:loaded, locale, locale_version),
     do: t(locale, locale_version, "Geladen")
 
+  defp status_label(:loading, locale, locale_version),
+    do: t(locale, locale_version, "Wird geladen")
+
   defp status_label(:discovered, locale, locale_version),
     do: t(locale, locale_version, "Entdeckt")
 
-  defp status_label(_loaded, locale, locale_version),
+  defp status_label(_status, locale, locale_version),
     do: t(locale, locale_version, "Unbekannt")
 
-  defp status_badge_class(status) do
-    [
-      "bac-badge bac-badge-sm shrink-0",
-      (status == :loaded && "bac-badge-success") || "bac-badge-ghost"
-    ]
-  end
+  defp status_badge_class(:loaded),
+    do: ["bac-badge bac-badge-sm shrink-0", "bac-badge-success"]
+
+  defp status_badge_class(:loading),
+    do: ["bac-badge bac-badge-sm shrink-0", "bac-badge-warning"]
+
+  defp status_badge_class(_status),
+    do: ["bac-badge bac-badge-sm shrink-0", "bac-badge-ghost"]
 end

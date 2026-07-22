@@ -8,8 +8,11 @@ defmodule BacView.SettingsTest do
     on_exit(fn ->
       path = Application.get_env(:bacview, :runtime_settings_path)
       if path, do: File.rm(path)
+
+      _ = restore_default_settings()
     end)
 
+    assert {:ok, _} = restore_default_settings()
     :ok
   end
 
@@ -22,6 +25,49 @@ defmodule BacView.SettingsTest do
     assert defaults.mstp_baud_rate == :auto
     assert defaults.network_number == 0
     assert defaults.max_apdu_length == 1476
+    assert defaults.scan_on_online == false
+  end
+
+  test "update persists scan_on_online" do
+    assert {:ok, settings} = Settings.update(scan_on_online: true)
+    assert settings.scan_on_online
+    assert Settings.scan_on_online?()
+
+    assert {:ok, settings} = Settings.update(scan_on_online: false)
+    refute settings.scan_on_online
+    refute Settings.scan_on_online?()
+  end
+
+  test "loads legacy auto_scan_on_iam as scan_on_online" do
+    path = Application.get_env(:bacview, :runtime_settings_path)
+    assert is_binary(path)
+
+    File.mkdir_p!(Path.dirname(path))
+
+    File.write!(
+      path,
+      Jason.encode!(%{
+        "transport" => "ipv4",
+        "device_id" => 4_194_302,
+        "auto_scan_on_iam" => true
+      })
+    )
+
+    # Application owns Settings (:permanent); stop triggers a reload from disk.
+    :ok = GenServer.stop(Settings)
+
+    Enum.reduce_while(1..50, nil, fn _attempt, _acc ->
+      if Process.whereis(Settings) do
+        {:halt, :ok}
+      else
+        Process.sleep(10)
+        {:cont, nil}
+      end
+    end)
+
+    assert Process.whereis(Settings)
+    assert Settings.get().scan_on_online
+    assert Settings.scan_on_online?()
   end
 
   test "accepts network_number 0 and rejects 65535" do
@@ -121,5 +167,27 @@ defmodule BacView.SettingsTest do
              Discovery.parse_scan_params(%{"timeout_ms" => "1000", "target_ip" => "10.0.0.42"})
 
     assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, 48_123}]
+  end
+
+  defp restore_default_settings do
+    if Process.whereis(Settings) do
+      defaults = Settings.defaults()
+
+      Settings.update(
+        transport: defaults.transport,
+        ipv4_port: defaults.ipv4_port,
+        device_id: defaults.device_id,
+        network_number: defaults.network_number,
+        max_apdu_length: defaults.max_apdu_length,
+        cov_lifetime_seconds: defaults.cov_lifetime_seconds,
+        cov_confirmed: defaults.cov_confirmed,
+        scan_on_online: defaults.scan_on_online,
+        cov_increment: defaults.cov_increment,
+        mstp_local_address: defaults.mstp_local_address,
+        mstp_baud_rate: defaults.mstp_baud_rate
+      )
+    else
+      {:ok, Settings.defaults()}
+    end
   end
 end

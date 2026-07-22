@@ -21,6 +21,9 @@ defmodule BacView.BACnet.DiscoverySharedReductionDisabledTest do
       Application.get_env(:bacview, :property_read_concurrency_disable_shared_reduction)
 
     Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, true)
+    # DashboardLive scan form tests leave filters in Application env; clear them so
+    # I-Am upserts are not rejected mid-suite.
+    Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
 
     for table <- [:bacview_devices, :bacview_device_share] do
       if :ets.whereis(table) == :undefined do
@@ -32,6 +35,7 @@ defmodule BacView.BACnet.DiscoverySharedReductionDisabledTest do
 
     on_exit(fn ->
       restore_disable_shared_reduction(previous)
+      Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
 
       for table <- [:bacview_devices, :bacview_device_share] do
         if :ets.whereis(table) != :undefined do

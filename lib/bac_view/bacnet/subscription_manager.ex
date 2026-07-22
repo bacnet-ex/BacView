@@ -28,6 +28,8 @@ defmodule BacView.BACnet.SubscriptionManager do
   @notification_log :bacview_cov_notification_log
   @notification_seq :bacview_cov_notification_seq
   @topic_cov "cov:updates"
+  # Device restart unsolicited COV (ASHRAE 135): must include all three.
+  @restart_cov_property_atoms [:system_status, :time_of_device_restart, :last_restart_reason]
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -243,6 +245,89 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   def cov_property_fallback?(_reason), do: false
 
+  @doc """
+  True when an unconfirmed COV reports a device restart.
+
+  Unsolicited restart notifications use subscriber process identifier `0` and
+  time remaining `0`, target the device object, and carry `system_status`,
+  `time_of_device_restart`, and `last_restart_reason`.
+  """
+  @spec device_restart_cov_notification?(term()) :: boolean()
+  def device_restart_cov_notification?(%UnconfirmedCovNotification{
+        process_identifier: 0,
+        time_remaining: 0,
+        initiating_device: %ObjectIdentifier{type: :device, instance: init_inst},
+        monitored_object: %ObjectIdentifier{type: :device, instance: mon_inst},
+        property_values: property_values
+      })
+      when init_inst == mon_inst and is_list(property_values) do
+    restart_cov_properties_present?(property_values)
+  end
+
+  def device_restart_cov_notification?(_notification), do: false
+
+  @doc false
+  @spec unknown_object_error?(term()) :: boolean()
+  def unknown_object_error?({:bacnet_error, %APDU.Error{code: :unknown_object}}), do: true
+  def unknown_object_error?(%APDU.Error{code: :unknown_object}), do: true
+  def unknown_object_error?(:unknown_object), do: true
+  def unknown_object_error?({:error, reason}), do: unknown_object_error?(reason)
+  def unknown_object_error?(_reason), do: false
+
+  @doc """
+  Re-subscribes all active COV entries for `device_id`.
+
+  Subscriptions that fail with `:unknown_object` are removed from local tracking
+  (object no longer exists after a device restart / reconfiguration).
+  """
+  @spec renew_device_subscriptions(integer()) :: :ok
+  def renew_device_subscriptions(device_id) when is_integer(device_id) do
+    device_id
+    |> list_active()
+    |> Enum.each(&renew_subscription/1)
+
+    :ok
+  end
+
+  @doc """
+  Handles a device-restart unconfirmed COV: ensure discovery entry (Who-Is/I-Am
+  for unknown devices + scan-panel filters), optionally force-scan, then renew
+  active COV subscriptions for that device.
+
+  Options:
+  * `:async` (default `true`) — run ensure + scan + renew off the COV process
+    (Who-Is wait must not block the SubscriptionManager mailbox)
+  * `:scan` (default `Settings.scan_on_online?()`) — force device reload/load
+  """
+  @spec handle_device_restart_cov(UnconfirmedCovNotification.t(), term(), keyword()) :: :ok
+  def handle_device_restart_cov(%UnconfirmedCovNotification{} = notification, source, opts \\ []) do
+    if device_restart_cov_notification?(notification) do
+      scan? = Keyword.get(opts, :scan, BacView.Settings.scan_on_online?())
+      async? = Keyword.get(opts, :async, true)
+      run_restart_recovery(notification.initiating_device, source, scan?, async?)
+    end
+
+    :ok
+  end
+
+  @doc false
+  @spec apply_renew_result(map(), :ok | {:error, term()}) :: :ok | {:error, term()}
+  def apply_renew_result(sub, :ok) when is_map(sub), do: :ok
+
+  def apply_renew_result(sub, {:error, reason}) when is_map(sub) do
+    if unknown_object_error?(reason) do
+      remove_local_subscription(sub, reason)
+      :ok
+    else
+      Logger.warning(
+        "COV renewal failed for device #{sub.device_id} " <>
+          "#{inspect(sub.object_id)} #{inspect(sub.property)}: #{inspect(reason)}"
+      )
+
+      {:error, reason}
+    end
+  end
+
   @doc false
   @spec resubscribe_all_active() :: :ok
   def resubscribe_all_active() do
@@ -253,22 +338,79 @@ defmodule BacView.BACnet.SubscriptionManager do
     :ok
   end
 
-  defp renew_subscription(sub) do
-    case do_subscribe(sub.device_id, sub.object_id, sub.property,
-           lifetime: sub.lifetime,
-           confirmed: sub.confirmed,
-           process_id: sub.process_id,
-           subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
-         ) do
-      :ok ->
-        :ok
+  defp run_restart_recovery(device_object, source, scan?, true = _async?) do
+    Task.start(fn -> run_restart_recovery(device_object, source, scan?, false) end)
+    :ok
+  end
 
-      {:error, reason} ->
-        Logger.warning(
-          "COV renewal failed for device #{sub.device_id} " <>
-            "#{inspect(sub.object_id)} #{inspect(sub.property)}: #{inspect(reason)}"
+  defp run_restart_recovery(
+         %ObjectIdentifier{type: :device, instance: device_id} = device_object,
+         source,
+         scan?,
+         false = _async?
+       ) do
+    case Discovery.ensure_discovered_device(device_object, source) do
+      {:ok, _device} ->
+        if scan? do
+          force_scan_after_restart(device_id)
+        end
+
+        renew_device_subscriptions(device_id)
+
+      :error ->
+        Logger.debug(
+          "Restart COV for device #{device_id} ignored: device not accepted " <>
+            "(Who-Is/I-Am probe or scan panel filters)"
         )
     end
+
+    :ok
+  end
+
+  defp force_scan_after_restart(device_id) do
+    if DeviceSession.loading?(device_id) do
+      # Join in-flight load so renew uses a consistent session afterwards.
+      _load_result = DeviceSession.load(device_id)
+    else
+      case DeviceSession.reload(device_id) do
+        {:ok, _loaded} ->
+          Logger.info("Scanned device #{device_id} after restart COV")
+
+        {:error, reason} ->
+          Logger.debug(
+            "Scan after restart COV failed for device #{device_id}: #{inspect(reason)}"
+          )
+      end
+    end
+  end
+
+  defp renew_subscription(sub) do
+    result =
+      do_subscribe(sub.device_id, sub.object_id, sub.property,
+        lifetime: sub.lifetime,
+        confirmed: sub.confirmed,
+        process_id: sub.process_id,
+        subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
+      )
+
+    apply_renew_result(sub, result)
+  end
+
+  defp remove_local_subscription(sub, reason) do
+    key = Subscription.key(sub.device_id, sub.object_id, sub.property)
+
+    if :ets.whereis(@table) != :undefined do
+      :ets.delete(@table, key)
+    end
+
+    Logger.info(
+      "Removed COV subscription for device #{sub.device_id} " <>
+        "#{inspect(sub.object_id)} #{inspect(sub.property)} " <>
+        "(unknown object after renew: #{inspect(reason)})"
+    )
+
+    broadcast_cov_meta()
+    :ok
   end
 
   defp do_subscribe(device_id, object_id, property, opts) do
@@ -359,14 +501,14 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   defp subscribe_present_value(destination, object_id, _property, opts, :subscribe_cov) do
-    case Client.subscribe_cov(destination, object_id, opts) do
+    case cov_client().subscribe_cov(destination, object_id, opts) do
       :ok -> {:ok, :subscribe_cov}
       {:error, _reason} = err -> err
     end
   end
 
   defp subscribe_present_value(destination, object_id, property, opts, :subscribe_cov_property) do
-    case Client.subscribe_cov_property(destination, object_id, property, opts) do
+    case cov_client().subscribe_cov_property(destination, object_id, property, opts) do
       :ok ->
         {:ok, :subscribe_cov_property}
 
@@ -399,7 +541,7 @@ defmodule BacView.BACnet.SubscriptionManager do
         cancel_present_value(destination, object_id, opts, :subscribe_cov)
 
       _subscribe_service ->
-        case Client.subscribe_cov_property(destination, object_id, property, opts) do
+        case cov_client().subscribe_cov_property(destination, object_id, property, opts) do
           :ok ->
             :ok
 
@@ -414,7 +556,11 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   defp cancel_present_value(destination, object_id, opts, :subscribe_cov) do
-    Client.subscribe_cov(destination, object_id, opts)
+    cov_client().subscribe_cov(destination, object_id, opts)
+  end
+
+  defp cov_client() do
+    Application.get_env(:bacview, :cov_client, Client)
   end
 
   defp handle_cov_notification(notification, source, ref, client_pid, confirmed?, invoke_id \\ 0) do
@@ -491,7 +637,23 @@ defmodule BacView.BACnet.SubscriptionManager do
     end
 
     Phoenix.PubSub.broadcast(BacView.PubSub, @topic_cov, :cov_updated)
+
+    if not confirmed? do
+      handle_device_restart_cov(notification, source)
+    end
   end
+
+  defp restart_cov_properties_present?(property_values) do
+    ids = MapSet.new(property_values, & &1.property_identifier)
+
+    Enum.all?(@restart_cov_property_atoms, fn atom ->
+      MapSet.member?(ids, atom) or MapSet.member?(ids, property_id_number(atom))
+    end)
+  end
+
+  defp property_id_number(:system_status), do: 112
+  defp property_id_number(:last_restart_reason), do: 196
+  defp property_id_number(:time_of_device_restart), do: 203
 
   defp append_notification(attrs) do
     device_id = Map.fetch!(attrs, :device_id)
@@ -599,16 +761,12 @@ defmodule BacView.BACnet.SubscriptionManager do
   defp unwrap_cov_value(%Encoding{value: value}), do: value
   defp unwrap_cov_value(value), do: value
 
-  defp format_cov_value(device_id, object_id, :present_value, value) do
+  defp format_cov_value(device_id, object_id, property, value) do
     obj =
       Enum.find(DeviceSession.objects(device_id), fn o ->
         o.type == object_id.type and o.instance == object_id.instance
       end)
 
-    PropertyFormatter.format_present_value(value, obj)
-  end
-
-  defp format_cov_value(_device_id, _object_id, _property, value) do
-    PropertyFormatter.format_value(value, nil)
+    PropertyFormatter.format_property_value(property, value, obj)
   end
 end

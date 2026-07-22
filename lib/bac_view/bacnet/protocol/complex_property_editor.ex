@@ -389,6 +389,25 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     parse_ip_address_string(string_value)
   end
 
+  # BACnet MAC / octet-string addresses (e.g. RecipientAddress.address)
+  defp parse_field_value(current, string_value, nil) when is_binary(current) do
+    if mac_octet_string?(current) do
+      parse_mac_address_string(string_value)
+    else
+      trimmed = String.trim(string_value)
+
+      if trimmed == "" do
+        {:error, :empty_value}
+      else
+        {:ok, trimmed}
+      end
+    end
+  end
+
+  defp parse_field_value(:broadcast, string_value, nil) do
+    parse_mac_address_string(string_value)
+  end
+
   defp parse_field_value(current, string_value, nil) do
     trimmed = String.trim(string_value)
 
@@ -470,6 +489,54 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
+  # BACnet/IP six-byte MAC as "IPv4:port", hex octet strings, or "broadcast".
+  defp parse_mac_address_string(string_value) when is_binary(string_value) do
+    trimmed = String.trim(string_value)
+
+    cond do
+      trimmed == "" ->
+        {:error, :empty_value}
+
+      trimmed == "broadcast" ->
+        {:ok, :broadcast}
+
+      true ->
+        case parse_ip_port_mac(trimmed) do
+          {:ok, _mac} = ok -> ok
+          :error -> parse_hex_mac(trimmed)
+        end
+    end
+  end
+
+  defp parse_ip_port_mac(string) when is_binary(string) do
+    case String.split(string, ":", parts: 2) do
+      [ip_str, port_str] ->
+        with {:ok, {a, b, c, d}} <- parse_ip_address_string(ip_str),
+             {port, ""} <- Integer.parse(port_str),
+             true <- port in 0..65_535 do
+          {:ok, <<a, b, c, d, Bitwise.bsr(port, 8), Bitwise.band(port, 0xFF)>>}
+        else
+          _ip_port -> :error
+        end
+
+      _ip_port ->
+        :error
+    end
+  end
+
+  defp parse_hex_mac(string) when is_binary(string) do
+    hex =
+      string
+      |> String.replace(":", "")
+      |> String.replace(" ", "")
+      |> String.replace("-", "")
+
+    case Base.decode16(hex, case: :mixed) do
+      {:ok, binary} when byte_size(binary) > 0 -> {:ok, binary}
+      _hex -> {:error, :invalid_mac}
+    end
+  end
+
   defp value_to_string(nil), do: ""
   defp value_to_string(value) when is_boolean(value), do: if(value, do: "true", else: "false")
   defp value_to_string(value) when is_atom(value), do: Atom.to_string(value)
@@ -478,7 +545,14 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp value_to_string(value) when is_float(value),
     do: :erlang.float_to_binary(value, decimals: 10)
 
-  defp value_to_string(value) when is_binary(value), do: value
+  # Octet-string MACs are not valid UTF-8; format for form inputs / JSON.
+  defp value_to_string(value) when is_binary(value) do
+    if mac_octet_string?(value) do
+      PropertyFormatter.format_mac_address(value)
+    else
+      value
+    end
+  end
 
   defp value_to_string({:ip_address, ip}) when is_tuple(ip), do: value_to_string(ip)
 
@@ -490,6 +564,9 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   end
 
   defp value_to_string(value), do: inspect(value, limit: 200)
+
+  # Raw BACnet data-link addresses vs UTF-8 text property values.
+  defp mac_octet_string?(value) when is_binary(value), do: not String.valid?(value)
 
   defp path_string([]), do: @root_field_path
 
@@ -607,6 +684,16 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp encode(list) when is_list(list), do: Enum.map(list, &encode/1)
   defp encode(nil), do: nil
   defp encode(value) when is_atom(value), do: Atom.to_string(value)
+
+  # Jason rejects invalid UTF-8 binaries; format BACnet MAC octet strings.
+  defp encode(value) when is_binary(value) do
+    if mac_octet_string?(value) do
+      PropertyFormatter.format_mac_address(value)
+    else
+      value
+    end
+  end
+
   defp encode(value), do: value
 
   defp decode(value, %Encoding{} = template) when is_map(value),
@@ -638,6 +725,17 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
        when is_binary(value) and is_tuple(template) and tuple_size(template) in [4, 8] do
     parse_ip_address_string(value)
   end
+
+  defp decode(value, template) when is_binary(value) and is_binary(template) do
+    if mac_octet_string?(template) do
+      parse_mac_address_string(value)
+    else
+      {:ok, value}
+    end
+  end
+
+  # RecipientAddress.address may be :broadcast or a MAC binary.
+  defp decode(value, :broadcast) when is_binary(value), do: parse_mac_address_string(value)
 
   defp decode(value, template) when is_binary(value) and is_atom(template),
     do: decode_atom_field(value)

@@ -19,6 +19,12 @@ defmodule BacViewWeb.DashboardLiveScanTest do
       path = Application.get_env(:bacview, :runtime_settings_path)
       if path, do: File.rm(path)
 
+      BacView.BACnet.Discovery.set_acceptance_filters(
+        low_limit: nil,
+        high_limit: nil,
+        vendor_id: nil
+      )
+
       {:ok, _} =
         BacView.Settings.update(
           transport: "ipv4",
@@ -95,7 +101,76 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     assert html =~ "stack-settings-panel"
     assert has_element?(view, "#stack-settings-form")
     assert has_element?(view, "#stack-settings-apply-btn")
+    assert has_element?(view, "#stack-settings-restart-btn")
     assert has_element?(view, "#stack-settings-refresh-interfaces-btn")
+  end
+
+  test "stack restart button shows confirm then restarts", %{conn: conn} do
+    alias BacView.BACnet.Stack
+
+    start_supervised!(Stack)
+
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    assert has_element?(view, "#stack-settings-restart-btn")
+    refute has_element?(view, "#stack-settings-restart-confirm")
+
+    render_click(view, "stack_restart_request")
+
+    assert has_element?(view, "#stack-settings-restart-confirm")
+    assert has_element?(view, "#stack-settings-confirm-btn")
+    refute has_element?(view, "#stack-settings-apply-btn")
+
+    # Restart may fail with eaddrinuse when the app stack already holds the port;
+    # capture expected Boot/stack warnings so they do not leak into the suite log.
+    parent = self()
+
+    _log =
+      capture_log(fn ->
+        render_click(view, "stack_settings_confirm_restart")
+
+        html =
+          Enum.reduce_while(1..30, render(view), fn _attempt, html ->
+            if html =~ "BACnet-Stack neu gestartet" or html =~ "Stack-Neustart fehlgeschlagen" do
+              {:halt, html}
+            else
+              Process.sleep(50)
+              {:cont, render(view)}
+            end
+          end)
+
+        send(parent, {:stack_restart_html, html})
+      end)
+
+    assert_receive {:stack_restart_html, html}
+    assert html =~ "BACnet-Stack neu gestartet" or html =~ "Stack-Neustart fehlgeschlagen"
+    assert has_element?(view, "#stack-settings-restart-btn")
+    refute has_element?(view, "#stack-settings-restart-confirm")
+  end
+
+  test "stack restart request can be cancelled", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    render_click(view, "stack_restart_request")
+    assert has_element?(view, "#stack-settings-restart-confirm")
+
+    render_click(view, "stack_settings_cancel_restart")
+
+    refute has_element?(view, "#stack-settings-restart-confirm")
+    assert has_element?(view, "#stack-settings-restart-btn")
+    assert has_element?(view, "#stack-settings-apply-btn")
+  end
+
+  test "stack settings panel updates when network number is learned", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    refute has_element?(view, "#stack-settings-learned-network")
+
+    send(view.pid, {:network_number_updated, %{learned: 100, quality: :learned}})
+    _html = render(view)
+
+    assert has_element?(view, "#stack-settings-learned-network")
+    assert render(view) =~ "100"
   end
 
   test "refresh interfaces button reloads interface options", %{conn: conn} do
@@ -178,7 +253,8 @@ defmodule BacViewWeb.DashboardLiveScanTest do
         "network_number" => Integer.to_string(settings.network_number),
         "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
         "cov_increment" => "0.5",
-        "cov_confirmed" => "false"
+        "cov_confirmed" => "false",
+        "scan_on_online" => "false"
       }
     })
     |> render_submit()
@@ -194,12 +270,56 @@ defmodule BacViewWeb.DashboardLiveScanTest do
         "network_number" => Integer.to_string(settings.network_number),
         "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
         "cov_increment" => "",
-        "cov_confirmed" => "false"
+        "cov_confirmed" => "false",
+        "scan_on_online" => "false"
       }
     })
     |> render_submit()
 
     assert BacView.Settings.get().cov_increment == nil
+  end
+
+  test "stack settings save persists scan_on_online", %{conn: conn} do
+    assert {:ok, _} = BacView.Settings.update(scan_on_online: false)
+
+    {:ok, view, html} = live(conn, ~p"/")
+    settings = BacView.Settings.get()
+
+    assert html =~ "Geräte scannen, wenn sie online gehen"
+    assert has_element?(view, "#stack_scan_on_online")
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "transport" => settings.transport,
+        "interface" => settings.interface,
+        "device_id" => Integer.to_string(settings.device_id),
+        "network_number" => Integer.to_string(settings.network_number),
+        "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+        "cov_confirmed" => "false",
+        "scan_on_online" => "true"
+      }
+    })
+    |> render_submit()
+
+    assert BacView.Settings.get().scan_on_online
+    assert BacView.Settings.scan_on_online?()
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "transport" => settings.transport,
+        "interface" => settings.interface,
+        "device_id" => Integer.to_string(settings.device_id),
+        "network_number" => Integer.to_string(settings.network_number),
+        "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+        "cov_confirmed" => "false",
+        "scan_on_online" => "false"
+      }
+    })
+    |> render_submit()
+
+    refute BacView.Settings.get().scan_on_online
   end
 
   test "stack settings save without restart returns valid LiveView response", %{conn: conn} do

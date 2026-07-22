@@ -5,8 +5,14 @@ config :bacview, :mstp_enabled, true
 config :bacview, start_bacnet: false
 config :bacview, :log_store_enabled, false
 
+# Isolated per `mix test` process so concurrent suites / leftover files cannot
+# pollute Settings (e.g. custom ipv4_port) across runs or workers.
 config :bacview,
-  runtime_settings_path: Path.expand("../tmp/test_runtime_settings.json", __DIR__)
+  runtime_settings_path:
+    Path.join(
+      System.tmp_dir!(),
+      "bacview-test-runtime-settings-#{System.unique_integer([:positive])}.json"
+    )
 
 # We don't run a server during test. If one is required,
 # you can enable the server option below.

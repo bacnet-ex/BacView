@@ -2,6 +2,7 @@ defmodule BacViewWeb.DeviceServicesHandlers do
   @moduledoc false
 
   alias BacView.BACnet.DeviceServices
+  alias BacView.BACnet.DeviceSession
   alias BacViewWeb.LiveFlash
 
   @device_service_events ~w(
@@ -11,6 +12,7 @@ defmodule BacViewWeb.DeviceServicesHandlers do
     close_device_service_modal
     device_service_form_change
     execute_device_service
+    scan_device
   )
 
   @spec device_service_events() :: [String.t()]
@@ -94,9 +96,26 @@ defmodule BacViewWeb.DeviceServicesHandlers do
     end
   end
 
+  def handle_event("scan_device", params, socket) do
+    device_id = device_id_from_params!(params)
+    start_device_scan(self(), device_id)
+
+    {:noreply,
+     socket
+     |> Phoenix.Component.assign(:device_service_menu, nil)
+     |> Phoenix.LiveView.put_flash(
+       :info,
+       BacViewWeb.GettextBackend.gt("Gerätescan gestartet.")
+     )}
+  end
+
   def handle_event(_event, _params, _socket), do: :not_handled
 
-  @spec handle_info({:device_service_complete, map(), term()}, Phoenix.LiveView.Socket.t()) ::
+  @spec handle_info(
+          {:device_service_complete, map(), term()}
+          | {:device_scan_complete, integer(), term()},
+          Phoenix.LiveView.Socket.t()
+        ) ::
           {:noreply, Phoenix.LiveView.Socket.t()} | :not_handled
   def handle_info({:device_service_complete, modal, result}, socket) do
     action = service_action(modal.type)
@@ -119,7 +138,43 @@ defmodule BacViewWeb.DeviceServicesHandlers do
     {:noreply, socket}
   end
 
+  def handle_info({:device_scan_complete, _device_id, result}, socket) do
+    socket =
+      case result do
+        {:ok, _loaded} ->
+          Phoenix.LiveView.put_flash(
+            socket,
+            :info,
+            BacViewWeb.GettextBackend.gt("Gerätescan abgeschlossen.")
+          )
+
+        {:error, reason} ->
+          LiveFlash.put_error(socket, :load_device, reason)
+      end
+
+    {:noreply, socket}
+  end
+
   def handle_info(_msg, _socket), do: :not_handled
+
+  @doc false
+  @spec start_device_scan(pid(), integer()) :: :ok
+  def start_device_scan(parent, device_id) when is_pid(parent) and is_integer(device_id) do
+    Task.start(fn ->
+      result =
+        try do
+          DeviceSession.reload(device_id)
+        rescue
+          exception -> {:error, exception}
+        catch
+          :exit, reason -> {:error, reason}
+        end
+
+      send(parent, {:device_scan_complete, device_id, result})
+    end)
+
+    :ok
+  end
 
   defp build_modal("dcc", device_id) do
     %{type: :dcc, device_id: device_id, form: DeviceServices.default_dcc_form()}

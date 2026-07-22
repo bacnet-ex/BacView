@@ -50,9 +50,38 @@ defmodule BacViewWeb.StackSettingsPanelTest do
     assert html =~ "Aktiv"
     refute html =~ ~s/id="stack-status-error"/
     assert html =~ ~s/id="stack-settings-refresh-interfaces-btn"/
+    assert html =~ ~s/id="stack-settings-restart-btn"/
+    assert html =~ "Stack neu starten"
     assert html =~ "UDP-Port"
     assert html =~ "COV-Inkrement"
     assert html =~ "COV-Lifetime (Sek.)"
+    assert html =~ "Geräte scannen, wenn sie online gehen"
+    assert html =~ ~s/id="stack_scan_on_online"/
+    assert html =~ "Neustart-COV"
+
+    # Checkbox is outside the advanced section (before <details>)
+    auto_idx = :binary.match(html, "Geräte scannen, wenn sie online gehen") |> elem(0)
+    details_idx = :binary.match(html, "<details") |> elem(0)
+    assert auto_idx < details_idx
+  end
+
+  test "manual restart confirm shows dedicated copy and hides action buttons" do
+    html =
+      render_component(&StackSettingsPanel.stack_settings_panel/1,
+        form: stack_form("ipv4"),
+        settings: %{transport: "ipv4", interface: "lo", interface_error: nil},
+        stack_status: %{running?: true, last_error: nil},
+        interface_options: [%{value: "lo", label: "lo"}],
+        manual_restart_confirm?: true,
+        locale: "de",
+        locale_version: 0
+      )
+
+    assert html =~ ~s/id="stack-settings-restart-confirm"/
+    assert html =~ "BACnet-Stack neu starten?"
+    assert html =~ ~s/id="stack-settings-confirm-btn"/
+    refute html =~ ~s/id="stack-settings-apply-btn"/
+    refute html =~ ~s/id="stack-settings-restart-btn"/
   end
 
   defp stack_form(transport) do
@@ -64,6 +93,7 @@ defmodule BacViewWeb.StackSettingsPanelTest do
       "cov_lifetime_seconds" => "3600",
       "cov_increment" => "",
       "cov_confirmed" => "false",
+      "scan_on_online" => "false",
       "network_number" => "0",
       "max_apdu_length" => "1476",
       "mstp_local_address" => "127",

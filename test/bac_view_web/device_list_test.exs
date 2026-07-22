@@ -68,6 +68,24 @@ defmodule BacViewWeb.DeviceListTest do
     assert DeviceList.normalize_view("invalid") == :grid
   end
 
+  test "status labels include loading" do
+    devices = [
+      Map.put(Enum.at(@devices, 0), :status, :loading)
+    ]
+
+    html =
+      render_component(&DeviceList.device_list/1,
+        devices: devices,
+        vendor_names: @vendor_names,
+        view: :grid,
+        locale: "de",
+        locale_version: 0
+      )
+
+    assert html =~ "Wird geladen"
+    assert html =~ "bac-badge-warning"
+  end
+
   test "device cards show device description under object name" do
     devices = [
       Map.put(Enum.at(@devices, 0), :description, "Main air handler")

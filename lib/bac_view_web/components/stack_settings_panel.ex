@@ -10,10 +10,18 @@ defmodule BacViewWeb.StackSettingsPanel do
   attr(:stack_status, :map, required: true)
   attr(:interface_options, :list, required: true)
   attr(:confirm_restart?, :boolean, default: false)
+  attr(:manual_restart_confirm?, :boolean, default: false)
   attr(:apply_disabled?, :boolean, default: false)
   attr(:learned_network_number, :integer, default: nil)
 
   def stack_settings_panel(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :any_restart_confirm?,
+        assigns.confirm_restart? or assigns.manual_restart_confirm?
+      )
+
     ~H"""
     <section id="stack-settings-panel" class="bac-panel">
       <div class="bac-panel-header">
@@ -179,6 +187,34 @@ defmodule BacViewWeb.StackSettingsPanel do
             </label>
           </div>
 
+          <div>
+            <label
+              for={@form[:scan_on_online].id}
+              class="flex items-center gap-2 text-xs bac-text-muted cursor-pointer min-h-9"
+              title={
+                t(
+                  @locale,
+                  @locale_version,
+                  "Gerät nach I-Am oder Neustart-COV (Device: system_status, time_of_device_restart, last_restart_reason) scannen."
+                )
+              }
+            >
+              <input type="hidden" name={@form[:scan_on_online].name} value="false" />
+              <input
+                type="checkbox"
+                id={@form[:scan_on_online].id}
+                name={@form[:scan_on_online].name}
+                value="true"
+                checked={@form[:scan_on_online].value in [true, "true"]}
+                class="bac-checkbox shrink-0"
+              />
+              <span class="flex items-center gap-1 min-w-0">
+                {t(@locale, @locale_version, "Geräte scannen, wenn sie online gehen")}
+                <.icon name="hero-information-circle" class="w-3.5 h-3.5 shrink-0 opacity-60" />
+              </span>
+            </label>
+          </div>
+
           <details class="group">
             <summary class="text-xs bac-text-faint cursor-pointer hover:bac-text-muted transition-colors">
               {t(@locale, @locale_version, "Erweitert")}
@@ -245,13 +281,24 @@ defmodule BacViewWeb.StackSettingsPanel do
           </details>
 
           <div
-            :if={@confirm_restart?}
+            :if={@any_restart_confirm?}
+            id="stack-settings-restart-confirm"
             class="rounded-lg border border-[var(--bac-amber)]/30 bg-[var(--bac-amber)]/5 p-3 space-y-2"
           >
             <p class="text-xs bac-text-muted leading-relaxed">
-              {t(@locale, @locale_version, 
-                "Diese Änderungen erfordern einen Neustart des BACnet-Stacks. Aktive COV-Abonnements werden neu aufgebaut."
-              )}
+              <%= if @manual_restart_confirm? do %>
+                {t(
+                  @locale,
+                  @locale_version,
+                  "BACnet-Stack neu starten? Aktive COV-Abonnements werden neu aufgebaut."
+                )}
+              <% else %>
+                {t(
+                  @locale,
+                  @locale_version,
+                  "Diese Änderungen erfordern einen Neustart des BACnet-Stacks. Aktive COV-Abonnements werden neu aufgebaut."
+                )}
+              <% end %>
             </p>
             <div class="flex flex-wrap gap-2">
               <button
@@ -268,20 +315,34 @@ defmodule BacViewWeb.StackSettingsPanel do
                 class="bac-btn bac-btn-primary bac-btn-sm"
                 id="stack-settings-confirm-btn"
               >
-                {t(@locale, @locale_version, "Neu starten & speichern")}
+                <%= if @manual_restart_confirm? do %>
+                  {t(@locale, @locale_version, "Neu starten")}
+                <% else %>
+                  {t(@locale, @locale_version, "Neu starten & speichern")}
+                <% end %>
               </button>
             </div>
           </div>
 
-          <button
-            :if={not @confirm_restart?}
-            type="submit"
-            class="bac-btn bac-btn-primary bac-btn-sm w-full"
-            id="stack-settings-apply-btn"
-            disabled={@apply_disabled?}
-          >
-            {t(@locale, @locale_version, "Speichern")}
-          </button>
+          <div :if={not @any_restart_confirm?} class="flex flex-col gap-2">
+            <button
+              type="submit"
+              class="bac-btn bac-btn-primary bac-btn-sm w-full"
+              id="stack-settings-apply-btn"
+              disabled={@apply_disabled?}
+            >
+              {t(@locale, @locale_version, "Speichern")}
+            </button>
+            <button
+              type="button"
+              phx-click="stack_restart_request"
+              class="bac-btn bac-btn-ghost bac-btn-sm w-full"
+              id="stack-settings-restart-btn"
+            >
+              <.icon name="hero-arrow-path" class="w-4 h-4" />
+              {t(@locale, @locale_version, "Stack neu starten")}
+            </button>
+          </div>
         </.form>
       </div>
     </section>

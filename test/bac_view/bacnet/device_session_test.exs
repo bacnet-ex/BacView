@@ -124,5 +124,6 @@ defmodule BacView.BACnet.DeviceSessionTest do
 
     assert [%{status_flags: ^fresh_flags, present_value: false}] = snapshot.objects
     assert snapshot.object_count == 1
+    assert snapshot.from_cache == true
   end
 end

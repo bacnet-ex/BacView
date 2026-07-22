@@ -17,10 +17,12 @@ defmodule BacView.BACnet.NetworkNumber do
   alias BACnet.Protocol.NPCI
   alias BACnet.Stack.Client, as: StackClient
   alias BacView.BACnet.Client
+  alias BacView.PubSub
   alias BacView.Settings
 
   @poll_ms 30_000
   @reply_delay_ms 5_000
+  @topic "network_number:updates"
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -84,6 +86,26 @@ defmodule BacView.BACnet.NetworkNumber do
     :ok
   end
 
+  @doc """
+  Forget any learned network number.
+
+  Call after a stack restart (e.g. interface change). The GenServer itself is
+  not restarted with the stack; learned state would otherwise survive on the
+  wrong network.
+  """
+  @spec clear_learned() :: :ok
+  def clear_learned() do
+    if Process.whereis(__MODULE__) do
+      GenServer.cast(__MODULE__, :clear_learned)
+    end
+
+    :ok
+  end
+
+  @doc "PubSub topic for learned/effective network number changes."
+  @spec topic() :: String.t()
+  def topic(), do: @topic
+
   @doc false
   @spec resubscribe_client() :: :ok
   def resubscribe_client() do
@@ -123,6 +145,7 @@ defmodule BacView.BACnet.NetworkNumber do
   @impl true
   def handle_cast(:reload_from_settings, state) do
     configured = Settings.network_number()
+    previous_learned = state.learned
 
     state =
       state
@@ -131,6 +154,26 @@ defmodule BacView.BACnet.NetworkNumber do
       |> Map.put(:learned, if(configured == 0, do: state.learned, else: nil))
       |> schedule_poll()
 
+    broadcast_if_learned_changed(previous_learned, state)
+    {:noreply, state}
+  end
+
+  def handle_cast(:clear_learned, state) do
+    previous_learned = state.learned
+
+    state =
+      if is_nil(previous_learned) do
+        state
+      else
+        Logger.info("Forgetting learned BACnet network number #{previous_learned}")
+
+        state
+        |> cancel_pending_reply()
+        |> Map.put(:learned, nil)
+        |> schedule_poll()
+      end
+
+    broadcast_if_learned_changed(previous_learned, state)
     {:noreply, state}
   end
 
@@ -190,20 +233,41 @@ defmodule BacView.BACnet.NetworkNumber do
          data: {dnet, _quality}
        })
        when is_integer(dnet) and dnet in 0..65_535 do
+    previous_learned = state.learned
+
     state =
       state
       |> cancel_pending_reply()
       |> schedule_poll()
 
-    if state.configured == 0 and dnet in 1..65_534 do
-      Logger.info("Learned BACnet network number #{dnet}")
-      %{state | learned: dnet}
-    else
-      state
-    end
+    state =
+      if state.configured == 0 and dnet in 1..65_534 do
+        if previous_learned != dnet do
+          Logger.info("Learned BACnet network number #{dnet}")
+        end
+
+        %{state | learned: dnet}
+      else
+        state
+      end
+
+    broadcast_if_learned_changed(previous_learned, state)
+    state
   end
 
   defp handle_nsdu(state, _nsdu), do: state
+
+  defp broadcast_if_learned_changed(previous_learned, state) do
+    if previous_learned != state.learned do
+      Phoenix.PubSub.broadcast(
+        PubSub,
+        @topic,
+        {:network_number_updated, %{learned: state.learned, quality: quality_of(state)}}
+      )
+    end
+
+    :ok
+  end
 
   defp schedule_reply(%{pending_reply_ref: ref} = state) when is_reference(ref), do: state
 
@@ -278,8 +342,7 @@ defmodule BacView.BACnet.NetworkNumber do
       npci =
         NPCI.new(
           is_network_message: true,
-          expects_reply: false,
-          destination: %BACnet.Protocol.NpciTarget{net: 65_535, address: nil}
+          expects_reply: false
         )
 
       case trans_mod.send(portal, broadcast, nsdu_bin, npci: npci, expects_reply: false) do

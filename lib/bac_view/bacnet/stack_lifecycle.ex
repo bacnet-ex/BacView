@@ -7,6 +7,7 @@ defmodule BacView.BACnet.StackLifecycle do
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.ForeignRegistration
+  alias BacView.BACnet.NetworkNumber
   alias BacView.BACnet.Stack
   alias BacView.BACnet.SubscriptionManager
 
@@ -19,6 +20,7 @@ defmodule BacView.BACnet.StackLifecycle do
 
     with :ok <- cancel_active_discovery(),
          :ok <- restart_stack(),
+         :ok <- forget_learned_network_number(),
          :ok <- resubscribe_clients(),
          :ok <- resubscribe_cov() do
       reregister_bbmd(bbmd)
@@ -38,6 +40,13 @@ defmodule BacView.BACnet.StackLifecycle do
 
   defp cancel_active_discovery() do
     Discovery.cancel_scan()
+    :ok
+  end
+
+  # NetworkNumber is an application-level GenServer and survives stack restart.
+  # Learned numbers from the previous interface/network must not be reused.
+  defp forget_learned_network_number() do
+    NetworkNumber.clear_learned()
     :ok
   end
 

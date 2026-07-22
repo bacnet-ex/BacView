@@ -96,4 +96,73 @@ defmodule BacView.BACnet.NotificationClassRecipientTest do
              }
            } = self_entry
   end
+
+  test "sync_enrollment_state with use_scanned marks enrolled from scan data" do
+    device_id = 9_100_001
+    objects = [%{type: :notification_class, instance: 3}]
+    with_self = NotificationClassRecipient.add_self_to_recipient_list([other_destination()])
+
+    scanned = [
+      {%ObjectIdentifier{type: :notification_class, instance: 3}, %{recipient_list: with_self}}
+    ]
+
+    result =
+      NotificationClassRecipient.sync_enrollment_state(device_id, objects,
+        use_scanned: true,
+        scanned: scanned
+      )
+
+    assert result == %{enrolled: 1, total: 1}
+    assert NotificationClassRecipient.enrolled_count(device_id) == 1
+  end
+
+  test "sync_enrollment_state with use_scanned marks unenrolled from scan data" do
+    device_id = 9_100_002
+    objects = [%{type: :notification_class, instance: 7}]
+
+    scanned = [
+      {%ObjectIdentifier{type: :notification_class, instance: 7},
+       %{recipient_list: [other_destination()]}}
+    ]
+
+    # Seed enrolled state so we can prove scan data clears it.
+    NotificationClassRecipient.sync_enrollment_state(device_id, objects,
+      use_scanned: true,
+      scanned: [
+        {%ObjectIdentifier{type: :notification_class, instance: 7},
+         %{recipient_list: NotificationClassRecipient.add_self_to_recipient_list([])}}
+      ]
+    )
+
+    assert NotificationClassRecipient.enrolled_count(device_id) == 1
+
+    result =
+      NotificationClassRecipient.sync_enrollment_state(device_id, objects,
+        use_scanned: true,
+        scanned: scanned
+      )
+
+    assert result == %{enrolled: 0, total: 1}
+    assert NotificationClassRecipient.enrolled_count(device_id) == 0
+  end
+
+  test "sync_enrollment_state without use_scanned ignores provided scanned data" do
+    device_id = 9_100_003
+    objects = [%{type: :notification_class, instance: 1}]
+
+    # No discovered device → ReadProperty path fails silently; must not use scanned.
+    result =
+      NotificationClassRecipient.sync_enrollment_state(device_id, objects,
+        use_scanned: false,
+        scanned: [
+          {%ObjectIdentifier{type: :notification_class, instance: 1},
+           %{
+             recipient_list: NotificationClassRecipient.add_self_to_recipient_list([])
+           }}
+        ]
+      )
+
+    assert result == %{enrolled: 0, total: 1}
+    assert NotificationClassRecipient.enrolled_count(device_id) == 0
+  end
 end

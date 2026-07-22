@@ -57,14 +57,28 @@ defmodule BacView.BACnet.NotificationClassRecipient do
     end
   end
 
-  @spec sync_enrollment_state(integer(), [map()]) :: %{
+  @doc """
+  Syncs ETS enrollment flags for each Notification Class on the device.
+
+  Options:
+
+  * `:use_scanned` - when `true`, prefer `recipient_list` from the last device scan
+    instead of issuing ReadProperty. Used right after a full scan so we avoid a
+    redundant BACnet trip. When `false` (default), each NC is re-read over the wire
+    (e.g. opening an already-loaded device page).
+  * `:scanned` - optional scanned object list (`[{ObjectIdentifier.t(), map()}]`).
+    When omitted and `:use_scanned` is true, loads via `DeviceSession.scanned/1`.
+  """
+  @spec sync_enrollment_state(integer(), [map()], keyword()) :: %{
           enrolled: non_neg_integer(),
           total: non_neg_integer()
         }
-  def sync_enrollment_state(device_id, objects) do
+  def sync_enrollment_state(device_id, objects, opts \\ []) do
     objects = notification_class_objects(device_id, objects: objects)
+    use_scanned? = Keyword.get(opts, :use_scanned, false)
+    scanned = scanned_for_sync(device_id, use_scanned?, opts)
 
-    Enum.each(objects, &sync_object_enrollment(device_id, &1))
+    Enum.each(objects, &sync_object_enrollment(device_id, &1, use_scanned?, scanned))
 
     %{enrolled: enrolled_count(device_id), total: length(objects)}
   end
@@ -102,10 +116,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   @impl true
   def init(_opts) do
-    if :ets.whereis(@table) == :undefined do
-      :ets.new(@table, [:named_table, :set, :public, read_concurrency: true])
-    end
-
+    ensure_table!()
     {:ok, %{}}
   end
 
@@ -235,18 +246,62 @@ defmodule BacView.BACnet.NotificationClassRecipient do
     end
   end
 
-  defp sync_object_enrollment(device_id, %{instance: instance}) do
+  defp scanned_for_sync(_device_id, false, _opts), do: []
+
+  defp scanned_for_sync(device_id, true, opts) do
+    case Keyword.get(opts, :scanned) do
+      scanned when is_list(scanned) -> scanned
+      _scanned -> DeviceSession.scanned(device_id)
+    end
+  end
+
+  defp sync_object_enrollment(device_id, %{instance: instance}, use_scanned?, scanned) do
     object_id = %ObjectIdentifier{type: :notification_class, instance: instance}
 
-    with {:ok, device} <- fetch_device(device_id),
-         {:ok, current} <- read_recipient_list(device.address, object_id, device_id) do
-      if recipient_list_contains_self?(current) do
-        mark_enrolled(device_id, object_id)
-      else
-        mark_unenrolled(device_id, object_id)
-      end
-    else
-      _device_id -> :ok
+    case resolve_recipient_list(device_id, object_id, use_scanned?, scanned) do
+      {:ok, current} ->
+        if recipient_list_contains_self?(current) do
+          mark_enrolled(device_id, object_id)
+        else
+          mark_unenrolled(device_id, object_id)
+        end
+
+      _resolve_recipient_list ->
+        :ok
+    end
+  end
+
+  defp resolve_recipient_list(device_id, object_id, true, scanned) do
+    case recipient_list_from_scanned(scanned, object_id) do
+      {:ok, _list} = ok -> ok
+      :error -> resolve_recipient_list(device_id, object_id, false, scanned)
+    end
+  end
+
+  defp resolve_recipient_list(device_id, object_id, false, _scanned) do
+    with {:ok, device} <- fetch_device(device_id) do
+      read_recipient_list(device.address, object_id, device_id)
+    end
+  end
+
+  defp recipient_list_from_scanned(scanned, %ObjectIdentifier{instance: instance})
+       when is_list(scanned) do
+    match =
+      Enum.find(scanned, fn
+        {%ObjectIdentifier{type: :notification_class, instance: ^instance}, _obj} -> true
+        _entry -> false
+      end)
+
+    case match do
+      {_object_id, obj} when is_map(obj) ->
+        if Map.has_key?(obj, :recipient_list) do
+          {:ok, normalize_recipient_list(Map.get(obj, :recipient_list))}
+        else
+          :error
+        end
+
+      _match ->
+        :error
     end
   end
 
@@ -255,7 +310,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
       objects when is_list(objects) ->
         Enum.filter(objects, &(&1.type == :notification_class))
 
-      _device_id ->
+      _notification_class_objects ->
         Enum.filter(DeviceSession.objects(device_id), &(&1.type == :notification_class))
     end
   end
@@ -388,6 +443,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   end
 
   defp mark_enrolled(device_id, object_id) do
+    ensure_table!()
     key = {device_id, object_id.instance}
 
     :ets.insert(@table, {
@@ -401,7 +457,17 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   end
 
   defp mark_unenrolled(device_id, object_id) do
-    :ets.delete(@table, {device_id, object_id.instance})
+    if :ets.whereis(@table) != :undefined do
+      :ets.delete(@table, {device_id, object_id.instance})
+    end
+  end
+
+  defp ensure_table!() do
+    if :ets.whereis(@table) == :undefined do
+      :ets.new(@table, [:named_table, :set, :public, read_concurrency: true])
+    end
+
+    :ok
   end
 
   defp fetch_device(device_id) do

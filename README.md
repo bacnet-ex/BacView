@@ -105,6 +105,7 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 | `BACVIEW_ENABLE_MSTP` | - | Enable MS/TP transport regardless of platform (`1` / `true`) |
 | `BACVIEW_DESKTOP` | - | Set to `1` at compile time to build the desktop app (see above) |
 | `BACVIEW_DESKTOP_LOCALE` | - | The locale to use on startup (automatically set by the desktop app) |
+| `BACVIEW_LOG_PATH` | `~/.config/bacview/bacview.log` on desktop, `tmp/bacview.log` otherwise | Location of the Logger logfile |
 | `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback - lower (e.g. `1`) if old devices are overwhelmed |
 | `BACVIEW_READ_CONCUR_DISABLE_SHARED_RED` | - | Disable concurrency reduction for shared addresses (routers) to prevent overwhelm of router (`1` / `true`) |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |

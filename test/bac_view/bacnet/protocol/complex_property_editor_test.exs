@@ -673,4 +673,91 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     assert decoded_hnp.host == {:ip_address, {192, 168, 1, 81}}
     assert decoded_hnp.port == 47_808
   end
+
+  test "formats BACnet/IP MAC binaries for form fields and JSON" do
+    mac = <<192, 168, 1, 120, 186, 192>>
+    address = %RecipientAddress{network: 0, address: mac}
+
+    fields = ComplexPropertyEditor.form_fields(address)
+    mac_field = Enum.find(fields, &(&1.path == "address"))
+
+    assert mac_field.value == "192.168.1.120:47808"
+    # Must be valid UTF-8 so LiveView can put it in an HTML value attribute
+    assert String.valid?(mac_field.value)
+
+    assert {:ok, json} = ComplexPropertyEditor.encode_json(address)
+    assert json =~ "192.168.1.120:47808"
+    assert {:ok, decoded} = ComplexPropertyEditor.decode_json(json, address)
+    assert decoded.address == mac
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"address" => "10.0.0.5:47808", "network" => "1"}},
+               address
+             )
+
+    assert updated.network == 1
+    assert updated.address == <<10, 0, 0, 5, 186, 192>>
+
+    assert {:ok, via_hex} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"address" => "C0:A8:01:49:00:00"}},
+               address
+             )
+
+    assert via_hex.address == <<192, 168, 1, 73, 0, 0>>
+
+    assert {:ok, broadcast} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"address" => "broadcast"}},
+               address
+             )
+
+    assert broadcast.address == :broadcast
+  end
+
+  test "round-trips Destination recipient_list with BACnet/IP MAC address" do
+    destination = %BACnet.Protocol.Destination{
+      recipient: %Recipient{
+        type: :address,
+        address: %RecipientAddress{network: 0, address: <<192, 168, 1, 120, 186, 192>>},
+        device: nil
+      },
+      process_identifier: 0,
+      issue_confirmed_notifications: false,
+      transitions: %BACnet.Protocol.EventTransitionBits{
+        to_offnormal: true,
+        to_fault: true,
+        to_normal: true
+      },
+      valid_days: %BACnet.Protocol.DaysOfWeek{
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: true,
+        sunday: true
+      },
+      from_time: %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0},
+      to_time: %BACnetTime{hour: 23, minute: 59, second: 59, hundredth: 99}
+    }
+
+    list = [destination]
+    fields = ComplexPropertyEditor.form_fields(list)
+    address_field = Enum.find(fields, &(&1.path == "0.recipient.address.address"))
+
+    assert address_field.value == "192.168.1.120:47808"
+    assert Enum.all?(fields, &String.valid?(&1.value))
+
+    assert {:ok, json} = ComplexPropertyEditor.encode_json(list)
+    assert {:ok, decoded} = ComplexPropertyEditor.decode_json(json, list)
+
+    assert [%BACnet.Protocol.Destination{} = dest] = decoded
+    assert dest.recipient.address.address == <<192, 168, 1, 120, 186, 192>>
+
+    draft = ComplexPropertyEditor.initial_field_params(fields)
+    assert draft["0.recipient.address.address"] == "192.168.1.120:47808"
+    assert Jason.encode!(draft)
+  end
 end

@@ -88,7 +88,10 @@ defmodule BacView.BACnet.Stack.Boot do
 
   @impl true
   def handle_info({:DOWN, ref, :process, _pid, reason}, %{runtime_ref: ref} = state) do
-    Logger.warning("BACnet stack runtime stopped: #{inspect(reason)}")
+    # Intentional stops (supervisor restart/shutdown) are expected; only unexpected exits warn.
+    if reason not in [:normal, :shutdown] and not match?({:shutdown, _}, reason) do
+      Logger.warning("BACnet stack runtime stopped: #{inspect(reason)}")
+    end
 
     {:noreply, %{state | error: {:runtime_down, reason}, runtime_ref: nil, runtime_snapshot: nil}}
   end

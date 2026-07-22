@@ -36,9 +36,6 @@ msgstr "%{count} notification classes enrolled."
 msgid "%{count} Meldungsklassen noch eingetragen."
 msgstr "%{count} notification classes still enrolled."
 
-msgid "%{count} Objekte"
-msgstr "%{count} objects"
-
 msgid "%{count} Objekte erfolgreich nachgelesen."
 msgstr "%{count} objects re-read successfully."
 
@@ -53,9 +50,6 @@ msgstr "Processing %{count} objects"
 
 msgid "%{count} Prioritäten gesetzt"
 msgstr "%{count} priorities set"
-
-msgid "%{count} Strukturansichten"
-msgstr "%{count} structured views"
 
 msgid "%{count} Treffer"
 msgstr "%{count} matches"
@@ -255,14 +249,8 @@ msgstr "Auto"
 msgid "Autor"
 msgstr "Author"
 
-msgid "BACnet / IP · Who-Is / I-Am Discovery"
-msgstr "BACnet/IP · Who-Is / I-Am discovery"
-
 msgid "BACnet MS/TP"
 msgstr "BACnet MS/TP"
-
-msgid "BACnet MS/TP · Who-Is / I-Am Discovery"
-msgstr "BACnet MS/TP · Who-Is / I-Am discovery"
 
 msgid "BACnet Netzwerk-Explorer"
 msgstr "BACnet Network Explorer"
@@ -275,6 +263,9 @@ msgstr "BACnet stack is not running."
 
 msgid "BACnet-Stack neu gestartet."
 msgstr "BACnet stack restarted."
+
+msgid "BACnet-Stack neu starten? Aktive COV-Abonnements werden neu aufgebaut."
+msgstr "Restart the BACnet stack? Active COV subscriptions will be re-established."
 
 msgid "BACnet/IP"
 msgstr "BACnet/IP"
@@ -669,11 +660,17 @@ msgstr "Refresh device"
 msgid "Gerät laden fehlgeschlagen: %{detail}"
 msgstr "Failed to load device: %{detail}"
 
+msgid "Gerät nach I-Am oder Neustart-COV (Device: system_status, time_of_device_restart, last_restart_reason) scannen."
+msgstr "Scan after I-Am or restart COV (device: system_status, time_of_device_restart, last_restart_reason)."
+
 msgid "Gerät neu initialisieren"
 msgstr "Reinitialize device"
 
 msgid "Gerät nicht gefunden."
 msgstr "Device not found."
+
+msgid "Gerät scannen"
+msgstr "Scan device"
 
 msgid "Gerät wird geladen…"
 msgstr "Loading device…"
@@ -683,6 +680,9 @@ msgstr "Device is being reinitialized."
 
 msgid "Geräte filtern… (-Begriff zum Ausschliessen)"
 msgstr "Filter devices… (-term to exclude)"
+
+msgid "Geräte scannen, wenn sie online gehen"
+msgstr "Scan devices as they come online"
 
 msgid "Geräte-ID"
 msgstr "Device ID"
@@ -740,6 +740,12 @@ msgstr "Reading device object…"
 
 msgid "Geräteobjekt öffnen"
 msgstr "Open device object"
+
+msgid "Gerätescan abgeschlossen."
+msgstr "Device scan completed."
+
+msgid "Gerätescan gestartet."
+msgstr "Device scan started."
 
 msgid "Geschriebener Wert weicht vom gelesenen Present Value ab: %{value}"
 msgstr "Written value differs from the read present value: %{value}"
@@ -945,9 +951,6 @@ msgstr "Read access denied."
 msgid "Letzte COV"
 msgstr "Last COV"
 
-msgid "Letzter Scan"
-msgstr "Last scan"
-
 msgid "Liste"
 msgstr "List"
 
@@ -1028,6 +1031,9 @@ msgstr "Unable to enumerate network interfaces."
 
 msgid "Netzwerkverbindung zum Gerät nicht verfügbar."
 msgstr "Network connection to the device is unavailable."
+
+msgid "Neu starten"
+msgstr "Restart"
 
 msgid "Neu starten & speichern"
 msgstr "Restart & save"
@@ -1308,6 +1314,9 @@ msgstr "Switch language"
 msgid "Stack neu gestartet, aber BBMD-Registrierung fehlgeschlagen: %{detail}"
 msgstr "Stack restarted, but BBMD registration failed: %{detail}"
 
+msgid "Stack neu starten"
+msgstr "Restart stack"
+
 msgid "Stack-Einstellungen"
 msgstr "Stack settings"
 
@@ -1568,6 +1577,9 @@ msgstr "End restore"
 
 msgid "Wiederherstellung starten"
 msgstr "Start restore"
+
+msgid "Wird geladen"
+msgstr "Loading"
 
 msgid "Wird nachgelesen…"
 msgstr "Re-reading…"
