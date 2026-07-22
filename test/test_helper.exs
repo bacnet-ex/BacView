@@ -1,7 +1,8 @@
 ExUnit.start()
 
+# MAC only is used at runtime; network-number is chosen per device (0 = local BACnet net).
 Application.put_env(:bacview, :bacnet_recipient_address, %BACnet.Protocol.RecipientAddress{
-  network: 1,
+  network: 0,
   address: <<127, 0, 0, 1, 186, 192>>
 })
 

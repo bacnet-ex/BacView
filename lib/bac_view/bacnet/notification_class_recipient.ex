@@ -13,6 +13,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   alias BACnet.Protocol.DaysOfWeek
   alias BACnet.Protocol.Destination
   alias BACnet.Protocol.EventTransitionBits
+  alias BACnet.Protocol.NpciTarget
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.Recipient
   alias BACnet.Protocol.RecipientAddress
@@ -20,6 +21,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   alias BacView.BACnet.Client
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Discovery
+  alias BacView.BACnet.NetworkNumber
   alias BacView.BACnet.Stack
 
   @table :bacview_nc_recipients
@@ -84,13 +86,18 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   end
 
   @doc false
+  # Options: `:device` - discovered device map. Chooses BACnetAddress.network-number:
+  # 0 on the local BACnet network (no NPCI SNET); otherwise NetworkNumber.effective/0
+  # (ASHRAE 135 Clause 21 / 12.11.34).
   @spec add_self_to_recipient_list([Destination.t()]) :: [Destination.t()]
-  def add_self_to_recipient_list(destinations) when is_list(destinations) do
+  @spec add_self_to_recipient_list([Destination.t()], keyword()) :: [Destination.t()]
+  def add_self_to_recipient_list(destinations, opts \\ [])
+      when is_list(destinations) and is_list(opts) do
     if recipient_list_contains_self?(destinations) do
       destinations
     else
       # credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem
-      destinations ++ [default_destination()]
+      destinations ++ [default_destination(opts)]
     end
   end
 
@@ -166,7 +173,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   defp enroll(device_id, object_id) do
     with {:ok, device} <- fetch_device(device_id) do
-      destination = default_destination()
+      destination = default_destination(device: device)
 
       case Client.add_list_element(device.address, object_id, :recipient_list, destination,
              device_id: device_id
@@ -191,7 +198,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
         mark_enrolled(device_id, object_id)
         :ok
       else
-        updated = add_self_to_recipient_list(current)
+        updated = add_self_to_recipient_list(current, device: device)
 
         case write_recipient_list(device.address, object_id, updated, device_id) do
           :ok ->
@@ -207,7 +214,7 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   defp unenroll(device_id, object_id) do
     with {:ok, device} <- fetch_device(device_id) do
-      destination = default_destination()
+      destination = default_destination(device: device)
 
       case Client.remove_list_element(device.address, object_id, :recipient_list, destination,
              device_id: device_id
@@ -366,11 +373,11 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   defp decode_destination_from_encoding_value(_value), do: nil
 
-  defp default_destination() do
+  defp default_destination(opts) when is_list(opts) do
     %Destination{
       recipient: %Recipient{
         type: :address,
-        address: local_recipient_address(),
+        address: local_recipient_address(opts),
         device: nil
       },
       process_identifier: @notification_process_id,
@@ -399,11 +406,13 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   defp destination_for_self?(_destination_for_self), do: false
 
+  # Match on MAC only so enrollments written with network 0 or a real DNET both
+  # count as "self" (migration from always-stamping NetworkNumber.effective/0).
   defp recipient_for_self?(%Recipient{
          type: :address,
-         address: %RecipientAddress{} = address
+         address: %RecipientAddress{address: mac}
        }) do
-    address == local_recipient_address()
+    mac == local_mac_address()
   end
 
   defp recipient_for_self?(%Recipient{
@@ -415,14 +424,42 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   defp recipient_for_self?(_recipient_for_self), do: false
 
-  defp local_recipient_address() do
-    case Application.get_env(:bacview, :bacnet_recipient_address) do
-      %RecipientAddress{} = address ->
-        address
+  defp local_recipient_address(opts) when is_list(opts) do
+    %RecipientAddress{
+      network: recipient_network_number(Keyword.get(opts, :device)),
+      address: local_mac_address()
+    }
+  end
 
-      _local_recipient_address ->
+  # ASHRAE 135: BACnetAddress.network-number 0 = local network (from the NC
+  # device's perspective). Non-zero only when the NC device is remote (routed).
+  defp recipient_network_number(device) do
+    if device_on_local_network?(device) do
+      0
+    else
+      case NetworkNumber.effective() do
+        n when is_integer(n) and n in 1..65_534 -> n
+        _unknown -> 0
+      end
+    end
+  end
+
+  defp device_on_local_network?(nil), do: true
+
+  defp device_on_local_network?(%{npci_source: %NpciTarget{net: net}})
+       when is_integer(net) and net in 1..65_534,
+       do: false
+
+  defp device_on_local_network?(_device), do: true
+
+  defp local_mac_address() do
+    case Application.get_env(:bacview, :bacnet_recipient_address) do
+      %RecipientAddress{address: mac} when not is_nil(mac) ->
+        mac
+
+      _local_mac_address ->
         {ip, port} = IPv4Transport.get_local_address(Stack.transport())
-        %RecipientAddress{network: local_network_number(), address: ip_port_to_mac(ip, port)}
+        ip_port_to_mac(ip, port)
     end
   end
 
@@ -432,10 +469,6 @@ defmodule BacView.BACnet.NotificationClassRecipient do
 
   defp local_device_id() do
     BacView.Settings.device_id()
-  end
-
-  defp local_network_number() do
-    BacView.BACnet.NetworkNumber.effective()
   end
 
   defp notification_confirmed?() do
