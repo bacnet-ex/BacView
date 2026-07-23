@@ -17,6 +17,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
 
   alias BACnet.Protocol.ApplicationTags.Encoding
   alias BacView.BACnet.Protocol.BacnetCalendarFormat
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.PropertyFormatter
 
   @type field :: %{
@@ -35,8 +36,12 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
           items: [field() | map()]
         }
 
-  @spec build(term()) :: t()
-  def build(value), do: do_build(value)
+  @spec build(term(), keyword()) :: t()
+  def build(value, opts \\ [])
+
+  def build(value, opts) when is_list(opts) do
+    do_build(value, Keyword.get(opts, :object))
+  end
 
   @spec summary(t()) :: String.t()
   def summary(%{kind: :scalar, formatted: formatted}), do: formatted
@@ -94,9 +99,11 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
   def brief_summary(%{formatted: formatted}) when is_binary(formatted), do: formatted
   def brief_summary(_formatted), do: "-"
 
-  defp do_build(nil), do: %{kind: :scalar, formatted: "-", fields: [], items: []}
+  defp do_build(value, object \\ nil)
 
-  defp do_build(%Encoding{type: type} = encoding) when not is_nil(type) do
+  defp do_build(nil, _object), do: %{kind: :scalar, formatted: "-", fields: [], items: []}
+
+  defp do_build(%Encoding{type: type} = encoding, _object) when not is_nil(type) do
     %{
       kind: :scalar,
       formatted: PropertyFormatter.format_value(encoding, nil),
@@ -105,7 +112,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%Encoding{} = encoding) do
+  defp do_build(%Encoding{} = encoding, _object) do
     fields =
       encoding
       |> Map.from_struct()
@@ -120,7 +127,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%ObjectIdentifier{type: type, instance: instance}) do
+  defp do_build(%ObjectIdentifier{type: type, instance: instance}, _object) do
     %{
       kind: :object_identifier,
       formatted: "#{type}:#{instance}",
@@ -129,7 +136,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%RecipientAddress{network: network, address: address}) do
+  defp do_build(%RecipientAddress{network: network, address: address}, _object) do
     formatted_address = PropertyFormatter.format_mac_address(address)
 
     fields = [
@@ -159,7 +166,10 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%Recipient{type: :device, device: %ObjectIdentifier{} = device, address: nil}) do
+  defp do_build(
+         %Recipient{type: :device, device: %ObjectIdentifier{} = device, address: nil},
+         _object
+       ) do
     device_display = do_build(device)
 
     fields = [
@@ -189,11 +199,14 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%Recipient{
-         type: :address,
-         address: %RecipientAddress{} = address,
-         device: nil
-       }) do
+  defp do_build(
+         %Recipient{
+           type: :address,
+           address: %RecipientAddress{} = address,
+           device: nil
+         },
+         _object
+       ) do
     address_display = do_build(address)
 
     fields = [
@@ -224,7 +237,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%PriorityArray{} = array) do
+  defp do_build(%PriorityArray{} = array, object) do
     items =
       Enum.map(1..16, fn priority ->
         value = Map.get(array, priority_field(priority))
@@ -234,20 +247,20 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
           label: "P#{priority}",
           kind: :priority_slot,
           value: value,
-          formatted: format_slot_value(value),
+          formatted: format_slot_value(value, object),
           fields: []
         }
       end)
 
     %{
       kind: :priority_array,
-      formatted: PropertyFormatter.format_value(array, nil),
+      formatted: format_priority_array_summary(array, object),
       fields: [],
       items: items
     }
   end
 
-  defp do_build(%BACnetArray{} = array) do
+  defp do_build(%BACnetArray{} = array, _object) do
     items =
       array
       |> BACnetArray.to_list()
@@ -274,7 +287,7 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(value) when is_list(value) do
+  defp do_build(value, _object) when is_list(value) do
     items =
       value
       |> Enum.with_index(1)
@@ -300,12 +313,12 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(%BACnetDateTime{} = datetime), do: calendar_scalar(datetime)
-  defp do_build(%BACnetDate{} = date), do: calendar_scalar(date)
-  defp do_build(%BACnetTime{} = time), do: calendar_scalar(time)
-  defp do_build(%BACnetTimestamp{} = timestamp), do: calendar_scalar(timestamp)
+  defp do_build(%BACnetDateTime{} = datetime, _object), do: calendar_scalar(datetime)
+  defp do_build(%BACnetDate{} = date, _object), do: calendar_scalar(date)
+  defp do_build(%BACnetTime{} = time, _object), do: calendar_scalar(time)
+  defp do_build(%BACnetTimestamp{} = timestamp, _object), do: calendar_scalar(timestamp)
 
-  defp do_build(%_nil{} = struct) do
+  defp do_build(%_nil{} = struct, _object) do
     fields =
       struct
       |> Map.from_struct()
@@ -320,10 +333,16 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
     }
   end
 
-  defp do_build(value) do
+  defp do_build(value, object) do
+    formatted =
+      case BinaryPV.format_value(value, object) do
+        nil -> PropertyFormatter.format_value(value, nil)
+        text -> text
+      end
+
     %{
       kind: :scalar,
-      formatted: PropertyFormatter.format_value(value, nil),
+      formatted: formatted,
       fields: [],
       items: []
     }
@@ -397,8 +416,24 @@ defmodule BacView.BACnet.Protocol.PropertyDisplay do
   defp boolean_label(true), do: gettext("Ja")
   defp boolean_label(false), do: gettext("Nein")
 
-  defp format_slot_value(nil), do: "-"
-  defp format_slot_value(value), do: PropertyFormatter.format_value(value, nil)
+  defp format_slot_value(nil, _object), do: "-"
+
+  defp format_slot_value(value, object) do
+    case BinaryPV.format_value(value, object) do
+      nil -> PropertyFormatter.format_value(value, nil)
+      text -> text
+    end
+  end
+
+  defp format_priority_array_summary(%PriorityArray{} = array, object) do
+    case PriorityArray.get_value(array) do
+      {priority, active} ->
+        "#{format_slot_value(active, object)} (P#{priority})"
+
+      nil ->
+        "-"
+    end
+  end
 
   defp priority_field(priority) when priority in 1..16,
     do: String.to_existing_atom("priority_#{priority}")

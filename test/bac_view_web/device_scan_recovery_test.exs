@@ -99,6 +99,38 @@ defmodule BacViewWeb.DeviceScanRecoveryTest do
     refute html =~ ~s/id="device-scan-recovery-panel"/
   end
 
+  test "lists ObjectsUtility cast/decode failures without retry actions" do
+    html =
+      render_recovery_panel(
+        scan_errors: [
+          %{
+            object: "network_port:3",
+            object_id: %ObjectIdentifier{type: :network_port, instance: 3},
+            reason: {:invalid_property_value, {:network_type, 68}},
+            recoverable: false,
+            retry_modes: []
+          },
+          %{
+            object: "network_port:1",
+            object_id: %ObjectIdentifier{type: :network_port, instance: 1},
+            reason: {:missing_optional_property, :bacnet_ip_mode},
+            recoverable: false,
+            retry_modes: []
+          }
+        ],
+        scan_recovery_open: true
+      )
+
+    assert html =~ ~s/id="device-scan-recovery-panel"/
+    assert html =~ "network_port:3"
+    assert html =~ "network_port:1"
+    assert html =~ "Diese Objekte konnten nicht gelesen werden"
+    refute html =~ ~s/id="device-scan-recovery-value-1"/
+    refute html =~ ~s/id="device-scan-recovery-all-1"/
+    refute html =~ ~s/id="device-scan-recovery-bulk-value"/
+    refute html =~ ~s/id="device-scan-recovery-bulk-all"/
+  end
+
   test "renders scan error messages in english when locale is en" do
     html = render_recovery_panel(locale: "en", locale_version: 1)
 

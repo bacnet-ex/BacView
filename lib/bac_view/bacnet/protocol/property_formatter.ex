@@ -16,6 +16,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   alias BACnet.Protocol.RecipientAddress
 
   alias BacView.BACnet.Protocol.BacnetCalendarFormat
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyDisplay
@@ -81,6 +82,16 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
     end
   end
 
+  def format_edit_value({:bitstring, value}, object, prop),
+    do: format_edit_value(value, object, prop)
+
+  def format_edit_value(value, _object, _prop) when is_tuple(value) do
+    if bitstring_value?(value), do: format_bitstring_edit(value), else: ""
+  end
+
+  def format_edit_value(%Encoding{type: :bitstring, value: value}, object, prop),
+    do: format_edit_value(value, object, prop)
+
   def format_edit_value(_value, _object, _prop), do: ""
 
   @spec format_present_value(term(), map() | nil, map() | nil) :: String.t()
@@ -93,6 +104,9 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
         MultistateState.multistate_object?(object) ->
           MultistateState.format_present_value(coerced, object) ||
             format_value(coerced, units)
+
+        BinaryPV.binary_object?(object) ->
+          BinaryPV.format_value(coerced, object) || format_value(coerced, units)
 
         real_present_value?(coerced, object, prop) ->
           format_real_present_value(coerced, units, object)
@@ -243,10 +257,33 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
 
   def format_value(value, _units), do: inspect(value, limit: 80)
 
+  # Long bitstrings stay readable in tables; full string available via format_edit_value/3.
+  @bitstring_display_max_bits 64
+
+  # Compact binary form (0/1), groups of 8 for readability. Avoids huge "true, false, …" strings.
   defp format_bitstring_tuple(value) when is_tuple(value) do
+    bits = Tuple.to_list(value)
+    size = length(bits)
+
+    if size > @bitstring_display_max_bits do
+      shown = Enum.take(bits, @bitstring_display_max_bits)
+      "#{format_bits_grouped(shown)}… (#{size} bits)"
+    else
+      format_bits_grouped(bits)
+    end
+  end
+
+  defp format_bitstring_edit(value) when is_tuple(value) do
     value
     |> Tuple.to_list()
-    |> Enum.map_join(", ", &format_value(&1, nil))
+    |> Enum.map_join("", &if(&1, do: "1", else: "0"))
+  end
+
+  defp format_bits_grouped(bits) when is_list(bits) do
+    bits
+    |> Enum.map(&if(&1, do: "1", else: "0"))
+    |> Enum.chunk_every(8)
+    |> Enum.map_join(" ", &Enum.join(&1, ""))
   end
 
   defp format_ip_address(ip) when is_tuple(ip) do
@@ -337,7 +374,7 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   @spec bitstring_value?(term()) :: boolean()
   def bitstring_value?({:bitstring, value}), do: bitstring_value?(value)
 
-  def bitstring_value?(value) when is_tuple(value) do
+  def bitstring_value?(value) when is_tuple(value) and tuple_size(value) > 0 do
     value
     |> Tuple.to_list()
     |> Enum.all?(&is_boolean/1)
@@ -345,6 +382,111 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
 
   def bitstring_value?(%Encoding{type: :bitstring, value: value}), do: bitstring_value?(value)
   def bitstring_value?(_value), do: false
+
+  @doc """
+  Parses a bitstring from user input.
+
+  Accepts:
+  - binary digits: `10110`, optional spaces/`:`/`_`/`-` between bits
+  - comma/space-separated booleans: `true, false, true`
+  - JSON-style list: `[true,false,true]` or `[1,0,1]`
+
+  When `expected_size` is given, the bit count must match exactly.
+  """
+  @spec parse_bitstring(String.t(), non_neg_integer() | nil) ::
+          {:ok, tuple()} | {:error, term()}
+  def parse_bitstring(input, expected_size \\ nil)
+
+  def parse_bitstring(input, expected_size) when is_binary(input) do
+    trimmed = String.trim(input)
+
+    if trimmed == "" do
+      {:error, :empty_value}
+    else
+      case parse_bitstring_bits(trimmed) do
+        {:ok, bits} -> validate_bitstring_size(bits, expected_size)
+        {:error, _reason} = err -> err
+      end
+    end
+  end
+
+  def parse_bitstring(_input, _expected_size), do: {:error, :invalid_bitstring}
+
+  defp parse_bitstring_bits("[" <> rest) do
+    if String.ends_with?(rest, "]") do
+      inner =
+        rest
+        |> String.trim_trailing("]")
+        |> String.trim()
+
+      parse_bitstring_list_parts(split_bitstring_parts(inner))
+    else
+      {:error, :invalid_bitstring}
+    end
+  end
+
+  defp parse_bitstring_bits(input) do
+    cleaned =
+      input
+      |> String.replace(~r/[\s:_\-]/, "")
+      |> String.downcase()
+
+    if cleaned != "" and Regex.match?(~r/^[01]+$/, cleaned) do
+      bits = for <<c <- cleaned>>, do: c == ?1
+      {:ok, bits}
+    else
+      parse_bitstring_list_parts(split_bitstring_parts(input))
+    end
+  end
+
+  defp split_bitstring_parts(input) do
+    input
+    |> String.split(~r/[\s,;]+/, trim: true)
+    |> Enum.reject(&(&1 == ""))
+  end
+
+  defp parse_bitstring_list_parts([]) do
+    {:error, :empty_value}
+  end
+
+  defp parse_bitstring_list_parts(parts) do
+    case Enum.reduce_while(parts, [], fn part, acc ->
+           case parse_bit_token(part) do
+             {:ok, bit} -> {:cont, [bit | acc]}
+             :error -> {:halt, :error}
+           end
+         end) do
+      :error -> {:error, :invalid_bitstring}
+      bits -> {:ok, Enum.reverse(bits)}
+    end
+  end
+
+  defp parse_bit_token(token) do
+    case String.downcase(String.trim(token)) do
+      "1" -> {:ok, true}
+      "0" -> {:ok, false}
+      "true" -> {:ok, true}
+      "false" -> {:ok, false}
+      "t" -> {:ok, true}
+      "f" -> {:ok, false}
+      _other -> :error
+    end
+  end
+
+  defp validate_bitstring_size(bits, nil) when is_list(bits) and bits != [] do
+    {:ok, List.to_tuple(bits)}
+  end
+
+  defp validate_bitstring_size(bits, expected)
+       when is_list(bits) and is_integer(expected) and expected >= 0 do
+    if length(bits) == expected do
+      {:ok, List.to_tuple(bits)}
+    else
+      {:error, {:bitstring_size_mismatch, expected, length(bits)}}
+    end
+  end
+
+  defp validate_bitstring_size(_bits, _expected), do: {:error, :invalid_bitstring}
 
   @spec property_type(term()) :: String.t()
   def property_type(nil), do: "-"

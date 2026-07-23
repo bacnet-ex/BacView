@@ -88,6 +88,27 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
       assert PropertyFormatter.coerce_present_value(1, object) == true
     end
 
+    test "formats binary present values with inactive/active text when present" do
+      object = %{
+        type: :binary_value,
+        units: nil,
+        inactive_text: "Closed",
+        active_text: "Open"
+      }
+
+      assert PropertyFormatter.format_present_value(0, object) == "Closed"
+      assert PropertyFormatter.format_present_value(1, object) == "Open"
+      assert PropertyFormatter.format_present_value(false, object) == "Closed"
+      assert PropertyFormatter.format_present_value(true, object) == "Open"
+    end
+
+    test "falls back per side when only one binary text property is present" do
+      object = %{type: :binary_input, units: nil, inactive_text: "Off"}
+
+      assert PropertyFormatter.format_present_value(0, object) == "Off"
+      assert PropertyFormatter.format_present_value(1, object) == "true"
+    end
+
     test "formats integer analog present values without decimals" do
       object = %{type: :analog_value, units: nil}
 
@@ -189,12 +210,48 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
                "::1"
     end
 
-    test "formats boolean bitstring tuples without inspect" do
-      assert PropertyFormatter.format_value({true, false, false, true}, nil) ==
-               "true, false, false, true"
+    test "formats boolean bitstring tuples as compact binary" do
+      assert PropertyFormatter.format_value({true, false, false, true}, nil) == "1001"
 
       assert PropertyFormatter.format_value({:bitstring, {false, true, false, false}}, nil) ==
-               "false, true, false, false"
+               "0100"
+
+      assert PropertyFormatter.format_value(
+               {true, true, false, true, false, false, true, false, true},
+               nil
+             ) == "11010010 1"
+    end
+
+    test "truncates very long bitstring display" do
+      bits = List.to_tuple(List.duplicate(true, 70))
+      formatted = PropertyFormatter.format_value(bits, nil)
+      assert formatted =~ "…"
+      assert formatted =~ "(70 bits)"
+      refute formatted =~ "true,"
+    end
+
+    test "format_edit_value returns full bitstring binary digits" do
+      bits = {true, false, true, true, false}
+      assert PropertyFormatter.format_edit_value(bits, nil, nil) == "10110"
+    end
+
+    test "parse_bitstring accepts binary, lists, and enforces size" do
+      assert PropertyFormatter.parse_bitstring("10110") == {:ok, {true, false, true, true, false}}
+
+      assert PropertyFormatter.parse_bitstring("1 0 1 1 0") ==
+               {:ok, {true, false, true, true, false}}
+
+      assert PropertyFormatter.parse_bitstring("true, false, true") ==
+               {:ok, {true, false, true}}
+
+      assert PropertyFormatter.parse_bitstring("[1,0,1]") == {:ok, {true, false, true}}
+
+      assert PropertyFormatter.parse_bitstring("101", 3) == {:ok, {true, false, true}}
+
+      assert PropertyFormatter.parse_bitstring("10", 3) ==
+               {:error, {:bitstring_size_mismatch, 3, 2}}
+
+      assert PropertyFormatter.parse_bitstring("abc") == {:error, :invalid_bitstring}
     end
 
     test "does not treat non-IP non-bitstring tuples as addresses" do

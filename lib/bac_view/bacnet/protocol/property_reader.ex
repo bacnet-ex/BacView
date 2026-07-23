@@ -850,6 +850,14 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   defp property_type(_value, _display, {:constant, _type}), do: "ENUMERATED"
 
+  defp property_type(value, display, {:in_list, values}) do
+    if PropertyEnumeration.atom_in_list?(values) do
+      "ENUMERATED"
+    else
+      property_type(value, display, nil)
+    end
+  end
+
   defp property_type(nil, _display, :boolean), do: "BOOLEAN"
   defp property_type(nil, _display, :real), do: "REAL"
   defp property_type(nil, _display, :double), do: "REAL"

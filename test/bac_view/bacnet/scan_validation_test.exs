@@ -14,6 +14,15 @@ defmodule BacView.BACnet.ScanValidationTest do
 
       assert DeviceSession.recoverable_validation_error?({:invalid_property_type, :present_value})
 
+      # ObjectsUtility decode/cast failures — shown in the error log, not skip-recoverable.
+      refute DeviceSession.recoverable_validation_error?(
+               {:invalid_property_value, {:network_type, 68}}
+             )
+
+      refute DeviceSession.recoverable_validation_error?(
+               {:missing_optional_property, :bacnet_ip_mode}
+             )
+
       refute DeviceSession.recoverable_validation_error?(:timeout)
       refute DeviceSession.recoverable_validation_error?({:bacnet_error, %{}})
     end
@@ -36,6 +45,14 @@ defmodule BacView.BACnet.ScanValidationTest do
       assert DeviceSession.retry_modes_for_reason({:invalid_property_type, :present_value}) == [
                true
              ]
+    end
+
+    test "does not offer skip modes for ObjectsUtility cast/decode failures" do
+      assert DeviceSession.retry_modes_for_reason({:invalid_property_value, {:network_type, 68}}) ==
+               []
+
+      assert DeviceSession.retry_modes_for_reason({:missing_optional_property, :bacnet_ip_mode}) ==
+               []
     end
   end
 

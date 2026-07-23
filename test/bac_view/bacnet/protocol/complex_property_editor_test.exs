@@ -652,6 +652,25 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     assert updated_v6.host == {:ip_address, {0, 0, 0, 0, 0, 0, 0, 1}}
   end
 
+  test "round-trips boolean bitstring tuples via form fields and JSON" do
+    bits = {true, false, true, false, true}
+
+    assert [%{path: "_", value: "10101"}] = ComplexPropertyEditor.form_fields(bits)
+
+    assert {:ok, {false, true, false, true, false}} =
+             ComplexPropertyEditor.apply_form_fields(%{"field" => %{"_" => "01010"}}, bits)
+
+    assert {:ok, json} = ComplexPropertyEditor.encode_json(bits)
+    assert Jason.decode!(json) == [true, false, true, false, true]
+    assert {:ok, ^bits} = ComplexPropertyEditor.decode_json(json, bits)
+
+    # 4-bit bitstrings must not be treated as IPv4
+    four = {true, false, false, true}
+    assert {:ok, four_json} = ComplexPropertyEditor.encode_json(four)
+    assert Jason.decode!(four_json) == [true, false, false, true]
+    assert {:ok, ^four} = ComplexPropertyEditor.decode_json(four_json, four)
+  end
+
   test "JSON-encodes IP tuples so the field editor opens by default" do
     ipv4 = {192, 168, 1, 81}
     assert {:ok, json} = ComplexPropertyEditor.encode_json(ipv4)

@@ -22,6 +22,12 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
   end
 
   test "formats BACnet property validation errors" do
+    assert ErrorMessage.format_reason({:invalid_property_value, {:network_type, 68}}) =~
+             "ungültig"
+
+    assert ErrorMessage.format_reason({:missing_optional_property, :bacnet_ip_mode}) =~
+             "optionale"
+
     assert ErrorMessage.format_reason({:value_failed_property_validation, :present_value}) =~
              "present value"
 
@@ -115,6 +121,57 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
     assert ErrorMessage.format_reason(:object_unavailable) =~ "Objekt"
     assert ErrorMessage.format_reason(:property_list_not_readable) =~ "Eigenschaftsliste"
     assert ErrorMessage.format_reason({:property_read_failed, :timeout}) =~ "Zeitüberschreitung"
+  end
+
+  test "formats bacstack exception_during_casting with function clause detail" do
+    exception = %FunctionClauseError{
+      module: BACnet.Protocol.ApplicationTags.Encoding,
+      function: :to_encoding,
+      arity: 1
+    }
+
+    reason = {:exception_during_casting, exception, []}
+    message = ErrorMessage.format_reason(reason)
+    action = ErrorMessage.for_action(:write_property, reason)
+
+    assert message =~ "Lokale BACnet-Kodierung"
+    assert message =~ "to_encoding"
+    assert message =~ "ApplicationTags.Encoding"
+    refute message =~ "unerwarteter Fehler"
+
+    assert action =~ "Schreiben fehlgeschlagen"
+    assert action =~ "Lokale BACnet-Kodierung"
+  end
+
+  test "formats exception_during_encoding and decoding" do
+    exception = %RuntimeError{message: "boom"}
+
+    assert ErrorMessage.format_reason({:exception_during_encoding, exception, []}) =~
+             "BACnet-Kodierung fehlgeschlagen"
+
+    assert ErrorMessage.format_reason({:exception_during_decoding, exception, []}) =~
+             "BACnet-Dekodierung fehlgeschlagen"
+  end
+
+  test "formats missing encode/parse fun and invalid_params" do
+    assert ErrorMessage.format_reason(
+             {:missing_encode_fun, BACnet.Protocol.EventParameters.OutOfRange}
+           ) =~
+             "Encode-Funktion"
+
+    assert ErrorMessage.format_reason({:missing_parse_fun, BACnet.Protocol.EventParameters}) =~
+             "Parse-Funktion"
+
+    assert ErrorMessage.format_reason(:invalid_params) =~ "Ungültige Parameter"
+    assert ErrorMessage.format_reason(:unsupported_object_type) =~ "nicht unterstützt"
+  end
+
+  test "formats unknown tagged reasons with code and detail instead of bare generic" do
+    message = ErrorMessage.format_reason({:some_new_stack_error, :event_parameters})
+
+    assert message =~ "some new stack error"
+    assert message =~ "event_parameters"
+    refute message == "Ein unerwarteter Fehler ist aufgetreten."
   end
 
   test "formats IPv4 transport interface startup failures with interface name" do

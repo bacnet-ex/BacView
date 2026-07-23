@@ -262,7 +262,12 @@ defmodule BacViewWeb.ObjectDetail do
             </div>
             <div class="bac-stat">
               <p class="bac-stat-label">{t(@locale, @locale_version, "Present Value")}</p>
-              <p class="bac-stat-value bac-mono text-lg">{@object.present_value_formatted}</p>
+              <p
+                class="bac-stat-value bac-mono text-lg break-all"
+                title={@object.present_value_formatted}
+              >
+                {@object.present_value_formatted}
+              </p>
             </div>
             <div :if={@object.units} class="bac-stat">
               <p class="bac-stat-label">{t(@locale, @locale_version, "Einheit")}</p>

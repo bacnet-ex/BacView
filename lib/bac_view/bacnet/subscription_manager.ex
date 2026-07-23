@@ -319,9 +319,13 @@ defmodule BacView.BACnet.SubscriptionManager do
       remove_local_subscription(sub, reason)
       :ok
     else
-      Logger.warning(
-        "COV renewal failed for device #{sub.device_id} " <>
-          "#{inspect(sub.object_id)} #{inspect(sub.property)}: #{inspect(reason)}"
+      Client.log_request_error(
+        :cov_renew,
+        Map.get(sub, :destination),
+        sub.object_id,
+        sub.property,
+        reason,
+        device_id: sub.device_id
       )
 
       {:error, reason}
@@ -390,7 +394,9 @@ defmodule BacView.BACnet.SubscriptionManager do
         lifetime: sub.lifetime,
         confirmed: sub.confirmed,
         process_id: sub.process_id,
-        subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
+        subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property),
+        # renew logs once via apply_renew_result (:cov_renew)
+        log_errors: false
       )
 
     apply_renew_result(sub, result)
@@ -418,12 +424,14 @@ defmodule BacView.BACnet.SubscriptionManager do
     lifetime = Keyword.get(opts, :lifetime, settings.cov_lifetime_seconds)
     confirmed = Keyword.get(opts, :confirmed, settings.cov_confirmed)
     process_id = Keyword.get(opts, :process_id, Subscription.process_id())
+    log_errors = Keyword.get(opts, :log_errors, true)
 
     sub_opts =
       [
         lifetime: lifetime,
         confirmed: confirmed,
-        pid: process_id
+        pid: process_id,
+        log_errors: log_errors
       ] ++ cov_increment_opt(settings)
 
     preferred_service = Keyword.get(opts, :subscribe_service, :subscribe_cov_property)
@@ -508,7 +516,11 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   defp subscribe_present_value(destination, object_id, property, opts, :subscribe_cov_property) do
-    case cov_client().subscribe_cov_property(destination, object_id, property, opts) do
+    # Quiet the property attempt so successful Subscribe-COV fallback does not
+    # leave a warning; terminal failures are logged below or by Client.
+    quiet_opts = Keyword.put(opts, :log_errors, false)
+
+    case cov_client().subscribe_cov_property(destination, object_id, property, quiet_opts) do
       :ok ->
         {:ok, :subscribe_cov_property}
 
@@ -521,6 +533,15 @@ defmodule BacView.BACnet.SubscriptionManager do
 
           subscribe_present_value(destination, object_id, property, opts, :subscribe_cov)
         else
+          maybe_log_cov_client_error(
+            opts,
+            :subscribe_cov_property,
+            destination,
+            object_id,
+            property,
+            reason
+          )
+
           err
         end
     end
@@ -541,7 +562,9 @@ defmodule BacView.BACnet.SubscriptionManager do
         cancel_present_value(destination, object_id, opts, :subscribe_cov)
 
       _subscribe_service ->
-        case cov_client().subscribe_cov_property(destination, object_id, property, opts) do
+        quiet_opts = Keyword.put(opts, :log_errors, false)
+
+        case cov_client().subscribe_cov_property(destination, object_id, property, quiet_opts) do
           :ok ->
             :ok
 
@@ -549,6 +572,15 @@ defmodule BacView.BACnet.SubscriptionManager do
             if property == :present_value and cov_property_fallback?(reason) do
               cancel_present_value(destination, object_id, opts, :subscribe_cov)
             else
+              maybe_log_cov_client_error(
+                opts,
+                :subscribe_cov_property,
+                destination,
+                object_id,
+                property,
+                reason
+              )
+
               {:error, reason}
             end
         end
@@ -557,6 +589,17 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   defp cancel_present_value(destination, object_id, opts, :subscribe_cov) do
     cov_client().subscribe_cov(destination, object_id, opts)
+  end
+
+  # When the property call was quieted for fallback, log the terminal failure here.
+  defp maybe_log_cov_client_error(opts, operation, destination, object, property, reason) do
+    if Keyword.get(opts, :log_errors, true) do
+      Client.log_request_error(operation, destination, object, property, reason,
+        device_id: Keyword.get(opts, :device_id)
+      )
+    else
+      :ok
+    end
   end
 
   defp cov_client() do

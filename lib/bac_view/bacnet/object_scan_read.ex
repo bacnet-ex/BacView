@@ -5,6 +5,10 @@ defmodule BacView.BACnet.ObjectScanRead do
   Used during device scan and as a fallback path when full property loads fail
   (segmentation, missing RPM support, etc.). Individual property resolution is
   delegated to `PropertyReader.read_properties_map/4`.
+
+  Cast/validation failures (`invalid_property_value`, `missing_optional_property`,
+  etc.) are **not** silently recovered here — they surface as scan errors so the
+  UI can list them (and offer skip-mode retry when recoverable).
   """
 
   alias BACnet.Protocol.ObjectIdentifier
@@ -13,8 +17,9 @@ defmodule BacView.BACnet.ObjectScanRead do
   alias BacView.BACnet.Segmentation
 
   @doc """
-  Reads an object via RPM when possible; on segmentation-style errors falls back
-  to property-list / schema + individual property reads (as a raw value map).
+  Reads an object via RPM when possible; on segmentation-style / unrecognized-service
+  RPM failures falls back to property-list / schema + individual property reads
+  (as a raw value map).
   """
   @spec read_object_fallback(term(), ObjectIdentifier.t(), keyword()) ::
           {:ok, term()} | {:error, term()}

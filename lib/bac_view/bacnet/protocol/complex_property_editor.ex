@@ -385,8 +385,16 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   end
 
   defp parse_field_value(current, string_value, nil)
-       when is_tuple(current) and tuple_size(current) in [4, 8] do
-    parse_ip_address_string(string_value)
+       when is_tuple(current) and tuple_size(current) > 0 do
+    if PropertyFormatter.bitstring_value?(current) do
+      PropertyFormatter.parse_bitstring(string_value, tuple_size(current))
+    else
+      if tuple_size(current) in [4, 8] do
+        parse_ip_address_string(string_value)
+      else
+        parse_field_value_fallback(current, string_value)
+      end
+    end
   end
 
   # BACnet MAC / octet-string addresses (e.g. RecipientAddress.address)
@@ -408,7 +416,10 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     parse_mac_address_string(string_value)
   end
 
-  defp parse_field_value(current, string_value, nil) do
+  defp parse_field_value(current, string_value, nil),
+    do: parse_field_value_fallback(current, string_value)
+
+  defp parse_field_value_fallback(current, string_value) do
     trimmed = String.trim(string_value)
 
     cond do
@@ -556,10 +567,19 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
   defp value_to_string({:ip_address, ip}) when is_tuple(ip), do: value_to_string(ip)
 
-  defp value_to_string(value) when is_tuple(value) and tuple_size(value) in [4, 8] do
-    case :inet.ntoa(value) do
-      {:error, _reason} -> inspect(value, limit: 200)
-      charlist when is_list(charlist) -> List.to_string(charlist)
+  defp value_to_string(value) when is_tuple(value) and tuple_size(value) > 0 do
+    cond do
+      PropertyFormatter.bitstring_value?(value) ->
+        PropertyFormatter.format_edit_value(value, nil, nil)
+
+      tuple_size(value) in [4, 8] ->
+        case :inet.ntoa(value) do
+          {:error, _reason} -> inspect(value, limit: 200)
+          charlist when is_list(charlist) -> List.to_string(charlist)
+        end
+
+      true ->
+        inspect(value, limit: 200)
     end
   end
 
@@ -670,19 +690,26 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp encode({tag, value}) when is_atom(tag),
     do: %{"_tag" => Atom.to_string(tag), "value" => encode(value)}
 
-  # IPv4 / IPv6 tuples as dotted / compressed strings (Jason cannot encode tuples)
-  defp encode(ip) when is_tuple(ip) and tuple_size(ip) in [4, 8] do
-    case :inet.ntoa(ip) do
-      charlist when is_list(charlist) -> List.to_string(charlist)
-      {:error, _reason} -> Enum.map(Tuple.to_list(ip), &encode/1)
+  # Boolean bitstrings before IPv4/IPv6 (4-tuples of booleans must not become IP strings)
+  defp encode(value) when is_tuple(value) and tuple_size(value) > 0 do
+    cond do
+      PropertyFormatter.bitstring_value?(value) ->
+        Enum.map(Tuple.to_list(value), &encode/1)
+
+      tuple_size(value) in [4, 8] ->
+        case :inet.ntoa(value) do
+          charlist when is_list(charlist) -> List.to_string(charlist)
+          {:error, _reason} -> Enum.map(Tuple.to_list(value), &encode/1)
+        end
+
+      true ->
+        Enum.map(Tuple.to_list(value), &encode/1)
     end
   end
 
-  defp encode(value) when is_tuple(value),
-    do: Enum.map(Tuple.to_list(value), &encode/1)
-
   defp encode(list) when is_list(list), do: Enum.map(list, &encode/1)
   defp encode(nil), do: nil
+  defp encode(value) when is_boolean(value), do: value
   defp encode(value) when is_atom(value), do: Atom.to_string(value)
 
   # Jason rejects invalid UTF-8 binaries; format BACnet MAC octet strings.
@@ -722,8 +749,16 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp decode(value, _template) when is_float(value) or is_boolean(value), do: {:ok, value}
 
   defp decode(value, template)
-       when is_binary(value) and is_tuple(template) and tuple_size(template) in [4, 8] do
-    parse_ip_address_string(value)
+       when is_binary(value) and is_tuple(template) and tuple_size(template) > 0 do
+    if PropertyFormatter.bitstring_value?(template) do
+      PropertyFormatter.parse_bitstring(value, tuple_size(template))
+    else
+      if tuple_size(template) in [4, 8] do
+        parse_ip_address_string(value)
+      else
+        {:error, :invalid_json_value}
+      end
+    end
   end
 
   defp decode(value, template) when is_binary(value) and is_binary(template) do
@@ -752,6 +787,55 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   end
 
   defp decode(list, template)
+       when is_list(list) and is_tuple(template) and tuple_size(template) > 0 do
+    cond do
+      PropertyFormatter.bitstring_value?(template) ->
+        decode_bitstring_list(list, tuple_size(template))
+
+      tuple_size(template) in [4, 8] ->
+        decode_ip_tuple_list(list, template)
+
+      true ->
+        {:error, :invalid_json_value}
+    end
+  end
+
+  defp decode(_value, _template), do: {:error, :invalid_json_value}
+
+  defp decode_bitstring_list(list, expected_size)
+       when is_list(list) and is_integer(expected_size) do
+    with true <- length(list) == expected_size,
+         {:ok, bits} <- decode_bitstring_items(list) do
+      {:ok, List.to_tuple(bits)}
+    else
+      false -> {:error, {:bitstring_size_mismatch, expected_size, length(list)}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp decode_bitstring_items(list) do
+    case Enum.reduce_while(list, [], fn item, acc ->
+           case decode_bitstring_item(item) do
+             {:ok, bit} -> {:cont, [bit | acc]}
+             :error -> {:halt, :error}
+           end
+         end) do
+      :error -> {:error, :invalid_bitstring}
+      bits -> {:ok, Enum.reverse(bits)}
+    end
+  end
+
+  defp decode_bitstring_item(true), do: {:ok, true}
+  defp decode_bitstring_item(false), do: {:ok, false}
+  defp decode_bitstring_item(1), do: {:ok, true}
+  defp decode_bitstring_item(0), do: {:ok, false}
+  defp decode_bitstring_item("true"), do: {:ok, true}
+  defp decode_bitstring_item("false"), do: {:ok, false}
+  defp decode_bitstring_item("1"), do: {:ok, true}
+  defp decode_bitstring_item("0"), do: {:ok, false}
+  defp decode_bitstring_item(_item), do: :error
+
+  defp decode_ip_tuple_list(list, template)
        when is_list(list) and is_tuple(template) and tuple_size(template) in [4, 8] do
     with true <- length(list) == tuple_size(template),
          true <- Enum.all?(list, &is_integer/1) do
@@ -765,8 +849,6 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
       _other -> {:error, :invalid_ip}
     end
   end
-
-  defp decode(_value, _template), do: {:error, :invalid_json_value}
 
   defp decode_struct_fields(map, %_map{} = template) when is_map(map) do
     fields = Map.from_struct(template)

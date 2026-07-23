@@ -345,13 +345,13 @@ defmodule BacViewWeb.ObjectTable do
               </td>
               <td
                 class={[
-                  "bac-mono",
+                  "bac-mono max-w-[12rem] truncate",
                   writable?(obj) && "bac-cell-writable"
                 ]}
                 phx-click={if writable?(obj), do: "open_write_modal"}
                 phx-value-type={if writable?(obj), do: obj.type}
                 phx-value-instance={if writable?(obj), do: obj.instance}
-                title={if writable?(obj), do: t(@locale, @locale_version, "Klicken zum Schreiben")}
+                title={present_value_title(obj, writable?(obj), @locale, @locale_version)}
               >
                 {present_value_label(obj)}
               </td>
@@ -636,6 +636,19 @@ defmodule BacViewWeb.ObjectTable do
   end
 
   defp present_value_label(_obj), do: "-"
+
+  defp present_value_title(obj, writable?, locale, locale_version) when is_map(obj) do
+    label = present_value_label(obj)
+
+    if writable? do
+      write_hint = t(locale, locale_version, "Klicken zum Schreiben")
+      "#{label} — #{write_hint}"
+    else
+      label
+    end
+  end
+
+  defp present_value_title(_obj, _writable?, _locale, _locale_version), do: nil
 
   defp selected?(keys, obj),
     do: MapSet.member?(keys, {obj.type, obj.instance})

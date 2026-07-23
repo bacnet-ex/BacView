@@ -49,6 +49,18 @@ defmodule BacView.BACnet.Protocol.PropertyDisplayTest do
     assert Enum.find(display.items, &(&1.key == 1)).formatted == "-"
   end
 
+  test "formats binary priority array slots with inactive/active text" do
+    pa = %PriorityArray{priority_8: true, priority_16: false}
+    object = %{type: :binary_value, inactive_text: "Closed", active_text: "Open"}
+    display = PropertyDisplay.build(pa, object: object)
+
+    assert display.kind == :priority_array
+    assert display.formatted == "Open (P8)"
+    assert Enum.find(display.items, &(&1.key == 8)).formatted == "Open"
+    assert Enum.find(display.items, &(&1.key == 16)).formatted == "Closed"
+    assert Enum.find(display.items, &(&1.key == 1)).formatted == "-"
+  end
+
   test "expands limit enable for writing" do
     enable = %LimitEnable{low_limit_enable: true, high_limit_enable: false}
     display = PropertyDisplay.build(enable)

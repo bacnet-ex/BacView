@@ -12,13 +12,17 @@ defmodule BacViewWeb.DeviceScanRecovery do
 
     scan_retrying = Map.get(assigns, :scan_retrying, %{})
 
+    value_bulk? = bulk_retry_available?(scan_errors, :value)
+    all_bulk? = bulk_retry_available?(scan_errors, true)
+
     assigns =
       assigns
       |> assign(:scan_errors, scan_errors)
       |> assign(:scan_retrying, scan_retrying)
       |> assign(:scan_recovery_open, Map.get(assigns, :scan_recovery_open, false))
-      |> assign(:value_bulk_available?, bulk_retry_available?(scan_errors, :value))
-      |> assign(:all_bulk_available?, bulk_retry_available?(scan_errors, true))
+      |> assign(:value_bulk_available?, value_bulk?)
+      |> assign(:all_bulk_available?, all_bulk?)
+      |> assign(:any_retry_available?, value_bulk? or all_bulk?)
       |> assign(:any_retrying?, scan_retry_in_progress?(scan_retrying))
 
     ~H"""
@@ -39,11 +43,18 @@ defmodule BacViewWeb.DeviceScanRecovery do
           )}
         </span>
       </summary>
-      <p class="bac-collapsible-content text-xs bac-text-muted mt-2">
+      <p :if={@any_retry_available?} class="bac-collapsible-content text-xs bac-text-muted mt-2">
         {t(
           @locale,
           @locale_version,
           "Einige Objekte haben ungültige BACnet-Werte. Sie können sie mit reduzierter Validierung erneut lesen."
+        )}
+      </p>
+      <p :if={!@any_retry_available?} class="bac-collapsible-content text-xs bac-text-muted mt-2">
+        {t(
+          @locale,
+          @locale_version,
+          "Diese Objekte konnten nicht gelesen werden. Die Fehler sind unten aufgelistet."
         )}
       </p>
       <div

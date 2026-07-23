@@ -280,8 +280,20 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("global_keydown", %{"key" => key}, socket) do
-    BacViewWeb.Shortcuts.handle(key, socket, refresh: :scan_network)
+  def handle_event("global_keydown", params, socket) do
+    cond do
+      BacViewWeb.Shortcuts.ignore_global_shortcut?(params, socket.assigns) ->
+        {:noreply, socket}
+
+      BacViewWeb.Shortcuts.escape_key?(params) ->
+        BacViewWeb.Shortcuts.apply_escape_close(socket, fn event, sock ->
+          handle_event(event, %{}, sock)
+        end)
+
+      true ->
+        key = Map.get(params, "key", "")
+        BacViewWeb.Shortcuts.handle(key, socket, refresh: :scan_network)
+    end
   end
 
   @impl true

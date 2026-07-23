@@ -60,6 +60,9 @@ msgstr "%{count} active alarms"
 msgid "%{count} ausgewählt"
 msgstr "%{count} selected"
 
+msgid "%{count} ausgewählte Objekt(e) sind nicht commandable und werden übersprungen."
+msgstr "%{count} selected object(s) are not commandable and will be skipped."
+
 msgid "%{count} unbekannte Eigenschaften"
 msgstr "%{count} unknown properties"
 
@@ -210,6 +213,12 @@ msgstr "As hex"
 msgid "Als Text"
 msgstr "As text"
 
+msgid "Andere Priorität wählen und zurücksetzen"
+msgstr "Choose another priority and reset"
+
+msgid "Andere Priorität…"
+msgstr "Other priority…"
+
 msgid "Ansicht"
 msgstr "View"
 
@@ -254,6 +263,12 @@ msgstr "BACnet MS/TP"
 
 msgid "BACnet Netzwerk-Explorer"
 msgstr "BACnet Network Explorer"
+
+msgid "BACnet-Dekodierung fehlgeschlagen: %{detail}"
+msgstr "BACnet decoding failed: %{detail}"
+
+msgid "BACnet-Kodierung fehlgeschlagen: %{detail}"
+msgstr "BACnet encoding failed: %{detail}"
 
 msgid "BACnet-Objekte scannen…"
 msgstr "Scanning BACnet objects…"
@@ -318,8 +333,17 @@ msgstr "Binary file - content cannot be displayed as text."
 msgid "Bis"
 msgstr "To"
 
+msgid "Bits als 0/1 …"
+msgstr "Bits as 0/1 …"
+
+msgid "Bitstring-Länge: %{expected} Bits erwartet (aktuell: %{actual})"
+msgstr "Bitstring length: %{expected} bits expected (got: %{actual})"
+
 msgid "Bitstring-Änderung"
 msgstr "Bitstring change"
+
+msgid "Bitstring: Bits als 0/1 (z. B. 10110), optional mit Leerzeichen. Länge muss %{count} betragen."
+msgstr "Bitstring: bits as 0/1 (e.g. 10110), optional spaces. Length must be %{count}."
 
 msgid "Bitte eine Schnittstelle auswählen."
 msgstr "Please select an interface."
@@ -468,6 +492,9 @@ msgstr "The request contains invalid parameters."
 msgid "Die Anfrage war für das Gerät zu gross."
 msgstr "The request was too large for the device."
 
+msgid "Die Eigenschaft ist dem Gerät nicht bekannt (%{property})."
+msgstr "The property is unknown to the device (%{property})."
+
 msgid "Die Eigenschaft ist dem Gerät nicht bekannt."
 msgstr "The property is unknown to the device."
 
@@ -486,11 +513,17 @@ msgstr "This property does not support COV notifications."
 msgid "Diese Hilfe ein-/ausblenden"
 msgstr "Toggle this help"
 
+msgid "Diese Objekte konnten nicht gelesen werden. Die Fehler sind unten aufgelistet."
+msgstr "These objects could not be read. The errors are listed below."
+
 msgid "Diese Objekttypen sind dem Scanner nicht bekannt und wurden nicht gelesen."
 msgstr "These object types are unknown to the scanner and were not read."
 
 msgid "Diese Änderungen erfordern einen Neustart des BACnet-Stacks. Aktive COV-Abonnements werden neu aufgebaut."
 msgstr "These changes require restarting the BACnet stack. Active COV subscriptions will be re-established."
+
+msgid "Dieser Objekttyp wird nicht unterstützt."
+msgstr "This object type is not supported."
 
 msgid "Dieser Ordner ist leer."
 msgstr "This folder is empty."
@@ -558,6 +591,9 @@ msgstr "Property value does not match the BACnet specification (%{property})."
 msgid "Eigenschaftswert hat einen ungültigen BACnet-Datentyp (%{property})."
 msgstr "Property value has an invalid BACnet data type (%{property})."
 
+msgid "Eigenschaftswert ist ungültig oder nicht dekodierbar (%{property})."
+msgstr "Property value is invalid or not decodable (%{property})."
+
 msgid "Ein Parameter liegt ausserhalb des erlaubten Bereichs."
 msgstr "A parameter is outside the allowed range."
 
@@ -605,6 +641,9 @@ msgstr "Failed to fetch events: %{detail}"
 
 msgid "Ereignisse aktualisiert."
 msgstr "Events updated."
+
+msgid "Erforderliche Eigenschaft fehlt (%{property})."
+msgstr "Required property is missing (%{property})."
 
 msgid "Erlernt"
 msgstr "Learned"
@@ -753,6 +792,9 @@ msgstr "Written value differs from the read present value: %{value}"
 msgid "Geschriebener Wert weicht vom gelesenen Wert ab: %{value}"
 msgstr "Written value differs from the read value: %{value}"
 
+msgid "Geschützte Eigenschaft kann nicht geschrieben werden (%{property})."
+msgstr "Protected property cannot be written (%{property})."
+
 msgid "Grenzwert"
 msgstr "Limit"
 
@@ -840,6 +882,9 @@ msgstr "No file available to download."
 msgid "Keine Eigenschaften verfügbar."
 msgstr "No properties available."
 
+msgid "Keine Encode-Funktion für Typ %{type}."
+msgstr "No encode function for type %{type}."
+
 msgid "Keine Ereignisse. Klicken Sie auf „Ereignisse abrufen“, um GetAlarmSummary abzufragen."
 msgstr "No events. Click \"Fetch events\" to query GetAlarmSummary."
 
@@ -863,6 +908,9 @@ msgstr "No objects found to re-read."
 
 msgid "Keine Objekttypen verfügbar."
 msgstr "No object types available."
+
+msgid "Keine Parse-Funktion für Typ %{type}."
+msgstr "No parse function for type %{type}."
 
 msgid "Keine Strukturansichten gefunden. Das Gerät verwendet eine flache Objektliste."
 msgstr "No structured views found. The device uses a flat object list."
@@ -890,6 +938,9 @@ msgstr "No active COV subscriptions."
 
 msgid "Keine bearbeitbaren Felder für diesen Wert. Wechseln Sie zu JSON."
 msgstr "No editable fields for this value. Switch to JSON."
+
+msgid "Keine commandable Objekte in der Auswahl."
+msgstr "No commandable objects in the selection."
 
 msgid "Keine exportierbaren Objekte geladen."
 msgstr "No exportable objects loaded."
@@ -963,6 +1014,9 @@ msgstr "Live"
 msgid "Log-Puffer via ReadRange"
 msgstr "Log buffer via ReadRange"
 
+msgid "Lokale BACnet-Kodierung des Werts fehlgeschlagen: %{detail}"
+msgstr "Local BACnet encoding of the value failed: %{detail}"
+
 msgid "Lokale Zeit"
 msgstr "Local time"
 
@@ -989,6 +1043,9 @@ msgstr "Minimum %{min} ms"
 
 msgid "Mit den gewählten Aufteilungsregeln konnte keine Hierarchie erstellt werden."
 msgstr "No hierarchy could be built with the selected split rules."
+
+msgid "NULL an Present Value schreiben und Prioritäts-Slot freigeben für %{count} commandable Objekt(e)."
+msgstr "Write NULL to present value and release the priority slot for %{count} commandable object(s)."
 
 msgid "Nach Status filtern"
 msgstr "Filter by status"
@@ -1194,11 +1251,29 @@ msgstr "Write present value"
 msgid "Priorität"
 msgstr "Priority"
 
+msgid "Priorität %{priority} bei ausgewählten commandable Objekten zurücksetzen (NULL)"
+msgstr "Reset priority %{priority} on selected commandable objects (NULL)"
+
 msgid "Priorität %{priority} zurückgesetzt (null)."
 msgstr "Priority %{priority} reset (null)."
 
+msgid "Priorität %{priority} zurücksetzen"
+msgstr "Reset priority %{priority}"
+
+msgid "Priorität %{priority}: %{ok} zurückgesetzt, %{skipped} übersprungen, %{failed} fehlgeschlagen."
+msgstr "Priority %{priority}: %{ok} reset, %{skipped} skipped, %{failed} failed."
+
+msgid "Priorität wählen"
+msgstr "Choose priority"
+
+msgid "Priorität zurücksetzen"
+msgstr "Reset priority"
+
 msgid "Priorität zurücksetzen fehlgeschlagen."
 msgstr "Failed to reset priority."
+
+msgid "Priorität zurücksetzen: %{done} / %{total}"
+msgstr "Resetting priority: %{done} / %{total}"
 
 msgid "Projektname"
 msgstr "Project name"
@@ -1443,17 +1518,29 @@ msgstr "Unknown properties"
 msgid "Unbekannte JSON-Felder: %{keys}"
 msgstr "Unknown JSON fields: %{keys}"
 
+msgid "Unbekannter Datentyp für Eigenschaft (%{property})."
+msgstr "Unknown data type for property (%{property})."
+
 msgid "Unbekannter Transport."
 msgstr "Unknown transport."
 
 msgid "Unbenanntes Objekt"
 msgstr "Unnamed object"
 
+msgid "Unerwarteter Fehler (%{code}): %{detail}"
+msgstr "Unexpected error (%{code}): %{detail}"
+
+msgid "Unerwarteter Fehler: %{detail}"
+msgstr "Unexpected error: %{detail}"
+
 msgid "Ungültige Anfrageparameter."
 msgstr "Invalid request parameters."
 
 msgid "Ungültige Aufteilungsregeln für die Objektnamen-Hierarchie."
 msgstr "Invalid split rules for the object-name hierarchy."
+
+msgid "Ungültige BACnet-Kodierung."
+msgstr "Invalid BACnet encoding."
 
 msgid "Ungültige Geräte-Instanz (0–4194303)."
 msgstr "Invalid device instance (0–4194303)."
@@ -1469,6 +1556,12 @@ msgstr "Invalid IP address."
 
 msgid "Ungültige Objekt-ID."
 msgstr "Invalid object ID."
+
+msgid "Ungültige Parameter für die BACnet-Kodierung des Werts."
+msgstr "Invalid parameters for BACnet encoding of the value."
+
+msgid "Ungültige Priorität."
+msgstr "Invalid priority."
 
 msgid "Ungültige Stack-Einstellungen."
 msgstr "Invalid stack settings."
@@ -1491,6 +1584,9 @@ msgstr "Invalid field path."
 msgid "Ungültiger JSON-Wert."
 msgstr "Invalid JSON value."
 
+msgid "Ungültiger Textwert für Eigenschaft (%{property})."
+msgstr "Invalid text value for property (%{property})."
+
 msgid "Ungültiger Wert für den geplanten Datentyp."
 msgstr "Invalid value for the scheduled data type."
 
@@ -1505,6 +1601,9 @@ msgstr "Invalid encoding."
 
 msgid "Ungültiges JSON."
 msgstr "Invalid JSON."
+
+msgid "Ungültiges Objektmodul im BACnet-Stack."
+msgstr "Invalid object module in the BACnet stack."
 
 msgid "Ungültiges Timeout."
 msgstr "Invalid timeout."
@@ -1665,6 +1764,12 @@ msgstr "Back to hierarchy"
 msgid "Zurück zur Objektliste"
 msgstr "Back to object list"
 
+msgid "Zurücksetzen"
+msgstr "Reset"
+
+msgid "Zusammenhängende optionale Eigenschaft fehlt (%{property})."
+msgstr "Related optional property is missing (%{property})."
+
 msgid "Zustand"
 msgstr "State"
 
@@ -1680,6 +1785,9 @@ msgstr "active"
 msgid "close"
 msgstr "close"
 
+msgid "erwartet Bitstring (0/1)"
+msgstr "expected bitstring (0/1)"
+
 msgid "erwartet IPv4- oder IPv6-Adresse"
 msgstr "expected IPv4 or IPv6 address"
 
@@ -1691,6 +1799,9 @@ msgstr "expected true/false"
 
 msgid "inaktiv"
 msgstr "inactive"
+
+msgid "keine passende Funktion %{mfa}"
+msgstr "no matching function %{mfa}"
 
 msgid "true oder false"
 msgstr "true or false"

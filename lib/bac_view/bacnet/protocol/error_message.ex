@@ -165,6 +165,98 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
         property: label(property)
       )
 
+  def format_reason({:invalid_property_value, {property, _value}}),
+    do:
+      gettext("Eigenschaftswert ist ungültig oder nicht dekodierbar (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:invalid_property_value, property}),
+    do:
+      gettext("Eigenschaftswert ist ungültig oder nicht dekodierbar (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:missing_optional_property, property}),
+    do:
+      gettext("Zusammenhängende optionale Eigenschaft fehlt (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:missing_property, property}),
+    do:
+      gettext("Erforderliche Eigenschaft fehlt (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:unknown_type_for_property, property}),
+    do:
+      gettext("Unbekannter Datentyp für Eigenschaft (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:unknown_property, property}),
+    do:
+      gettext("Die Eigenschaft ist dem Gerät nicht bekannt (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:protected_property, property}),
+    do:
+      gettext("Geschützte Eigenschaft kann nicht geschrieben werden (%{property}).",
+        property: label(property)
+      )
+
+  def format_reason({:invalid_string_value, property}),
+    do:
+      gettext("Ungültiger Textwert für Eigenschaft (%{property}).",
+        property: label(property)
+      )
+
+  # bacstack ObjectsUtility: rescue around cast_value_to_encoding/type
+  def format_reason({:exception_during_casting, exception, _stacktrace}),
+    do: format_codec_exception(:casting, exception)
+
+  def format_reason({:exception_during_encoding, exception, _stacktrace}),
+    do: format_codec_exception(:encoding, exception)
+
+  def format_reason({:exception_during_decoding, exception, _stacktrace}),
+    do: format_codec_exception(:decoding, exception)
+
+  # Same shapes without stacktrace (defensive)
+  def format_reason({:exception_during_casting, exception}),
+    do: format_codec_exception(:casting, exception)
+
+  def format_reason({:exception_during_encoding, exception}),
+    do: format_codec_exception(:encoding, exception)
+
+  def format_reason({:exception_during_decoding, exception}),
+    do: format_codec_exception(:decoding, exception)
+
+  def format_reason({:missing_encode_fun, module}),
+    do:
+      gettext("Keine Encode-Funktion für Typ %{type}.",
+        type: module_label(module)
+      )
+
+  def format_reason({:missing_parse_fun, module}),
+    do:
+      gettext("Keine Parse-Funktion für Typ %{type}.",
+        type: module_label(module)
+      )
+
+  def format_reason(:invalid_params),
+    do: gettext("Ungültige Parameter für die BACnet-Kodierung des Werts.")
+
+  def format_reason(:invalid_encoding),
+    do: gettext("Ungültige BACnet-Kodierung.")
+
+  def format_reason(:unsupported_object_type),
+    do: gettext("Dieser Objekttyp wird nicht unterstützt.")
+
+  def format_reason(:invalid_object_module),
+    do: gettext("Ungültiges Objektmodul im BACnet-Stack.")
+
   def format_reason(:device_not_found), do: gettext("Gerät nicht gefunden.")
   def format_reason(:device_not_loaded), do: gettext("Gerätedaten sind noch nicht geladen.")
 
@@ -270,13 +362,73 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(%{__exception__: true} = exception),
     do: format_exception_message(exception)
 
-  def format_reason(_reason),
-    do: gettext("Ein unerwarteter Fehler ist aufgetreten.")
+  # Tagged tuple we do not have a dedicated clause for — still show the tag.
+  def format_reason({tag, _payload} = reason) when is_atom(tag) do
+    gettext("Unerwarteter Fehler (%{code}): %{detail}",
+      code: label(tag),
+      detail: summarize_unknown(reason)
+    )
+  end
+
+  def format_reason(reason),
+    do:
+      gettext("Unerwarteter Fehler: %{detail}",
+        detail: summarize_unknown(reason)
+      )
+
+  defp format_codec_exception(:casting, exception),
+    do:
+      gettext("Lokale BACnet-Kodierung des Werts fehlgeschlagen: %{detail}",
+        detail: format_exception_message(exception)
+      )
+
+  defp format_codec_exception(:encoding, exception),
+    do:
+      gettext("BACnet-Kodierung fehlgeschlagen: %{detail}",
+        detail: format_exception_message(exception)
+      )
+
+  defp format_codec_exception(:decoding, exception),
+    do:
+      gettext("BACnet-Dekodierung fehlgeschlagen: %{detail}",
+        detail: format_exception_message(exception)
+      )
 
   defp format_exception_message(%RuntimeError{message: message}),
     do: format_runtime_error_message(message)
 
-  defp format_exception_message(exception), do: Exception.message(exception)
+  defp format_exception_message(%FunctionClauseError{} = exception) do
+    # Prefer MFA when present; fall back to Exception.message/1.
+    case exception do
+      %{module: mod, function: fun, arity: arity}
+      when is_atom(mod) and is_atom(fun) and is_integer(arity) ->
+        gettext("keine passende Funktion %{mfa}",
+          mfa: Exception.format_mfa(mod, fun, arity)
+        )
+
+      _function_clause ->
+        Exception.message(exception)
+    end
+  end
+
+  defp format_exception_message(exception) when is_exception(exception),
+    do: Exception.message(exception)
+
+  defp format_exception_message(other), do: summarize_unknown(other)
+
+  defp module_label(module) when is_atom(module) do
+    module
+    |> Atom.to_string()
+    |> String.replace_prefix("Elixir.", "")
+  end
+
+  defp module_label(module), do: to_string(module)
+
+  defp summarize_unknown(reason) do
+    reason
+    |> inspect(limit: 12, printable_limit: 200)
+    |> String.slice(0, 240)
+  end
 
   defp format_runtime_error_message("Unable to find ethernet interface " <> rest) do
     case Regex.run(~r/\(with broadcast flag\) called (.+)$/, rest) do

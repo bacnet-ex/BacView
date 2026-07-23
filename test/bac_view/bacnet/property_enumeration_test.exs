@@ -42,6 +42,56 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
       assert enriched.value_formatted == "Normal (0)"
     end
 
+    test "attaches dropdown options for in_list property types" do
+      bac_type =
+        {:in_list, [:confirmed_cov_if_possible, :polling, :unconfirmed_cov_if_possible]}
+
+      prop = %{
+        property: :subscription_type,
+        value: :polling,
+        value_display: %{kind: :scalar, formatted: "polling", fields: [], items: []},
+        value_formatted: "polling",
+        type: "ENUMERATED",
+        bac_type: bac_type
+      }
+
+      enriched = PropertyEnumeration.enrich_property(prop, bac_type)
+
+      refute Map.has_key?(enriched, :enum_type)
+      assert enriched.type == "ENUMERATED"
+      assert PropertyEnumeration.dropdown?(enriched)
+
+      assert Enum.map(enriched.enum_options, & &1.value) == [
+               :confirmed_cov_if_possible,
+               :polling,
+               :unconfirmed_cov_if_possible
+             ]
+
+      assert enriched.value_formatted == "polling"
+      assert Enum.find(enriched.enum_options, &(&1.value == :polling)).label == "polling"
+    end
+
+    test "does not attach dropdown options when in_list is not all atoms" do
+      bac_type = {:in_list, [:polling, 1, "mixed"]}
+
+      prop = %{
+        property: :custom_prop,
+        value: :polling,
+        value_display: %{kind: :scalar, formatted: "polling", fields: [], items: []},
+        value_formatted: "polling",
+        type: "ENUMERATED",
+        bac_type: bac_type
+      }
+
+      enriched = PropertyEnumeration.enrich_property(prop, bac_type)
+
+      refute PropertyEnumeration.in_list_type?(bac_type)
+      refute PropertyEnumeration.atom_in_list?(elem(bac_type, 1))
+      assert PropertyEnumeration.in_list_options(elem(bac_type, 1)) == []
+      assert enriched.enum_options in [nil, []]
+      refute PropertyEnumeration.dropdown?(enriched)
+    end
+
     test "leaves non-constant properties without enum metadata" do
       prop = %{property: :present_value, type: "REAL"}
 
@@ -94,6 +144,32 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
     end
   end
 
+  describe "parse_option_value/2" do
+    test "accepts in_list atoms from select params" do
+      options =
+        PropertyEnumeration.in_list_options([
+          :confirmed_cov_if_possible,
+          :polling,
+          :unconfirmed_cov_if_possible
+        ])
+
+      assert PropertyEnumeration.parse_option_value("polling", options) == {:ok, :polling}
+    end
+
+    test "accepts multistate integer options" do
+      options = [%{value: 1, label: "Off"}, %{value: 2, label: "On"}]
+
+      assert PropertyEnumeration.parse_option_value("2", options) == {:ok, 2}
+    end
+
+    test "rejects values outside the option list" do
+      options = PropertyEnumeration.in_list_options([:polling, :confirmed_cov_if_possible])
+
+      assert PropertyEnumeration.parse_option_value("not_an_option", options) ==
+               {:error, :invalid_enum}
+    end
+  end
+
   describe "integration with object type map" do
     test "analog input event_state is a constant enumeration" do
       {:ok, object} = AnalogInput.create(1, "AI-1", %{})
@@ -101,6 +177,17 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
 
       assert PropertyEnumeration.constant_type?(type_map.event_state)
       assert PropertyEnumeration.enum_type(type_map.event_state) == :event_state
+    end
+
+    test "event enrollment subscription_type is an in_list enumeration" do
+      type_map = BACnet.Protocol.ObjectTypes.EventEnrollment.get_properties_type_map()
+      bac_type = type_map.subscription_type
+
+      assert PropertyEnumeration.in_list_type?(bac_type)
+      refute PropertyEnumeration.constant_type?(bac_type)
+
+      options = PropertyEnumeration.in_list_options(elem(bac_type, 1))
+      assert Enum.any?(options, &(&1.value == :polling))
     end
   end
 end

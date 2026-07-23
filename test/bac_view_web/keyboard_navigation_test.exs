@@ -99,4 +99,80 @@ defmodule BacViewWeb.KeyboardNavigationTest do
 
     assert Shortcuts.device_action(c, assigns) == :none
   end
+
+  test "blocking_modal_open? detects write and other modal assigns" do
+    refute Shortcuts.blocking_modal_open?(%{})
+    refute Shortcuts.blocking_modal_open?(%{write_property_modal: nil, show_shortcuts: false})
+
+    assert Shortcuts.blocking_modal_open?(%{write_property_modal: %{property: :present_value}})
+    assert Shortcuts.blocking_modal_open?(%{write_modal: %{type: :analog_value}})
+    assert Shortcuts.blocking_modal_open?(%{reset_priority_modal: %{mode: :confirm, priority: 8}})
+    assert Shortcuts.blocking_modal_open?(%{show_shortcuts: true})
+    assert Shortcuts.blocking_modal_open?(%{log_viewer_open: true})
+    assert Shortcuts.blocking_modal_open?(%{device_service_modal: %{type: :dcc}})
+  end
+
+  test "ignore_global_shortcut? blocks non-Escape keys when a modal is open" do
+    open = %{write_property_modal: %{property: :present_value}}
+    closed = %{write_property_modal: nil}
+
+    digit = %{"key" => "1", "code" => "Digit1", "shift" => false}
+    letter = %{"key" => "r", "code" => "KeyR", "shift" => false}
+    escape = %{"key" => "Escape", "code" => "Escape", "shift" => false}
+
+    assert Shortcuts.ignore_global_shortcut?(digit, open)
+    assert Shortcuts.ignore_global_shortcut?(letter, open)
+    refute Shortcuts.ignore_global_shortcut?(escape, open)
+
+    refute Shortcuts.ignore_global_shortcut?(digit, closed)
+    refute Shortcuts.ignore_global_shortcut?(letter, closed)
+    refute Shortcuts.ignore_global_shortcut?(escape, closed)
+  end
+
+  test "escape_key? matches Escape only" do
+    assert Shortcuts.escape_key?(%{"key" => "Escape"})
+    assert Shortcuts.escape_key?("Escape")
+    refute Shortcuts.escape_key?(%{"key" => "1"})
+    refute Shortcuts.escape_key?("r")
+  end
+
+  test "escape_close_action prefers write modals over shortcuts help" do
+    assert Shortcuts.escape_close_action(%{
+             write_property_modal: %{property: :present_value},
+             show_shortcuts: true
+           }) == {:event, "close_write_property_modal"}
+
+    assert Shortcuts.escape_close_action(%{write_modal: %{type: :analog_value}}) ==
+             {:event, "close_write_modal"}
+
+    assert Shortcuts.escape_close_action(%{log_viewer_open: true}) == {:event, "close_log_viewer"}
+
+    assert Shortcuts.escape_close_action(%{show_shortcuts: true}) == :close_shortcuts
+    assert Shortcuts.escape_close_action(%{}) == :none
+  end
+
+  test "apply_escape_close dispatches LiveView close events" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> Phoenix.Component.assign(:write_property_modal, %{property: :present_value})
+      |> Phoenix.Component.assign(:show_shortcuts, false)
+
+    assert {:noreply, closed} =
+             Shortcuts.apply_escape_close(socket, fn "close_write_property_modal", sock ->
+               {:noreply, Phoenix.Component.assign(sock, :write_property_modal, nil)}
+             end)
+
+    assert closed.assigns.write_property_modal == nil
+  end
+
+  test "apply_escape_close closes shortcuts help without dispatch" do
+    socket = Phoenix.Component.assign(%Phoenix.LiveView.Socket{}, :show_shortcuts, true)
+
+    assert {:noreply, closed} =
+             Shortcuts.apply_escape_close(socket, fn _event, _sock ->
+               flunk("should not dispatch for shortcuts help")
+             end)
+
+    assert closed.assigns.show_shortcuts == false
+  end
 end

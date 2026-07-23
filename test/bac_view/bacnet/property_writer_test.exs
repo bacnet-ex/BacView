@@ -13,6 +13,19 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
       assert PropertyWriter.parse_input("false", %{type: "BOOLEAN"}) == {:ok, false}
     end
 
+    test "parses bitstring present values" do
+      current = {true, false, true, false}
+
+      assert PropertyWriter.parse_input("1100", %{type: "BITSTRING", value: current}) ==
+               {:ok, {true, true, false, false}}
+
+      assert PropertyWriter.parse_input("1010", %{value: current}) ==
+               {:ok, {true, false, true, false}}
+
+      assert PropertyWriter.parse_input("10", %{value: current}) ==
+               {:error, {:bitstring_size_mismatch, 4, 2}}
+    end
+
     test "accepts nil reset aliases" do
       for alias <- ["null", "nil", "reset", "relinquish", "-"] do
         assert PropertyWriter.parse_input(alias, %{type: "REAL"}) == {:ok, nil}
@@ -138,6 +151,78 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
       [enriched] = PropertyWriter.enrich_properties(props, object)
       refute enriched.writable
     end
+
+    test "formats binary present_value with inactive/active text" do
+      object = %{
+        type: :binary_value,
+        inactive_text: "Closed",
+        active_text: "Open"
+      }
+
+      props = [
+        %{
+          property: :present_value,
+          value: true,
+          value_display: %{kind: :scalar, formatted: "true", fields: [], items: []},
+          value_formatted: "true",
+          writable: false
+        }
+      ]
+
+      [enriched] = PropertyWriter.enrich_properties(props, object)
+      assert enriched.value_formatted == "Open"
+      assert enriched.value_display.formatted == "Open"
+    end
+
+    test "formats binary relinquish_default and priority_array with texts from properties" do
+      object = %{type: :binary_output, commandable: true}
+
+      pa = %BACnet.Protocol.PriorityArray{priority_8: false}
+
+      props = [
+        %{
+          property: :inactive_text,
+          value: "Down",
+          value_display: %{kind: :scalar, formatted: "Down", fields: [], items: []},
+          value_formatted: "Down",
+          writable: false
+        },
+        %{
+          property: :active_text,
+          value: "Up",
+          value_display: %{kind: :scalar, formatted: "Up", fields: [], items: []},
+          value_formatted: "Up",
+          writable: false
+        },
+        %{
+          property: :relinquish_default,
+          value: true,
+          value_display: %{kind: :scalar, formatted: "true", fields: [], items: []},
+          value_formatted: "true",
+          writable: true
+        },
+        %{
+          property: :priority_array,
+          value: pa,
+          value_display: %{
+            kind: :priority_array,
+            formatted: "false (P8)",
+            fields: [],
+            items: []
+          },
+          value_formatted: "false (P8)",
+          writable: false
+        }
+      ]
+
+      enriched = PropertyWriter.enrich_properties(props, object)
+      rd = Enum.find(enriched, &(&1.property == :relinquish_default))
+      pa_prop = Enum.find(enriched, &(&1.property == :priority_array))
+
+      assert rd.value_formatted == "Up"
+      assert pa_prop.value_formatted == "Down (P8)"
+      assert Enum.find(pa_prop.value_display.items, &(&1.key == 8)).formatted == "Down"
+    end
   end
 
   describe "parse_write_params/2" do
@@ -177,6 +262,41 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
 
       assert PropertyWriter.parse_write_params(%{"value" => "bogus"}, prop) ==
                {:error, :invalid_enum}
+    end
+
+    test "parses in_list properties from select params" do
+      prop = %{
+        property: :subscription_type,
+        bac_type:
+          {:in_list, [:confirmed_cov_if_possible, :polling, :unconfirmed_cov_if_possible]},
+        type: "ENUMERATED",
+        value: :polling,
+        enum_options:
+          BacView.BACnet.Protocol.PropertyEnumeration.in_list_options([
+            :confirmed_cov_if_possible,
+            :polling,
+            :unconfirmed_cov_if_possible
+          ]),
+        value_display: %{kind: :scalar, formatted: "polling"}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "confirmed_cov_if_possible"}, prop) ==
+               {:ok, :confirmed_cov_if_possible}
+
+      assert PropertyWriter.parse_write_params(%{"value" => "bogus"}, prop) ==
+               {:error, :invalid_enum}
+    end
+
+    test "parses multistate options as integers via enum_options" do
+      prop = %{
+        property: :present_value,
+        type: "INTEGER",
+        value: 1,
+        enum_options: [%{value: 1, label: "Off"}, %{value: 2, label: "On"}],
+        value_display: %{kind: :scalar, formatted: "1 (Off)"}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "2"}, prop) == {:ok, 2}
     end
 
     test "parses character string properties from text input" do
@@ -305,6 +425,12 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
 
       refute PropertyWriter.values_match?(written, read)
     end
+  end
+
+  test "prop_hint_from_object infers BITSTRING for boolean tuples" do
+    hint = PropertyWriter.prop_hint_from_object(%{present_value: {true, false, true}})
+    assert hint.type == "BITSTRING"
+    assert hint.value == {true, false, true}
   end
 
   test "prop_hint_from_object infers type from present value" do

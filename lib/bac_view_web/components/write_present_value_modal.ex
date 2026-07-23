@@ -3,6 +3,7 @@ defmodule BacViewWeb.WritePresentValueModal do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyFormatter
 
@@ -11,6 +12,8 @@ defmodule BacViewWeb.WritePresentValueModal do
   attr(:writing, :boolean, default: false)
 
   def modal(assigns) do
+    boolean_options = boolean_options(assigns.object)
+
     state_options =
       if MultistateState.multistate_object?(assigns.object) do
         MultistateState.state_options(assigns.object)
@@ -20,11 +23,13 @@ defmodule BacViewWeb.WritePresentValueModal do
 
     assigns =
       assigns
+      |> assign(:boolean_options, boolean_options)
+      |> assign(:boolean_dropdown?, boolean_options != [])
       |> assign(:state_options, state_options)
       |> assign(:state_dropdown?, state_options != [])
 
     ~H"""
-    <div id="write-present-value-modal" class="bac-modal-backdrop">
+    <div id="write-present-value-modal" class="bac-modal-backdrop" phx-hook="FocusFirstInput">
       <button
         type="button"
         class="bac-modal-overlay"
@@ -58,7 +63,12 @@ defmodule BacViewWeb.WritePresentValueModal do
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div class="bac-stat py-3">
               <p class="bac-stat-label">{t(@locale, @locale_version, "Aktueller Wert")}</p>
-              <p class="bac-stat-value bac-mono text-base">{@object.present_value_formatted}</p>
+              <p
+                class="bac-stat-value bac-mono text-base break-all"
+                title={@object.present_value_formatted}
+              >
+                {@object.present_value_formatted}
+              </p>
             </div>
             <div :if={commandable?(@object)} class="bac-stat py-3">
               <p class="bac-stat-label">{t(@locale, @locale_version, "Aktive Priorität")}</p>
@@ -100,18 +110,25 @@ defmodule BacViewWeb.WritePresentValueModal do
                 {t(@locale, @locale_version, "Neuer Wert")}
               </label>
               <select
-                :if={boolean_value?(@object)}
+                :if={@boolean_dropdown?}
                 id="modal-write-value"
                 name="value"
+                data-autofocus
                 class="bac-input bac-input-sm w-full"
               >
-                <option value="true" selected={@object.present_value == true}>true</option>
-                <option value="false" selected={@object.present_value == false}>false</option>
+                <option
+                  :for={opt <- @boolean_options}
+                  value={to_string(opt.value)}
+                  selected={selected_boolean_option?(@object, opt.value)}
+                >
+                  {opt.label}
+                </option>
               </select>
               <select
-                :if={!boolean_value?(@object) && @state_dropdown?}
+                :if={!@boolean_dropdown? && @state_dropdown?}
                 id="modal-write-value"
                 name="value"
+                data-autofocus
                 class="bac-input bac-input-sm w-full"
               >
                 <option
@@ -122,16 +139,26 @@ defmodule BacViewWeb.WritePresentValueModal do
                   {opt.label}
                 </option>
               </select>
-              <input
-                :if={!boolean_value?(@object) && !@state_dropdown?}
-                id="modal-write-value"
-                type="text"
-                name="value"
-                value={input_value(@object)}
-                placeholder={t(@locale, @locale_version, "Neuer Wert")}
-                class="bac-input bac-input-sm bac-mono w-full"
-                autocomplete="off"
-              />
+              <div :if={!@boolean_dropdown? && !@state_dropdown?} class="space-y-1">
+                <input
+                  id="modal-write-value"
+                  type="text"
+                  name="value"
+                  value={input_value(@object)}
+                  placeholder={write_value_placeholder(@object, @locale, @locale_version)}
+                  class="bac-input bac-input-sm bac-mono w-full"
+                  autocomplete="off"
+                  data-autofocus
+                />
+                <p :if={bitstring_present_value?(@object)} class="text-xs bac-text-faint">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "Bitstring: Bits als 0/1 (z. B. 10110), optional mit Leerzeichen. Länge muss %{count} betragen.",
+                    count: bitstring_size(@object)
+                  )}
+                </p>
+              </div>
             </div>
 
             <div class="flex flex-wrap items-center justify-end gap-2 pt-2">
@@ -174,8 +201,29 @@ defmodule BacViewWeb.WritePresentValueModal do
 
   defp active_priority_value_formatted(_object), do: nil
 
-  defp boolean_value?(object) when is_map(object), do: is_boolean(Map.get(object, :present_value))
-  defp boolean_value?(_boolean_value), do: false
+  defp boolean_options(object) when is_map(object) do
+    cond do
+      BinaryPV.binary_object?(object) ->
+        BinaryPV.state_options(object)
+
+      is_boolean(Map.get(object, :present_value)) ->
+        [
+          %{value: true, label: "true"},
+          %{value: false, label: "false"}
+        ]
+
+      true ->
+        []
+    end
+  end
+
+  defp boolean_options(_object), do: []
+
+  defp selected_boolean_option?(object, option_value) when is_map(object) do
+    BinaryPV.normalize_value(Map.get(object, :present_value)) == option_value
+  end
+
+  defp selected_boolean_option?(_object, _option_value), do: false
 
   defp selected_state_option?(%{present_value: value}, %{value: option_value}) do
     normalize_state_value(value) == option_value
@@ -195,4 +243,28 @@ defmodule BacViewWeb.WritePresentValueModal do
       %{property: :present_value}
     )
   end
+
+  defp write_value_placeholder(object, locale, locale_version) do
+    if bitstring_present_value?(object) do
+      t(locale, locale_version, "Bits als 0/1 …")
+    else
+      t(locale, locale_version, "Neuer Wert")
+    end
+  end
+
+  defp bitstring_present_value?(object) when is_map(object) do
+    PropertyFormatter.bitstring_value?(Map.get(object, :present_value))
+  end
+
+  defp bitstring_present_value?(_object), do: false
+
+  defp bitstring_size(object) when is_map(object) do
+    case Map.get(object, :present_value) do
+      value when is_tuple(value) -> tuple_size(value)
+      {:bitstring, value} when is_tuple(value) -> tuple_size(value)
+      _other -> 0
+    end
+  end
+
+  defp bitstring_size(_object), do: 0
 end

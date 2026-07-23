@@ -44,6 +44,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacViewWeb.ObjectSelectionBar
   alias BacViewWeb.ObjectTable
   alias BacViewWeb.ObjectTypeIcon
+  alias BacViewWeb.ResetPriorityModal
   alias BacViewWeb.StatusFlagsIcons
   alias BacViewWeb.SubscriptionSelectionBar
   alias BacViewWeb.SubscriptionsPanel
@@ -109,6 +110,9 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:cov_count, 0)
          |> assign(:bulk_subscribing, false)
          |> assign(:bulk_progress, %{done: 0, total: 0})
+         |> assign(:bulk_priority_resetting, false)
+         |> assign(:bulk_priority_reset_progress, %{done: 0, total: 0})
+         |> assign(:reset_priority_modal, nil)
          |> assign(:alarm_view, "active_alarms")
          |> assign(:events, [])
          |> assign(:notifications, [])
@@ -270,7 +274,10 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
-  def handle_info({:scan_retry_done, {:single, object_id, retry_key}, result}, socket) do
+  def handle_info(
+        {:scan_retry_done, {:single, object_id, _skip_mode, retry_key}, result},
+        socket
+      ) do
     socket = assign(socket, :scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
 
     case result do
@@ -426,6 +433,32 @@ defmodule BacViewWeb.DeviceLive do
      |> assign(:bulk_progress, %{done: 0, total: 0})
      |> refresh_cov_state()
      |> put_flash(:info, gt("Bulk-Abonnement abgeschlossen."))}
+  end
+
+  @impl true
+  def handle_info({:priority_reset_progress, done, total}, socket) do
+    {:noreply,
+     socket
+     |> assign(:bulk_priority_resetting, true)
+     |> assign(:bulk_priority_reset_progress, %{done: done, total: total})}
+  end
+
+  @impl true
+  def handle_info({:priority_reset_done, result}, socket) when is_map(result) do
+    socket =
+      result
+      |> Map.get(:updates, [])
+      |> Enum.reduce(socket, fn update, acc ->
+        apply_bulk_priority_reset_update(acc, update)
+      end)
+
+    {:noreply,
+     socket
+     |> assign(:bulk_priority_resetting, false)
+     |> assign(:bulk_priority_reset_progress, %{done: 0, total: 0})
+     |> assign(:reset_priority_modal, nil)
+     |> refresh_active_alarm_objects()
+     |> put_flash(:info, priority_reset_flash(result))}
   end
 
   @impl true
@@ -1067,6 +1100,40 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
+  def handle_event("open_reset_priority_confirm", _params, socket) do
+    {:noreply, open_reset_priority_modal(socket, :confirm)}
+  end
+
+  @impl true
+  def handle_event("open_reset_priority_choose", _params, socket) do
+    {:noreply, open_reset_priority_modal(socket, :choose)}
+  end
+
+  @impl true
+  def handle_event("close_reset_priority_modal", _params, socket) do
+    if socket.assigns.bulk_priority_resetting do
+      {:noreply, socket}
+    else
+      {:noreply, assign(socket, :reset_priority_modal, nil)}
+    end
+  end
+
+  @impl true
+  def handle_event("confirm_reset_selected_priority", params, socket) do
+    if socket.assigns.bulk_priority_resetting do
+      {:noreply, socket}
+    else
+      case resolve_reset_priority(params, socket) do
+        {:ok, priority} ->
+          {:noreply, start_bulk_priority_reset(socket, priority)}
+
+        :error ->
+          {:noreply, put_flash(socket, :error, gt("Ungültige Priorität."))}
+      end
+    end
+  end
+
+  @impl true
   def handle_event("subscribe_selected_cov", _params, socket) do
     device_id = socket.assigns.device_id
 
@@ -1439,85 +1506,17 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("global_keydown", params, socket) do
-    key = Map.get(params, "key", "")
-    code = Map.get(params, "code", "")
-    shift = Map.get(params, "shift", false)
-
     cond do
-      BacViewWeb.Shortcuts.go_up_pressed?(params) ->
-        {:noreply, push_navigate(socket, to: ~p"/")}
+      BacViewWeb.Shortcuts.ignore_global_shortcut?(params, socket.assigns) ->
+        {:noreply, socket}
 
-      shift && socket.assigns.tab == "alarms" &&
-          Map.has_key?(@alarm_sub_tabs, BacViewWeb.Shortcuts.digit_index(code)) ->
-        alarm_view = Map.fetch!(@alarm_sub_tabs, BacViewWeb.Shortcuts.digit_index(code))
-
-        {:noreply,
-         push_patch(
-           socket,
-           to:
-             device_tab_path(
-               socket.assigns.device_id,
-               "alarms",
-               Keyword.put(device_tab_opts(socket.assigns), :alarm_view, alarm_view)
-             )
-         )}
-
-      shift && socket.assigns.tab == "subscriptions" &&
-          Map.has_key?(@cov_sub_tabs, BacViewWeb.Shortcuts.digit_index(code)) ->
-        cov_view = Map.fetch!(@cov_sub_tabs, BacViewWeb.Shortcuts.digit_index(code))
-
-        {:noreply,
-         push_patch(
-           socket,
-           to:
-             device_tab_path(
-               socket.assigns.device_id,
-               "subscriptions",
-               Keyword.put(device_tab_opts(socket.assigns), :cov_view, cov_view)
-             )
-         )}
-
-      shift && socket.assigns.tab == "hierarchy" &&
-          Map.has_key?(@hierarchy_sub_tabs, BacViewWeb.Shortcuts.digit_index(code)) ->
-        hierarchy_view = Map.fetch!(@hierarchy_sub_tabs, BacViewWeb.Shortcuts.digit_index(code))
-
-        {:noreply,
-         push_patch(
-           socket,
-           to:
-             device_tab_path(
-               socket.assigns.device_id,
-               "hierarchy",
-               Keyword.put(device_tab_opts(socket.assigns), :hierarchy_view, hierarchy_view)
-             )
-         )}
-
-      Map.has_key?(@shortcut_tabs, BacViewWeb.Shortcuts.digit_index(code)) && not shift ->
-        tab = Map.fetch!(@shortcut_tabs, BacViewWeb.Shortcuts.digit_index(code))
-
-        {:noreply,
-         push_patch(
-           socket,
-           to: device_tab_path(socket.assigns.device_id, tab, device_tab_opts(socket.assigns))
-         )}
-
-      Map.has_key?(@shortcut_tabs, digit_key_index(key)) && not shift ->
-        tab = Map.fetch!(@shortcut_tabs, digit_key_index(key))
-
-        {:noreply,
-         push_patch(
-           socket,
-           to: device_tab_path(socket.assigns.device_id, tab, device_tab_opts(socket.assigns))
-         )}
-
-      BacViewWeb.Shortcuts.refresh_key?(key) ->
-        {:noreply, start_device_reload(socket)}
+      BacViewWeb.Shortcuts.escape_key?(params) ->
+        BacViewWeb.Shortcuts.apply_escape_close(socket, fn event, sock ->
+          handle_event(event, %{}, sock)
+        end)
 
       true ->
-        case BacViewWeb.Shortcuts.device_action(params, socket.assigns) do
-          {:event, event} -> handle_event(event, %{}, socket)
-          :none -> BacViewWeb.Shortcuts.handle(params, socket)
-        end
+        handle_global_keydown_action(params, socket)
     end
   end
 
@@ -2325,6 +2324,160 @@ defmodule BacViewWeb.DeviceLive do
     end
   end
 
+  defp open_reset_priority_modal(socket, mode) when mode in [:confirm, :choose] do
+    commandable = commandable_selected_objects(socket)
+    selected_leaf_count = selected_leaf_object_count(socket)
+    commandable_count = length(commandable)
+    skipped_count = max(selected_leaf_count - commandable_count, 0)
+
+    if commandable_count == 0 do
+      put_flash(socket, :error, gt("Keine commandable Objekte in der Auswahl."))
+    else
+      assign(socket, :reset_priority_modal, %{
+        mode: mode,
+        priority: socket.assigns.write_priority,
+        commandable_count: commandable_count,
+        skipped_count: skipped_count
+      })
+    end
+  end
+
+  defp resolve_reset_priority(params, socket) when is_map(params) do
+    form_params = Map.get(params, "reset_priority", params)
+
+    case Map.get(form_params, "priority") do
+      priority when is_binary(priority) ->
+        case Integer.parse(priority) do
+          {p, ""} when p in 1..16 -> {:ok, p}
+          _invalid -> :error
+        end
+
+      p when p in 1..16 ->
+        {:ok, p}
+
+      _missing ->
+        case socket.assigns.reset_priority_modal do
+          %{priority: p} when p in 1..16 -> {:ok, p}
+          _nil -> :error
+        end
+    end
+  end
+
+  defp start_bulk_priority_reset(socket, priority) when priority in 1..16 do
+    commandable = commandable_selected_objects(socket)
+    selected_leaf_count = selected_leaf_object_count(socket)
+    commandable_count = length(commandable)
+    skipped_count = max(selected_leaf_count - commandable_count, 0)
+
+    if commandable_count == 0 do
+      socket
+      |> assign(:reset_priority_modal, nil)
+      |> put_flash(:error, gt("Keine commandable Objekte in der Auswahl."))
+    else
+      device_id = socket.assigns.device_id
+      parent = self()
+      total = commandable_count
+
+      Task.start(fn ->
+        run_bulk_priority_reset(parent, device_id, commandable, priority, skipped_count, total)
+      end)
+
+      socket
+      |> assign(:write_priority, priority)
+      |> assign(:bulk_priority_resetting, true)
+      |> assign(:bulk_priority_reset_progress, %{done: 0, total: total})
+      |> assign(:reset_priority_modal, nil)
+    end
+  end
+
+  defp run_bulk_priority_reset(parent, device_id, objects, priority, skipped_count, total) do
+    {updates, ok, failed} =
+      objects
+      |> Enum.with_index(1)
+      |> Enum.reduce({[], 0, 0}, fn {object, idx}, {updates_acc, ok_acc, failed_acc} ->
+        case reset_object_priority(device_id, object, priority) do
+          {:ok, update} ->
+            send(parent, {:priority_reset_progress, idx, total})
+            {[update | updates_acc], ok_acc + 1, failed_acc}
+
+          {:error, _reason} ->
+            send(parent, {:priority_reset_progress, idx, total})
+            {updates_acc, ok_acc, failed_acc + 1}
+        end
+      end)
+
+    send(parent, {
+      :priority_reset_done,
+      %{
+        ok: ok,
+        failed: failed,
+        skipped: skipped_count,
+        priority: priority,
+        updates: Enum.reverse(updates)
+      }
+    })
+  end
+
+  defp reset_object_priority(device_id, object, priority) when priority in 1..16 do
+    object_id = %ObjectIdentifier{type: object.type, instance: object.instance}
+    opts = PropertyWriter.write_opts(object, :present_value, priority)
+
+    with :ok <- DeviceSession.write_property(device_id, object_id, :present_value, nil, opts),
+         {:ok, read_value} <- DeviceSession.read_property(device_id, object_id, :present_value),
+         {:ok, priority_info} <-
+           read_back_priority_info(device_id, object_id, object, read_value) do
+      DeviceSession.publish_property_update(device_id, object_id, :present_value, read_value)
+
+      {:ok,
+       %{
+         type: object.type,
+         instance: object.instance,
+         present_value: read_value,
+         priority_info: priority_info
+       }}
+    else
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp apply_bulk_priority_reset_update(socket, %{
+         type: type,
+         instance: instance,
+         present_value: value,
+         priority_info: priority_info
+       }) do
+    update_object_present_value(socket, type, instance, value, priority_info)
+  end
+
+  defp apply_bulk_priority_reset_update(socket, _update), do: socket
+
+  defp priority_reset_flash(%{ok: ok, failed: failed, skipped: skipped, priority: priority}) do
+    gt(
+      "Priorität %{priority}: %{ok} zurückgesetzt, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
+      priority: priority,
+      ok: ok,
+      skipped: skipped,
+      failed: failed
+    )
+  end
+
+  defp commandable_selected_objects(socket) do
+    selected = socket.assigns.selected_object_keys
+
+    Enum.filter(socket.assigns.objects, fn obj ->
+      MapSet.member?(selected, {obj.type, obj.instance}) and
+        PropertyWriter.commandable_for_ui?(obj)
+    end)
+  end
+
+  defp selected_leaf_object_count(socket) do
+    selected = socket.assigns.selected_object_keys
+
+    Enum.count(socket.assigns.objects, fn obj ->
+      MapSet.member?(selected, {obj.type, obj.instance})
+    end)
+  end
+
   defp read_back_property(device_id, object_id, property, written_value) do
     case DeviceSession.read_property(device_id, object_id, property) do
       {:ok, read_value} ->
@@ -2479,6 +2632,15 @@ defmodule BacViewWeb.DeviceLive do
 
   defp format_parse_error(:invalid_boolean), do: gt("erwartet true/false")
   defp format_parse_error(:invalid_number), do: gt("erwartet Zahl")
+  defp format_parse_error(:invalid_bitstring), do: gt("erwartet Bitstring (0/1)")
+
+  defp format_parse_error({:bitstring_size_mismatch, expected, actual}),
+    do:
+      gt("Bitstring-Länge: %{expected} Bits erwartet (aktuell: %{actual})",
+        expected: expected,
+        actual: actual
+      )
+
   defp format_parse_error(reason), do: inspect(reason)
 
   defp empty_hierarchy(),
@@ -2609,6 +2771,104 @@ defmodule BacViewWeb.DeviceLive do
 
   defp digit_key_index(key) when key in ~w(1 2 3 4), do: String.to_integer(key)
   defp digit_key_index(_key), do: nil
+
+  defp handle_global_keydown_action(params, socket) do
+    key = Map.get(params, "key", "")
+    code = Map.get(params, "code", "")
+    shift = Map.get(params, "shift", false)
+
+    if BacViewWeb.Shortcuts.go_up_pressed?(params) do
+      {:noreply, push_navigate(socket, to: ~p"/")}
+    else
+      case shift_digit_sub_view(socket, code, shift) do
+        {:noreply, _socket} = result ->
+          result
+
+        :none ->
+          handle_global_keydown_plain(params, socket, key, code, shift)
+      end
+    end
+  end
+
+  defp handle_global_keydown_plain(params, socket, key, code, shift) do
+    tab = if shift, do: nil, else: shortcut_tab_for_params(key, code)
+
+    cond do
+      is_binary(tab) ->
+        {:noreply,
+         push_patch(
+           socket,
+           to: device_tab_path(socket.assigns.device_id, tab, device_tab_opts(socket.assigns))
+         )}
+
+      BacViewWeb.Shortcuts.refresh_key?(key) ->
+        {:noreply, start_device_reload(socket)}
+
+      true ->
+        case BacViewWeb.Shortcuts.device_action(params, socket.assigns) do
+          {:event, event} -> handle_event(event, %{}, socket)
+          :none -> BacViewWeb.Shortcuts.handle(params, socket)
+        end
+    end
+  end
+
+  defp shift_digit_sub_view(socket, code, true = _shift) do
+    digit = BacViewWeb.Shortcuts.digit_index(code)
+
+    case {socket.assigns.tab, digit} do
+      {"alarms", digit} when is_map_key(@alarm_sub_tabs, digit) ->
+        patch_device_sub_view(socket, "alarms", :alarm_view, Map.fetch!(@alarm_sub_tabs, digit))
+
+      {"subscriptions", digit} when is_map_key(@cov_sub_tabs, digit) ->
+        patch_device_sub_view(
+          socket,
+          "subscriptions",
+          :cov_view,
+          Map.fetch!(@cov_sub_tabs, digit)
+        )
+
+      {"hierarchy", digit} when is_map_key(@hierarchy_sub_tabs, digit) ->
+        patch_device_sub_view(
+          socket,
+          "hierarchy",
+          :hierarchy_view,
+          Map.fetch!(@hierarchy_sub_tabs, digit)
+        )
+
+      _other ->
+        :none
+    end
+  end
+
+  defp shift_digit_sub_view(_socket, _code, _shift), do: :none
+
+  defp patch_device_sub_view(socket, tab, opt_key, opt_value) do
+    {:noreply,
+     push_patch(
+       socket,
+       to:
+         device_tab_path(
+           socket.assigns.device_id,
+           tab,
+           Keyword.put(device_tab_opts(socket.assigns), opt_key, opt_value)
+         )
+     )}
+  end
+
+  defp shortcut_tab_for_params(key, code) do
+    digit = BacViewWeb.Shortcuts.digit_index(code)
+
+    cond do
+      Map.has_key?(@shortcut_tabs, digit) ->
+        Map.fetch!(@shortcut_tabs, digit)
+
+      Map.has_key?(@shortcut_tabs, digit_key_index(key)) ->
+        Map.fetch!(@shortcut_tabs, digit_key_index(key))
+
+      true ->
+        nil
+    end
+  end
 
   defp device_tab_opts(assigns) do
     [
@@ -2765,6 +3025,21 @@ defmodule BacViewWeb.DeviceLive do
           </p>
         </div>
 
+        <div :if={@bulk_priority_resetting} id="bulk-priority-reset-progress" class="px-5 pt-3">
+          <progress
+            class="bac-progress"
+            value={@bulk_priority_reset_progress.done}
+            max={max(@bulk_priority_reset_progress.total, 1)}
+          >
+          </progress>
+          <p class="text-xs bac-text-faint mt-1.5">
+            {t(@locale, @locale_version, "Priorität zurücksetzen: %{done} / %{total}",
+              done: @bulk_priority_reset_progress.done,
+              total: @bulk_priority_reset_progress.total
+            )}
+          </p>
+        </div>
+
         <div class="px-5 pt-3">
           <div class="bac-tabs">
             <.link
@@ -2839,6 +3114,8 @@ defmodule BacViewWeb.DeviceLive do
                   MapSet.size(@selected_object_keys) > 0
               }
               count={MapSet.size(@selected_object_keys)}
+              write_priority={@write_priority}
+              bulk_resetting={@bulk_priority_resetting}
               locale={@locale}
               locale_version={@locale_version}
             />
@@ -2955,6 +3232,14 @@ defmodule BacViewWeb.DeviceLive do
         object={@write_modal}
         write_priority={@write_priority}
         writing={@writing_present_value}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
+      <ResetPriorityModal.modal
+        :if={@reset_priority_modal}
+        modal={@reset_priority_modal}
+        busy={@bulk_priority_resetting}
         locale={@locale}
         locale_version={@locale_version}
       />

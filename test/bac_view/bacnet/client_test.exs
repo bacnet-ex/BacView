@@ -35,6 +35,55 @@ defmodule BacView.BACnet.ClientTest do
     assert log =~ "[warning]" or log =~ "warning"
   end
 
+  test "log_request_error is the shared outgoing/read helper" do
+    object = %ObjectIdentifier{type: :analog_value, instance: 9}
+    destination = {{10, 0, 0, 8}, 47_808}
+
+    log =
+      SilenceLogger.with_logging(
+        fn ->
+          capture_log(fn ->
+            Client.log_request_error(
+              :write_property,
+              destination,
+              object,
+              :event_parameters,
+              :timeout,
+              device_id: 42
+            )
+          end)
+        end,
+        unsilence: [Client]
+      )
+
+    assert log =~ "BACnet write_property failed"
+    assert log =~ "device 42"
+    assert log =~ "analog_value:9"
+    assert log =~ "event_parameters"
+    assert log =~ "10.0.0.8:47808"
+  end
+
+  test "log_request_error formats casting exceptions for operators" do
+    exception = %FunctionClauseError{
+      module: BACnet.Protocol.ApplicationTags.Encoding,
+      function: :to_encoding,
+      arity: 1
+    }
+
+    message =
+      Client.request_error_message(
+        :write_property,
+        nil,
+        nil,
+        :event_parameters,
+        {:exception_during_casting, exception, []}
+      )
+
+    assert message =~ "write_property failed"
+    assert message =~ "Lokale BACnet-Kodierung"
+    assert message =~ "to_encoding"
+  end
+
   test "log_read_error can use debug level for expected fallbacks" do
     log =
       SilenceLogger.with_logging(

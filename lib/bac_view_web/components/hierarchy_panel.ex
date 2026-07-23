@@ -359,13 +359,20 @@ defmodule BacViewWeb.HierarchyPanel do
               <td
                 :if={entry.kind == :object}
                 class={[
-                  "align-top bac-mono text-right whitespace-nowrap",
+                  "align-top bac-mono text-right max-w-[12rem] truncate",
                   entry.writable && "cursor-pointer"
                 ]}
                 phx-click={if entry.writable, do: "open_write_modal"}
                 phx-value-type={if entry.writable, do: entry.type}
                 phx-value-instance={if entry.writable, do: entry.instance}
-                title={if entry.writable, do: t(@locale, @locale_version, "Klicken zum Schreiben")}
+                title={
+                  hierarchy_present_value_title(
+                    entry,
+                    entry.writable,
+                    @locale,
+                    @locale_version
+                  )
+                }
               >
                 <span class={entry.writable && "bac-cell-writable"}>
                   {present_value_label(entry)}
@@ -443,6 +450,17 @@ defmodule BacViewWeb.HierarchyPanel do
   end
 
   defp present_value_label(entry), do: entry.present_value_formatted
+
+  defp hierarchy_present_value_title(entry, writable?, locale, locale_version) do
+    label = present_value_label(entry)
+
+    if writable? do
+      write_hint = t(locale, locale_version, "Klicken zum Schreiben")
+      "#{label} — #{write_hint}"
+    else
+      label
+    end
+  end
 
   attr(:hierarchy_split, :any, required: true)
   attr(:structured_hierarchy?, :boolean, default: false)

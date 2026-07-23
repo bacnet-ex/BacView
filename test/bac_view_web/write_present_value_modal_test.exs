@@ -38,6 +38,25 @@ defmodule BacViewWeb.WritePresentValueModalTest do
     )
   end
 
+  test "hooks focus on the value field not the priority dropdown" do
+    html =
+      render_modal(
+        multistate_object(%{
+          commandable: true,
+          present_value: 2
+        })
+      )
+
+    assert html =~ ~s(id="write-present-value-modal")
+    assert html =~ ~s(phx-hook="FocusFirstInput")
+    assert html =~ ~s(id="modal-write-priority")
+    assert html =~ ~s(id="modal-write-value")
+    assert html =~ ~s(data-autofocus)
+    # Priority select must not be the autofocus target.
+    refute html =~ ~r/id="modal-write-priority"[^>]*data-autofocus/
+    assert html =~ ~r/id="modal-write-value"[^>]*data-autofocus/
+  end
+
   test "renders multistate dropdown for in-range present value" do
     html = render_modal(multistate_object())
 
@@ -77,6 +96,49 @@ defmodule BacViewWeb.WritePresentValueModalTest do
       })
 
     assert html =~ ~s(type="text")
+    assert html =~ ~s(id="modal-write-value")
+    assert html =~ ~s(data-autofocus)
     refute html =~ ~s(<select id="modal-write-value")
+  end
+
+  test "renders binary dropdown with inactive/active text labels" do
+    html =
+      render_modal(%{
+        name: "BV-1",
+        type: :binary_value,
+        instance: 1,
+        writable: true,
+        commandable: false,
+        present_value: true,
+        present_value_formatted: "Open",
+        inactive_text: "Closed",
+        active_text: "Open"
+      })
+
+    assert html =~ ~s(id="modal-write-value")
+    assert html =~ ~s(value="true")
+    assert html =~ ~s(value="false")
+    assert html =~ "Open"
+    assert html =~ "Closed"
+    refute html =~ ~r/value="true"[^>]*>\s*true\s*</
+    refute html =~ ~r/value="false"[^>]*>\s*false\s*</
+  end
+
+  test "renders binary dropdown with true/false when texts are absent" do
+    html =
+      render_modal(%{
+        name: "BV-1",
+        type: :binary_value,
+        instance: 1,
+        writable: true,
+        commandable: false,
+        present_value: false,
+        present_value_formatted: "false"
+      })
+
+    assert html =~ ~s(id="modal-write-value")
+    assert html =~ ~s(<select)
+    assert html =~ ~r/value="true"[^>]*>\s*true\s*</
+    assert html =~ ~r/value="false"[^>]*>\s*false\s*</
   end
 end

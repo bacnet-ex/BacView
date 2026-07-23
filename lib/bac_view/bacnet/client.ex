@@ -153,8 +153,13 @@ defmodule BacView.BACnet.Client do
     opts = merge_request_opts(opts)
 
     stack_client()
-    |> ClientHelper.write_property(destination, object, property, value, opts)
-    |> ClientResult.normalize()
+    |> ClientHelper.write_property(destination, object, property, value, bacstack_opts(opts))
+    |> finalize_outgoing_result(opts,
+      operation: :write_property,
+      destination: destination,
+      object: object,
+      property: property
+    )
   end
 
   @spec subscribe_cov_property(
@@ -167,8 +172,18 @@ defmodule BacView.BACnet.Client do
     opts = merge_request_opts(opts)
 
     stack_client()
-    |> ClientHelper.subscribe_cov_property(destination, object, property, opts)
-    |> ClientResult.normalize()
+    |> ClientHelper.subscribe_cov_property(
+      destination,
+      object,
+      property,
+      bacstack_opts(opts)
+    )
+    |> finalize_outgoing_result(opts,
+      operation: :subscribe_cov_property,
+      destination: destination,
+      object: object,
+      property: property
+    )
   end
 
   @doc """
@@ -177,6 +192,7 @@ defmodule BacView.BACnet.Client do
   @spec subscribe_cov(destination(), ObjectIdentifier.t(), keyword()) :: :ok | {:error, term()}
   def subscribe_cov(destination, %ObjectIdentifier{} = object, opts \\ []) do
     opts = merge_request_opts(opts)
+    send_opts = bacstack_opts(opts)
     lifetime = Keyword.get(opts, :lifetime, 3600)
     confirmed = if lifetime, do: Keyword.get(opts, :confirmed, false), else: nil
 
@@ -202,12 +218,18 @@ defmodule BacView.BACnet.Client do
                issue_confirmed_notifications: confirmed,
                lifetime: lifetime
              },
-             opts
+             send_opts
            ),
-         {:ok, %APDU.SimpleACK{}} <- Client.send(stack_client(), destination, req, opts) do
+         {:ok, %APDU.SimpleACK{}} <- Client.send(stack_client(), destination, req, send_opts) do
       :ok
     else
-      result -> ClientResult.normalize(result)
+      result ->
+        finalize_outgoing_result(result, opts,
+          operation: :subscribe_cov,
+          destination: destination,
+          object: object,
+          property: :present_value
+        )
     end
   end
 
@@ -225,6 +247,7 @@ defmodule BacView.BACnet.Client do
       property,
       elements,
       Services.AddListElement,
+      :add_list_element,
       opts
     )
   end
@@ -243,6 +266,7 @@ defmodule BacView.BACnet.Client do
       property,
       elements,
       Services.RemoveListElement,
+      :remove_list_element,
       opts
     )
   end
@@ -317,6 +341,7 @@ defmodule BacView.BACnet.Client do
         ) :: :ok | {:error, term()}
   def device_communication_control(destination, state, time_duration, password, opts \\ []) do
     opts = merge_request_opts(opts)
+    send_opts = bacstack_opts(opts)
 
     with {:ok, req} <-
            Services.DeviceCommunicationControl.to_apdu(
@@ -325,12 +350,18 @@ defmodule BacView.BACnet.Client do
                time_duration: time_duration,
                password: password
              },
-             opts
+             send_opts
            ),
-         {:ok, %APDU.SimpleACK{}} <- Client.send(stack_client(), destination, req, opts) do
+         {:ok, %APDU.SimpleACK{}} <- Client.send(stack_client(), destination, req, send_opts) do
       :ok
     else
-      result -> ClientResult.normalize(result)
+      result ->
+        finalize_outgoing_result(result, opts,
+          operation: :device_communication_control,
+          destination: destination,
+          object: nil,
+          property: nil
+        )
     end
   end
 
@@ -345,8 +376,13 @@ defmodule BacView.BACnet.Client do
     opts = merge_request_opts(opts)
 
     stack_client()
-    |> ClientHelper.reinitialize_device(destination, state, password, opts)
-    |> ClientResult.normalize()
+    |> ClientHelper.reinitialize_device(destination, state, password, bacstack_opts(opts))
+    |> finalize_outgoing_result(opts,
+      operation: :reinitialize_device,
+      destination: destination,
+      object: nil,
+      property: nil
+    )
   end
 
   @doc "Sends Time Synchronization (local or UTC) to a remote BACnet device."
@@ -355,8 +391,13 @@ defmodule BacView.BACnet.Client do
     opts = merge_request_opts(opts)
 
     stack_client()
-    |> ClientHelper.send_time_synchronization(destination, opts)
-    |> ClientResult.normalize()
+    |> ClientHelper.send_time_synchronization(destination, bacstack_opts(opts))
+    |> finalize_outgoing_result(opts,
+      operation: :time_synchronization,
+      destination: destination,
+      object: nil,
+      property: nil
+    )
   end
 
   @doc "Reads a chunk from a BACnet File object via Atomic Read File."
@@ -377,6 +418,7 @@ defmodule BacView.BACnet.Client do
         opts \\ []
       ) do
     opts = merge_request_opts(opts)
+    send_opts = bacstack_opts(opts)
 
     with {:ok, req} <-
            Services.AtomicReadFile.to_apdu(
@@ -386,28 +428,31 @@ defmodule BacView.BACnet.Client do
                start_position: start_position,
                requested_count: requested_count
              },
-             opts
+             send_opts
            ),
-         {:ok, %APDU.ComplexACK{} = ack} <- Client.send(stack_client(), destination, req, opts),
+         {:ok, %APDU.ComplexACK{} = ack} <-
+           Client.send(stack_client(), destination, req, send_opts),
          {:ok, response} <- Services.Ack.AtomicReadFileAck.from_apdu(ack) do
       {:ok, response}
     else
       {:ok, apdu} ->
-        finalize_read_result(
+        finalize_outgoing_result(
           {:error, apdu},
           opts,
           operation: :atomic_read_file,
           destination: destination,
-          object: object
+          object: object,
+          property: nil
         )
 
       result ->
-        finalize_read_result(
+        finalize_outgoing_result(
           result,
           opts,
           operation: :atomic_read_file,
           destination: destination,
-          object: object
+          object: object,
+          property: nil
         )
     end
   end
@@ -423,6 +468,7 @@ defmodule BacView.BACnet.Client do
         ) :: {:ok, Services.Ack.AtomicWriteFileAck.t()} | {:error, term()}
   def atomic_write_file(destination, object, stream_access, start_position, data, opts \\ []) do
     opts = merge_request_opts(opts)
+    send_opts = bacstack_opts(opts)
 
     with {:ok, req} <-
            Services.AtomicWriteFile.to_apdu(
@@ -432,13 +478,20 @@ defmodule BacView.BACnet.Client do
                start_position: start_position,
                data: data
              },
-             opts
+             send_opts
            ),
-         {:ok, %APDU.ComplexACK{} = ack} <- Client.send(stack_client(), destination, req, opts),
+         {:ok, %APDU.ComplexACK{} = ack} <-
+           Client.send(stack_client(), destination, req, send_opts),
          {:ok, response} <- Services.Ack.AtomicWriteFileAck.from_apdu(ack) do
       {:ok, response}
     else
-      result -> ClientResult.normalize(result)
+      result ->
+        finalize_outgoing_result(result, opts,
+          operation: :atomic_write_file,
+          destination: destination,
+          object: object,
+          property: nil
+        )
     end
   end
 
@@ -472,13 +525,27 @@ defmodule BacView.BACnet.Client do
     end
   end
 
-  @doc false
-  @spec read_error_message(atom(), term(), ObjectIdentifier.t() | nil, term(), term()) ::
+  @doc """
+  Formats a one-line message for a failed BACnet request (read or outgoing).
+
+  Includes short user reason plus full `ErrorMessage.detail/1` for operators.
+  """
+  @spec request_error_message(
+          atom(),
+          term(),
+          ObjectIdentifier.t() | nil,
+          term(),
+          term(),
+          keyword()
+        ) ::
           String.t()
-  def read_error_message(operation, destination, object, property, reason) do
+  def request_error_message(operation, destination, object, property, reason, opts \\ []) do
+    device_part = request_error_device_part(opts)
+
     [
       "BACnet #{operation} failed",
-      read_error_target(destination, object, property),
+      device_part,
+      request_error_target(destination, object, property),
       ErrorMessage.format_reason(reason),
       "(#{ErrorMessage.detail(reason)})"
     ]
@@ -487,7 +554,20 @@ defmodule BacView.BACnet.Client do
   end
 
   @doc false
-  @spec log_read_error(
+  @spec read_error_message(atom(), term(), ObjectIdentifier.t() | nil, term(), term()) ::
+          String.t()
+  def read_error_message(operation, destination, object, property, reason) do
+    request_error_message(operation, destination, object, property, reason)
+  end
+
+  @doc """
+  Logs a failed BACnet request at `:warning` by default.
+
+  Options:
+  * `:level` — `:debug` | `:info` | `:warning` | `:error` (default `:warning`)
+  * `:device_id` / `:remote_device_id` — included in the message when present
+  """
+  @spec log_request_error(
           atom(),
           term(),
           ObjectIdentifier.t() | nil,
@@ -495,8 +575,9 @@ defmodule BacView.BACnet.Client do
           term(),
           keyword()
         ) :: :ok
-  def log_read_error(operation, destination, object, property, reason, opts \\ []) do
-    message = read_error_message(operation, destination, object, property, reason)
+  def log_request_error(operation, destination, object, property, reason, opts \\ []) do
+    message =
+      request_error_message(operation, destination, object, property, reason, opts)
 
     case Keyword.get(opts, :level, :warning) do
       :debug -> Logger.debug(message)
@@ -509,8 +590,30 @@ defmodule BacView.BACnet.Client do
     :ok
   end
 
-  defp send_list_element(destination, object, property, elements, service_module, opts) do
+  @doc false
+  @spec log_read_error(
+          atom(),
+          term(),
+          ObjectIdentifier.t() | nil,
+          term(),
+          term(),
+          keyword()
+        ) :: :ok
+  def log_read_error(operation, destination, object, property, reason, opts \\ []) do
+    log_request_error(operation, destination, object, property, reason, opts)
+  end
+
+  defp send_list_element(
+         destination,
+         object,
+         property,
+         elements,
+         service_module,
+         operation,
+         opts
+       ) do
     opts = merge_request_opts(opts)
+    send_opts = bacstack_opts(opts)
     array_index = Keyword.get(opts, :array_index)
 
     with {:ok, encoded_elements} <- encode_list_elements(List.wrap(elements)),
@@ -522,12 +625,18 @@ defmodule BacView.BACnet.Client do
                property_array_index: array_index,
                elements: encoded_elements
              }),
-             opts
+             send_opts
            ),
-         {:ok, %APDU.SimpleACK{}} <- Client.send(stack_client(), destination, req, opts) do
+         {:ok, %APDU.SimpleACK{}} <- Client.send(stack_client(), destination, req, send_opts) do
       :ok
     else
-      result -> ClientResult.normalize(result)
+      result ->
+        finalize_outgoing_result(result, opts,
+          operation: operation,
+          destination: destination,
+          object: object,
+          property: property
+        )
     end
   end
 
@@ -545,7 +654,55 @@ defmodule BacView.BACnet.Client do
     ClientResult.normalize(result)
   end
 
-  defp read_error_target(destination, object, property) do
+  defp finalize_outgoing_result(result, opts, context) when is_list(opts) and is_list(context) do
+    case ClientResult.normalize(result) do
+      {:error, reason} = err ->
+        maybe_log_outgoing_error(opts, context, reason)
+        err
+
+      other ->
+        other
+    end
+  end
+
+  defp maybe_log_outgoing_error(opts, context, reason) do
+    if Keyword.get(opts, :log_errors, true) do
+      log_request_error(
+        Keyword.fetch!(context, :operation),
+        Keyword.get(context, :destination),
+        Keyword.get(context, :object),
+        Keyword.get(context, :property),
+        reason,
+        log_opts_from_request(opts)
+      )
+    else
+      :ok
+    end
+  end
+
+  defp log_opts_from_request(opts) do
+    []
+    |> maybe_put_log_opt(:level, Keyword.get(opts, :log_level))
+    |> maybe_put_log_opt(:device_id, Keyword.get(opts, :device_id))
+    |> maybe_put_log_opt(:remote_device_id, Keyword.get(opts, :remote_device_id))
+  end
+
+  defp maybe_put_log_opt(opts, _key, nil), do: opts
+  defp maybe_put_log_opt(opts, key, value), do: Keyword.put(opts, key, value)
+
+  # BacView-only keys must not be forwarded to bacstack Client.send / helpers.
+  @bacview_only_opts [:log_errors, :log_level]
+
+  defp bacstack_opts(opts) when is_list(opts), do: Keyword.drop(opts, @bacview_only_opts)
+
+  defp request_error_device_part(opts) when is_list(opts) do
+    case Keyword.get(opts, :device_id) || Keyword.get(opts, :remote_device_id) do
+      id when is_integer(id) -> "device #{id}"
+      _other -> nil
+    end
+  end
+
+  defp request_error_target(destination, object, property) do
     parts =
       Enum.reject(
         [

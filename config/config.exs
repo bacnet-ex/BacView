@@ -94,16 +94,32 @@ config :bacstack, :debug, true
 config :bacstack, :app_tags_convert_latin1_utf8, true
 
 # WAGO proprietary properties
+# I have no idea what message_text is used for - I can't find it in the UI
+# It should be on (almost) every object
 config :bacstack, :additional_property_identifiers,
   device_uuid: 507,
+  certificate_signing_request_file: 509,
+  command_validation_result: 510,
+  issuer_certificate_files: 511,
+  message_text: 512,
+  subscription_type: 513,
+  ee_cov_resubscription_interval: 514,
+  poll_interval: 515,
   timezone_string: 516,
   timezone: 517,
   time_before_operation: 518,
+  pulse_value_source: 519,
+  input_count_value: 521,
   loop_enable: 523,
   loop_mode: 524
 
 # WAGO proprietary properties
 config :bacstack, :objects_additional_properties,
+  accumulator:
+    (quote do
+       field(:input_count_value, non_neg_integer())
+       field(:pulse_value_source, BACnet.Protocol.DeviceObjectPropertyRef.t())
+     end),
   device:
     (quote do
        # Intrinsic Reporting was added in 135-2016
@@ -116,6 +132,36 @@ config :bacstack, :objects_additional_properties,
 
        field(:timezone_string, String.t())
        field(:timezone, String.t())
+     end),
+  event_enrollment:
+    (quote do
+       field(:ee_cov_resubscription_interval, non_neg_integer())
+       field(:poll_interval, non_neg_integer())
+
+       field(
+         :subscription_type,
+         :confirmed_cov_if_possible | :polling | :unconfirmed_cov_if_possible,
+         bac_type:
+           {:in_list, [:confirmed_cov_if_possible, :polling, :unconfirmed_cov_if_possible]},
+         annotation: [
+           encoder: fn val ->
+             case val do
+               :confirmed_cov_if_possible -> {:enumerated, 0}
+               :polling -> {:enumerated, 1}
+               :unconfirmed_cov_if_possible -> {:enumerated, 3}
+               _other -> {:error, :invalid_value}
+             end
+           end,
+           decoder: fn val ->
+             case val.value do
+               0 -> {:ok, :confirmed_cov_if_possible}
+               1 -> {:ok, :polling}
+               3 -> {:ok, :unconfirmed_cov_if_possible}
+               _other -> {:error, :invalid_value}
+             end
+           end
+         ]
+       )
      end),
   loop:
     (quote do

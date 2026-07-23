@@ -223,7 +223,10 @@ defmodule BacView.BACnet.DeviceRestartCovTest do
                    SubscriptionManager.apply_renew_result(sub, {:error, :timeout})
         end)
 
-      assert log =~ "COV renewal failed"
+      assert log =~ "BACnet cov_renew failed"
+      assert log =~ "device 42"
+      assert log =~ "analog_input:2"
+      assert log =~ "present_value"
       assert SubscriptionManager.subscribed?(42, object, :present_value)
     end)
   end

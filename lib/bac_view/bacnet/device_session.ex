@@ -18,6 +18,7 @@ defmodule BacView.BACnet.DeviceSession do
   alias BacView.BACnet.ObjectScanRead
   alias BacView.BACnet.PropertyLoad
 
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyDisplay
@@ -101,17 +102,22 @@ defmodule BacView.BACnet.DeviceSession do
   @spec recoverable_validation_error?(term()) :: boolean()
   def recoverable_validation_error?(reason) do
     case normalize_scan_error_reason(reason) do
+      # ObjectsMacro remote-object validation only (skip_property_validation_remote_object).
       {:value_failed_property_validation, _property} -> true
       {:invalid_property_type, _property} -> true
+      # ObjectsUtility decode/cast errors (invalid_property_value, missing_optional_property,
+      # …) are listed in scan_errors but are not skip-mode recoverable.
       _other -> false
     end
   end
 
   @doc false
-  @spec retry_modes_for_reason(term()) :: [:value | true, ...]
+  @spec retry_modes_for_reason(term()) :: [:value | true]
   def retry_modes_for_reason(reason) do
     case normalize_scan_error_reason(reason) do
+      # Value validators only — type still checked; both skip modes useful.
       {:value_failed_property_validation, _property} -> [:value, true]
+      # Type mismatches — full skip only.
       {:invalid_property_type, _property} -> [true]
       _other -> []
     end
@@ -842,7 +848,7 @@ defmodule BacView.BACnet.DeviceSession do
         error_log: error_log
       })
 
-      {:ok, scanned, recoverable_scan_errors(error_log), skipped_objects}
+      {:ok, scanned, displayable_scan_errors(error_log), skipped_objects}
     end
   end
 
@@ -924,8 +930,13 @@ defmodule BacView.BACnet.DeviceSession do
     ]
   end
 
-  defp recoverable_scan_errors(error_log) do
-    Enum.filter(error_log, & &1.recoverable)
+  # Persist every object-level scan failure (not only skip-recoverable ones) so the
+  # post-scan recovery panel can list them. Retry buttons still depend on retry_modes.
+  defp displayable_scan_errors(error_log) when is_list(error_log) do
+    Enum.filter(error_log, fn
+      %{object_id: %ObjectIdentifier{}} -> true
+      _entry -> false
+    end)
   end
 
   defp normalize_scan_error_reason({:error, reason}), do: normalize_scan_error_reason(reason)
@@ -1133,10 +1144,10 @@ defmodule BacView.BACnet.DeviceSession do
     units = Map.get(obj, :units)
 
     object_context =
-      Map.merge(
-        %{type: type, units: units, resolution: Map.get(obj, :resolution)},
-        MultistateState.object_fields(obj)
-      )
+      %{}
+      |> Map.merge(%{type: type, units: units, resolution: Map.get(obj, :resolution)})
+      |> Map.merge(MultistateState.object_fields(obj))
+      |> Map.merge(BinaryPV.object_fields(Map.put(obj, :type, type)))
 
     %{
       object_id: object_id,
@@ -1224,8 +1235,9 @@ defmodule BacView.BACnet.DeviceSession do
     |> maybe_put_field(:units, property_row_value(props, :units))
     |> maybe_put_field(:resolution, property_row_value(props, :resolution))
     |> maybe_put_field(:out_of_service, property_row_value(props, :out_of_service))
-    |> maybe_put_present_value(present_prop)
     |> maybe_put_multistate_fields(props)
+    |> maybe_put_binary_fields(props)
+    |> maybe_put_present_value(present_prop)
     |> maybe_put_status_flags(props)
     |> maybe_put_field(:event_state, property_row_value(props, :event_state))
     |> maybe_put_field(:event_timestamps, extract_event_timestamps_from_properties(props))
@@ -1271,6 +1283,18 @@ defmodule BacView.BACnet.DeviceSession do
     |> maybe_put_field(
       :state_text,
       MultistateState.normalize_state_text(property_row_value(props, :state_text))
+    )
+  end
+
+  defp maybe_put_binary_fields(obj, props) do
+    obj
+    |> maybe_put_field(
+      :inactive_text,
+      BinaryPV.normalize_text(property_row_value(props, :inactive_text))
+    )
+    |> maybe_put_field(
+      :active_text,
+      BinaryPV.normalize_text(property_row_value(props, :active_text))
     )
   end
 

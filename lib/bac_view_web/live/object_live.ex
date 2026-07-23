@@ -14,6 +14,7 @@ defmodule BacViewWeb.ObjectLive do
   alias BacView.BACnet.HierarchySplit
   alias BacView.BACnet.SubscriptionManager
 
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.ComplexPropertyEditor
   alias BacView.BACnet.Protocol.ErrorMessage
   alias BacView.BACnet.Protocol.MultistateState
@@ -1152,17 +1153,28 @@ defmodule BacViewWeb.ObjectLive do
 
   @impl true
   def handle_event("global_keydown", params, socket) do
-    key = Map.get(params, "key", "")
-
     cond do
-      BacViewWeb.Shortcuts.go_up_pressed?(params) ->
-        {:noreply, push_navigate(socket, to: device_return_path(socket))}
+      BacViewWeb.Shortcuts.ignore_global_shortcut?(params, socket.assigns) ->
+        {:noreply, socket}
 
-      BacViewWeb.Shortcuts.refresh_key?(key) ->
-        {:noreply, start_properties_refresh(socket)}
+      BacViewWeb.Shortcuts.escape_key?(params) ->
+        BacViewWeb.Shortcuts.apply_escape_close(socket, fn event, sock ->
+          handle_event(event, %{}, sock)
+        end)
 
       true ->
-        BacViewWeb.Shortcuts.handle(params, socket, tabs: %{})
+        key = Map.get(params, "key", "")
+
+        cond do
+          BacViewWeb.Shortcuts.go_up_pressed?(params) ->
+            {:noreply, push_navigate(socket, to: device_return_path(socket))}
+
+          BacViewWeb.Shortcuts.refresh_key?(key) ->
+            {:noreply, start_properties_refresh(socket)}
+
+          true ->
+            BacViewWeb.Shortcuts.handle(params, socket, tabs: %{})
+        end
     end
   end
 
@@ -1669,6 +1681,14 @@ defmodule BacViewWeb.ObjectLive do
   defp format_parse_error(:invalid_boolean), do: gt("erwartet true/false")
   defp format_parse_error(:invalid_number), do: gt("erwartet Zahl")
   defp format_parse_error(:invalid_hex), do: gt("Ungültige Hex-Zeichenkette")
+  defp format_parse_error(:invalid_bitstring), do: gt("erwartet Bitstring (0/1)")
+
+  defp format_parse_error({:bitstring_size_mismatch, expected, actual}),
+    do:
+      gt("Bitstring-Länge: %{expected} Bits erwartet (aktuell: %{actual})",
+        expected: expected,
+        actual: actual
+      )
 
   defp format_parse_error(:unsupported_struct),
     do: gt("Dieser Strukturtyp kann noch nicht geschrieben werden")
@@ -1713,12 +1733,20 @@ defmodule BacViewWeb.ObjectLive do
   defp format_editor_error(:empty_value), do: gt("Bitte einen Wert eingeben.")
   defp format_editor_error(:invalid_boolean), do: gt("erwartet true/false")
   defp format_editor_error(:invalid_number), do: gt("erwartet Zahl")
+  defp format_editor_error(:invalid_bitstring), do: gt("erwartet Bitstring (0/1)")
   defp format_editor_error(:invalid_ip), do: gt("erwartet IPv4- oder IPv6-Adresse")
   defp format_editor_error(:invalid_atom), do: gt("Ungültiger Enum-Wert.")
   defp format_editor_error(:invalid_enum), do: gt("Ungültiger Enum-Wert.")
   defp format_editor_error(:invalid_path), do: gt("Ungültiger Feldpfad.")
   defp format_editor_error(:invalid_json_value), do: gt("Ungültiger JSON-Wert.")
   defp format_editor_error(:invalid_struct_json), do: gt("Ungültige Struktur im JSON.")
+
+  defp format_editor_error({:bitstring_size_mismatch, expected, actual}),
+    do:
+      gt("Bitstring-Länge: %{expected} Bits erwartet (aktuell: %{actual})",
+        expected: expected,
+        actual: actual
+      )
 
   defp format_editor_error({:unknown_json_fields, keys}),
     do: gt("Unbekannte JSON-Felder: %{keys}", keys: Enum.join(keys, ", "))
@@ -1906,7 +1934,10 @@ defmodule BacViewWeb.ObjectLive do
         value
       end
 
-    display = PropertyDisplay.build(value)
+    display_opts =
+      if BinaryPV.binary_object?(object), do: [object: object], else: []
+
+    display = PropertyDisplay.build(value, display_opts)
 
     formatted = multistate_state_property_formatted(prop, value, object, display)
 
@@ -1921,7 +1952,9 @@ defmodule BacViewWeb.ObjectLive do
         updated_at: at || DateTime.utc_now()
       })
 
-    if MultistateState.state_value_property?(refreshed.property) do
+    if MultistateState.state_value_property?(refreshed.property) or
+         BinaryPV.value_property?(refreshed.property) or
+         refreshed.property == :priority_array do
       case PropertyWriter.enrich_properties([refreshed], object) do
         [enriched | _rest] -> enriched
         _properties -> refreshed
@@ -1946,8 +1979,26 @@ defmodule BacViewWeb.ObjectLive do
          object,
          display
        ) do
-    if MultistateState.multistate_object?(object) do
-      MultistateState.format_present_value(value, object) || display.formatted
+    cond do
+      MultistateState.multistate_object?(object) ->
+        MultistateState.format_present_value(value, object) || display.formatted
+
+      BinaryPV.binary_object?(object) ->
+        BinaryPV.format_value(value, object) || display.formatted
+
+      true ->
+        display.formatted
+    end
+  end
+
+  defp multistate_state_property_formatted(
+         %{property: :priority_array},
+         value,
+         object,
+         display
+       ) do
+    if BinaryPV.binary_object?(object) do
+      PropertyDisplay.build(value, object: object).formatted
     else
       display.formatted
     end

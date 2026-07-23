@@ -1020,9 +1020,11 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     end
 
     test "labels unknown numeric property ids" do
-      [row] = PropertyReader.format_property_rows([512], %{512 => 42})
+      # Avoid ids registered via :additional_property_identifiers (e.g. 512 = message_text).
+      unknown_id = 9999
+      [row] = PropertyReader.format_property_rows([unknown_id], %{unknown_id => 42})
 
-      assert row.property_name == "property 512"
+      assert row.property_name == "property #{unknown_id}"
       assert row.value == 42
     end
 
@@ -1120,9 +1122,12 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0})
 
+      # Avoid ids registered via :additional_property_identifiers (e.g. 512 = message_text).
+      unknown_id = 9999
+
       object = %{
         object
-        | _unknown_properties: %{512 => integer_encoding, vendor_prop: string_encoding}
+        | _unknown_properties: %{unknown_id => integer_encoding, vendor_prop: string_encoding}
       }
 
       rows = PropertyReader.format_unknown_properties(object)
@@ -1130,12 +1135,12 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert length(rows) == 2
 
       assert %{
-               property: 512,
-               property_name: "property 512",
+               property: ^unknown_id,
+               property_name: "property 9999",
                value: ^integer_encoding,
                type: "UNSIGNED INTEGER",
                value_formatted: "42"
-             } = Enum.find(rows, &(&1.property == 512))
+             } = Enum.find(rows, &(&1.property == unknown_id))
 
       assert %{
                property: :vendor_prop,
@@ -1148,7 +1153,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
                raw_binary: "x"
              } = Enum.find(rows, &(&1.property == :vendor_prop))
 
-      refute Enum.find(rows, &(&1.property == 512)).string_value?
+      refute Enum.find(rows, &(&1.property == unknown_id)).string_value?
 
       assert Enum.all?(rows, &Map.has_key?(&1, :value_display))
     end

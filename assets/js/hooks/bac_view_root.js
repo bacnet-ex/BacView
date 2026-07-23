@@ -9,7 +9,11 @@ const SEARCH_INPUT_IDS = [
 
 const FORM_FIELD_SELECTOR = "input, textarea, select, [contenteditable=true]"
 
-// Only Escape bypasses form-field focus so open modals can be dismissed.
+// Full-screen / dialog modals (write property, charts, settings, shortcuts help, …).
+// While open, only Escape is forwarded so typing "1"/"r" does not fire tab/action shortcuts.
+const MODAL_OPEN_SELECTOR = ".bac-modal-backdrop"
+
+// Only Escape bypasses form-field focus and open modals (dismiss / close).
 // Shortcut keys like "r" and "?" are typed normally inside inputs.
 const GLOBAL_SHORTCUT_KEYS = new Set(["Escape"])
 
@@ -19,6 +23,10 @@ function isFormField(el) {
 
 function isGlobalShortcutKey(e) {
   return GLOBAL_SHORTCUT_KEYS.has(e.key)
+}
+
+function isModalOpen() {
+  return document.querySelector(MODAL_OPEN_SELECTOR) != null
 }
 
 function focusVisibleSearch() {
@@ -40,6 +48,8 @@ const BacViewRoot = {
   mounted() {
     this.keydownHandler = (e) => {
       if (isFormField(e.target) && !isGlobalShortcutKey(e)) return
+      // Modal open but field not focused: still block shortcuts (user may intend to type).
+      if (isModalOpen() && !isGlobalShortcutKey(e)) return
       if (e.ctrlKey || e.metaKey || e.altKey) return
       if (e.repeat) return
 

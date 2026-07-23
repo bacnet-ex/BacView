@@ -306,6 +306,57 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ ~s(value="0")
   end
 
+  test "renders binary present_value with inactive/active text" do
+    object = %{
+      name: "BV-1",
+      type: :binary_value,
+      instance: 1,
+      writable: true,
+      commandable: false,
+      present_value: true,
+      present_value_formatted: "Open",
+      inactive_text: "Closed",
+      active_text: "Open",
+      units: nil,
+      updated_at: nil
+    }
+
+    prop =
+      BacView.BACnet.Protocol.PropertyWriter.enrich_properties(
+        [
+          %{
+            property: :present_value,
+            property_name: "present value",
+            type: "BOOLEAN",
+            value: true,
+            writable: true,
+            bac_type: :boolean,
+            value_display: %{kind: :scalar, formatted: "true", fields: [], items: []},
+            value_formatted: "true"
+          }
+        ],
+        object
+      )
+      |> List.first()
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          locale: "de",
+          locale_version: 0,
+          write_priority: 8,
+          writing_property: nil
+        }
+      )
+
+    assert html =~ "Open"
+    assert prop.value_formatted == "Open"
+  end
+
   test "renders multistate relinquish_default with state text and dropdown options" do
     object = %{
       name: "MSV-1",
@@ -378,6 +429,32 @@ defmodule BacViewWeb.ObjectDetailTest do
 
     assert html =~ ~s(<select)
     assert html =~ "normal"
+    refute html =~ ~s(phx-click="open_write_property_modal")
+  end
+
+  test "renders writable in_list properties as dropdowns" do
+    bac_type =
+      {:in_list, [:confirmed_cov_if_possible, :polling, :unconfirmed_cov_if_possible]}
+
+    prop =
+      BacView.Text.sanitize_property_row(%{
+        type: "ENUMERATED",
+        value: :polling,
+        property: :subscription_type,
+        writable: true,
+        property_name: "subscription type",
+        bac_type: bac_type,
+        enum_options:
+          BacView.BACnet.Protocol.PropertyEnumeration.in_list_options(elem(bac_type, 1)),
+        value_display: %{kind: :scalar, formatted: "polling", fields: [], items: []},
+        value_formatted: "polling"
+      })
+
+    html = render_writable_property(prop)
+
+    assert html =~ ~s(<select)
+    assert html =~ "polling"
+    assert html =~ "confirmed cov if possible"
     refute html =~ ~s(phx-click="open_write_property_modal")
   end
 

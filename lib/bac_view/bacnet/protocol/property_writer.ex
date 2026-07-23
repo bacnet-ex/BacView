@@ -5,7 +5,9 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
 
   alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.PriorityArray
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.MultistateState
+  alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
 
@@ -18,9 +20,12 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
 
   @spec enrich_properties([map()], map() | nil) :: [map()]
   def enrich_properties(properties, object) when is_list(properties) do
+    object = merge_binary_texts_from_properties(object, properties)
+
     Enum.map(properties, fn prop ->
       prop
       |> enrich_multistate_state_property(object)
+      |> enrich_binary_value_property(object)
       |> enrich_present_value_formatting(object)
       |> maybe_commandable_present_value(object)
       |> then(fn enriched ->
@@ -34,6 +39,31 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   end
 
   def enrich_properties(properties, _properties), do: properties
+
+  defp merge_binary_texts_from_properties(object, properties)
+       when is_map(object) and is_list(properties) do
+    texts =
+      Enum.reduce(properties, %{}, fn
+        %{property: :inactive_text, value: value}, acc ->
+          case BinaryPV.normalize_text(value) do
+            nil -> acc
+            text -> Map.put(acc, :inactive_text, text)
+          end
+
+        %{property: :active_text, value: value}, acc ->
+          case BinaryPV.normalize_text(value) do
+            nil -> acc
+            text -> Map.put(acc, :active_text, text)
+          end
+
+        _prop, acc ->
+          acc
+      end)
+
+    Map.merge(object, texts)
+  end
+
+  defp merge_binary_texts_from_properties(object, _properties), do: object
 
   defp enrich_multistate_state_property(%{property: property} = prop, object)
        when property in [:present_value, :relinquish_default] and is_map(object) do
@@ -54,12 +84,55 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
 
   defp enrich_multistate_state_property(prop, _object), do: prop
 
+  defp enrich_binary_value_property(%{property: property} = prop, object)
+       when property in [:present_value, :relinquish_default, :priority_array] and is_map(object) do
+    if BinaryPV.binary_object?(object) and not MultistateState.multistate_object?(object) do
+      enrich_binary_property_display(prop, object)
+    else
+      prop
+    end
+  end
+
+  defp enrich_binary_value_property(prop, _object), do: prop
+
+  defp enrich_binary_property_display(%{property: :priority_array, value: value} = prop, object) do
+    display = PropertyDisplay.build(value, object: object)
+
+    prop
+    |> Map.put(:value_display, display)
+    |> Map.put(:value_formatted, display.formatted)
+  end
+
+  defp enrich_binary_property_display(
+         %{property: property, value: value, value_display: display} = prop,
+         object
+       )
+       when property in [:present_value, :relinquish_default] do
+    formatted =
+      case property do
+        :present_value ->
+          PropertyFormatter.format_present_value(value, object, prop)
+
+        :relinquish_default ->
+          BinaryPV.format_value(value, object) ||
+            PropertyFormatter.format_value(value, nil)
+      end
+
+    display = Map.put(display, :formatted, formatted)
+
+    prop
+    |> Map.put(:value_display, display)
+    |> Map.put(:value_formatted, formatted)
+  end
+
+  defp enrich_binary_property_display(prop, _object), do: prop
+
   defp enrich_present_value_formatting(
          %{property: :present_value, value: value, value_display: display} = prop,
          object
        )
        when is_map(object) do
-    if MultistateState.multistate_object?(object) do
+    if MultistateState.multistate_object?(object) or BinaryPV.binary_object?(object) do
       prop
     else
       formatted = PropertyFormatter.format_present_value(value, object, prop)
@@ -186,9 +259,9 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     PropertyEnumeration.parse_value(value, enum_type)
   end
 
-  defp parse_scalar_value(value, %{enum_options: options} = prop)
+  defp parse_scalar_value(value, %{enum_options: options})
        when is_list(options) and options != [] do
-    parse_input(value, prop)
+    PropertyEnumeration.parse_option_value(value, options)
   end
 
   defp parse_scalar_value(value, prop) when is_binary(value), do: parse_input(value, prop)
@@ -300,7 +373,10 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   defp value_type_label(v) when is_integer(v), do: "INTEGER"
   defp value_type_label(v) when is_boolean(v), do: "BOOLEAN"
   defp value_type_label(v) when is_atom(v), do: "ENUMERATED"
-  defp value_type_label(_v), do: "REAL"
+
+  defp value_type_label(v) do
+    if PropertyFormatter.bitstring_value?(v), do: "BITSTRING", else: "REAL"
+  end
 
   defp parse_struct_params(params, prop, fields) do
     property = prop.property
@@ -356,6 +432,9 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   defp parse_typed_value(s, %{type: "BOOLEAN"}),
     do: parse_boolean(s)
 
+  defp parse_typed_value(s, %{type: "BITSTRING"} = prop),
+    do: parse_bitstring_input(s, prop)
+
   defp parse_typed_value(s, %{type: "REAL"}),
     do: parse_float(s)
 
@@ -377,16 +456,34 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   defp parse_typed_value(s, %{value: value}) when is_boolean(value),
     do: parse_boolean(s)
 
-  defp parse_typed_value(s, %{value: value}) when is_float(value),
-    do: parse_float(s)
-
-  defp parse_typed_value(s, %{value: value}) when is_integer(value),
-    do: parse_integer(s)
-
-  defp parse_typed_value(s, %{value: value}) when is_atom(value),
-    do: parse_enum(s, value)
+  defp parse_typed_value(s, %{value: value} = prop) do
+    if PropertyFormatter.bitstring_value?(value) do
+      parse_bitstring_input(s, prop)
+    else
+      parse_typed_value_by_scalar(s, value)
+    end
+  end
 
   defp parse_typed_value(s, _prop), do: parse_number(s)
+
+  defp parse_typed_value_by_scalar(s, value) when is_float(value), do: parse_float(s)
+  defp parse_typed_value_by_scalar(s, value) when is_integer(value), do: parse_integer(s)
+  defp parse_typed_value_by_scalar(s, value) when is_atom(value), do: parse_enum(s, value)
+  defp parse_typed_value_by_scalar(s, _value), do: parse_number(s)
+
+  defp parse_bitstring_input(s, prop) do
+    expected_size = bitstring_expected_size(Map.get(prop, :value))
+    PropertyFormatter.parse_bitstring(s, expected_size)
+  end
+
+  defp bitstring_expected_size({:bitstring, value}) when is_tuple(value), do: tuple_size(value)
+  defp bitstring_expected_size(value) when is_tuple(value), do: tuple_size(value)
+
+  defp bitstring_expected_size(%{__struct__: _module, type: :bitstring, value: value})
+       when is_tuple(value),
+       do: tuple_size(value)
+
+  defp bitstring_expected_size(_value), do: nil
 
   defp parse_boolean(s) do
     case String.downcase(s) do
@@ -453,6 +550,12 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   def values_match?(written, read) when is_list(written) and is_list(read) do
     length(written) == length(read) and
       Enum.all?(Enum.zip(written, read), fn {w, r} -> values_match?(w, r) end)
+  end
+
+  def values_match?(written, read)
+      when is_tuple(written) and is_tuple(read) and tuple_size(written) == tuple_size(read) do
+    PropertyFormatter.bitstring_value?(written) and PropertyFormatter.bitstring_value?(read) and
+      written == read
   end
 
   def values_match?(%BACnetArray{} = written, %BACnetArray{} = read) do

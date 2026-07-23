@@ -27,6 +27,7 @@ import topbar from "../vendor/topbar"
 import "../vendor/uplot.min.js"
 import BacViewRoot from "./hooks/bac_view_root"
 import FilterMenu from "./hooks/filter_menu"
+import FocusFirstInput from "./hooks/focus_first_input"
 import TrendLogChart from "./hooks/trend_log_chart"
 import StopPropagation from "./hooks/stop_propagation"
 import ScanFormPersist from "./hooks/scan_form_persist"
@@ -48,7 +49,15 @@ const liveSocket = new LiveSocket("/live", Socket, {
     _csrf_token: csrfToken,
     locale: initialLocale(),
   }),
-  hooks: {...colocatedHooks, BacViewRoot, FilterMenu, TrendLogChart, StopPropagation, ScanFormPersist},
+  hooks: {
+    ...colocatedHooks,
+    BacViewRoot,
+    FilterMenu,
+    FocusFirstInput,
+    TrendLogChart,
+    StopPropagation,
+    ScanFormPersist,
+  },
 })
 
 // Show progress bar on live navigation and form submits
