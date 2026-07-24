@@ -9,6 +9,12 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   one-by-one, casts a remote object from successful reads when possible, and
   falls back to a raw value map when casting fails.
 
+  Property type labels use the object type schema (`get_properties_type_map/0`)
+  whenever the cast struct **or** the `ObjectIdentifier` is available (via
+  `ObjectsUtility.get_object_type_mappings/0`). Value-shape inference remains
+  only for properties missing from the schema (unknown/vendor ids, unsupported
+  object types).
+
   For debug output, set env `:bacview, :debug_log_property_reader` to `true`.
   """
 
@@ -79,7 +85,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
         with {:ok, properties} <- property_list(bacnet_object) do
           readable = readable_properties(properties, object)
           results = ObjectsUtility.to_map(bacnet_object)
-          result = build_read_result(readable, results, bacnet_object)
+          result = build_read_result(readable, results, bacnet_object, object)
 
           debug_log(object, "read_all_done", fn ->
             %{
@@ -181,7 +187,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
     properties = readable_properties(raw_properties, object_id)
 
-    rows = format_property_rows(properties, results, bacnet_object)
+    rows = format_property_rows(properties, results, bacnet_object, object_id)
     unknown = format_unknown_properties(bacnet_object)
 
     %{
@@ -270,10 +276,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     do: skip_heavy_properties(properties, object_id)
 
   @doc false
-  @spec format_property_rows([term()], map(), term()) :: [map()]
-  def format_property_rows(properties, results, bacnet_object \\ nil)
+  @spec format_property_rows([term()], map(), term(), ObjectIdentifier.t() | nil) :: [map()]
+  def format_property_rows(properties, results, bacnet_object \\ nil, object_id \\ nil)
       when is_list(properties) and is_map(results) do
-    format_results(properties, results, bacnet_object)
+    format_results(properties, results, bacnet_object, object_id)
   end
 
   @doc false
@@ -533,7 +539,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
           {nil, Map.take(results, successful), :individual_map_fallback}
       end
 
-    result = build_read_result(successful, display_results, bacnet_object)
+    result = build_read_result(successful, display_results, bacnet_object, object)
 
     debug_log(object, "read_all_done", fn ->
       %{
@@ -731,10 +737,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp property_progress_interval(total) when total <= 40, do: 1
   defp property_progress_interval(total), do: max(1, div(total, 20))
 
-  defp build_read_result(properties, results, bacnet_object)
+  defp build_read_result(properties, results, bacnet_object, object_id)
        when is_list(properties) and is_map(results) do
     %{
-      properties: format_results(properties, results, bacnet_object),
+      properties: format_results(properties, results, bacnet_object, object_id),
       unknown_properties: format_unknown_properties(bacnet_object)
     }
   end
@@ -765,9 +771,9 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   def format_unknown_properties(_bacnet_object), do: []
 
-  defp format_results(properties, results, bacnet_object)
+  defp format_results(properties, results, bacnet_object, object_id)
        when is_list(properties) and is_map(results) do
-    type_map = properties_type_map(bacnet_object)
+    type_map = properties_type_map(bacnet_object, object_id)
 
     properties
     |> Enum.map(fn property ->
@@ -836,8 +842,31 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   defp binary_presentation(_value, _bac_type), do: %{}
 
-  defp properties_type_map(bacnet_object) when is_object(bacnet_object) do
-    mod = bacnet_object.__struct__
+  # Prefer the cast struct module; when cast failed / map-only results, resolve the
+  # object type module from ObjectIdentifier via bacstack mappings so known properties
+  # (e.g. NetworkPort.mac_address) still get schema bac_types.
+  defp properties_type_map(bacnet_object, object_id) do
+    cond do
+      is_object(bacnet_object) ->
+        type_map_from_module(bacnet_object.__struct__)
+
+      match?(%ObjectIdentifier{}, object_id) ->
+        type_map_from_object_id(object_id)
+
+      true ->
+        %{}
+    end
+  end
+
+  defp type_map_from_object_id(%ObjectIdentifier{type: type}) do
+    case ObjectsUtility.get_object_type_mappings()[type] do
+      mod when is_atom(mod) -> type_map_from_module(mod)
+      _unsupported -> %{}
+    end
+  end
+
+  defp type_map_from_module(mod) when is_atom(mod) do
+    Code.ensure_loaded(mod)
 
     if function_exported?(mod, :get_properties_type_map, 0) do
       mod.get_properties_type_map()
@@ -845,8 +874,6 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       %{}
     end
   end
-
-  defp properties_type_map(_bacnet_object), do: %{}
 
   defp property_type(_value, _display, {:constant, _type}), do: "ENUMERATED"
 

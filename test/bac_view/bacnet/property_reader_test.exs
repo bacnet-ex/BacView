@@ -155,6 +155,23 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert Enum.any?(rows, &(&1.property == :present_value and &1.value == 1.0))
     end
 
+    test "labels schema types from ObjectIdentifier when only a raw map is available" do
+      # Cast/map-fallback path: no NetworkPort struct, but OID still yields type map.
+      object_id = %ObjectIdentifier{type: :network_port, instance: 1}
+
+      result =
+        PropertyReader.read_result_from_object(object_id, %{
+          object_name: "NP-1",
+          mac_address: "ABCDEF"
+        })
+
+      row = Enum.find(result.properties, &(&1.property == :mac_address))
+
+      assert row.bac_type == :octet_string
+      assert row.type == "OCTET STRING"
+      assert row.value_formatted == "41:42:43:44:45:46"
+    end
+
     test "labels integer properties from object schema" do
       {:ok, unsigned_object} =
         AnalogInput.create(1, "AI-1", %{present_value: 1.0, update_interval: 30})
@@ -1101,6 +1118,51 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       assert pv_row.bac_type == :octet_string
       assert pv_row.type == "OCTET STRING"
+    end
+
+    test "labels NetworkPort mac_address as OCTET STRING via ObjectIdentifier without cast struct" do
+      object_id = %ObjectIdentifier{type: :network_port, instance: 3}
+      printable_mac = "ABCDEF"
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:mac_address],
+          %{mac_address: printable_mac},
+          nil,
+          object_id
+        )
+
+      assert row.bac_type == :octet_string
+      assert row.type == "OCTET STRING"
+      assert row.value_formatted == "41:42:43:44:45:46"
+      assert row.string_value?
+    end
+
+    test "falls back to value-shape typing when property is not in object schema" do
+      object_id = %ObjectIdentifier{type: :network_port, instance: 1}
+      unknown_id = 9999
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [unknown_id],
+          %{unknown_id => "hello"},
+          nil,
+          object_id
+        )
+
+      assert row.bac_type == nil
+      assert row.type == "CHARACTER STRING"
+    end
+
+    test "falls back to value-shape typing when neither struct nor ObjectIdentifier is given" do
+      [row] =
+        PropertyReader.format_property_rows(
+          [:mac_address],
+          %{mac_address: "ABCDEF"}
+        )
+
+      assert row.bac_type == nil
+      assert row.type == "CHARACTER STRING"
     end
   end
 
