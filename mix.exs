@@ -112,12 +112,11 @@ defmodule BacView.MixProject do
         ""
       end
 
-    env_desktop =
-      if windows?() do
-        "set BACVIEW_DESKTOP=1&&"
-      else
-        "BACVIEW_DESKTOP=1"
+    desktop_env = fn _args ->
+      if not desktop_mode?() do
+        raise "Missing environment variable BACVIEW_DESKTOP - it is required for desktop"
       end
+    end
 
     [
       setup: ["deps.get", "assets.setup", "assets.build"],
@@ -129,18 +128,18 @@ defmodule BacView.MixProject do
         "phx.digest"
       ],
       "desktop.setup": [
-        "cmd#{cmd_prefix} #{env_desktop} mix deps.get",
-        "cmd#{cmd_prefix} #{env_desktop} mix deps.compile",
-        "assets.setup",
-        "cmd#{cmd_prefix} #{env_desktop} mix compile",
+        desktop_env,
+        "setup",
         "cmd#{cmd_prefix} cd src-tauri && cargo install tauri-cli --version \"^2.11.4\" --locked || true",
         "cmd#{cmd_prefix} cd src-tauri && cargo tauri icon ../priv/static/icon.png"
       ],
       "desktop.server": [
-        "cmd#{cmd_prefix} #{env_desktop} mix compile --force",
+        desktop_env,
+        "compile --force",
         "cmd#{cmd_prefix} cd src-tauri && cargo tauri dev"
       ],
       "desktop.prepare_release": [
+        desktop_env,
         "desktop.setup",
         "assets.deploy",
         "compile --force",

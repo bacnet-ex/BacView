@@ -41,7 +41,9 @@ mix setup
 mix phx.server
 ```
 
-Open [http://localhost:4000](http://localhost:4000), click **Netzwerk scannen**, then select a device.
+I recommend running `mix deps.update --all` before to get the newest versions and latest bacstack patches/improvements.
+
+Open [http://localhost:4000](http://localhost:4000), click **Scan network**, then select a device.
 
 To discover devices on a **remote BACnet/IP network**, register BacView as a Foreign Device with your BBMD (dashboard sidebar). Who-Is scans are then distributed through the BBMD.
 
@@ -76,15 +78,31 @@ sudo apt install libwebkit2gtk-4.1-dev \
 Starting the desktop application:
 
 ```bash
-BACVIEW_DESKTOP=1 mix deps.get
+BACVIEW_DESKTOP=1 mix desktop.setup
 BACVIEW_DESKTOP=1 mix desktop.server
 ```
+
+or
+
+```bash
+./scripts/desktop_dev.sh
+```
+
+Windows also has a batch with ending `.bat`.
 
 Package a distributable installer (`.{AppImage,deb,rpm}` on Linux, `.exe` on Windows):
 
 ```bash
-mix do desktop.setup + desktop.installer
+BACVIEW_DESKTOP=1 mix desktop.installer
 ```
+
+or
+
+```bash
+./scripts/desktop_release.sh
+```
+
+Windows also has a batch with ending `.bat`.
 
 Desktop notes:
 
@@ -137,41 +155,76 @@ Place a `.env` file next to the release root to load environment variables at st
 ### Supervision tree
 
 ```
-BacView.Application
+BacView.Application                          # strategy: :one_for_one
 ├── BacViewWeb.Telemetry
 ├── BacView.PubSub
-├── BacView.Settings                    # runtime_settings.json
-├── BacView.BACnet.Cache                # named ETS tables
-├── BacView.BACnet.Stack                # Boot + optional Runtime (client/transport)
-├── BacView.BACnet.ForeignRegistration  # BBMD foreign device re-registration
-├── BacView.BACnet.Discovery            # Who-Is / I-Am
-├── BacView.BACnet.SubscriptionManager  # COV subscribe / renew / log
+├── BacView.Settings                         # runtime_settings.json
+├── BacView.LogStore                         # in-app log ring buffer (+ optional file)
+│
+│  # when config :bacview, start_bacnet: true (default; tests set false):
+├── BacView.BACnet.Cache                     # named ETS tables
+├── BacView.BACnet.Stack                     # supervisor (see below)
+├── BacView.BACnet.ForeignRegistration       # BBMD foreign device re-registration
+├── BacView.BACnet.Discovery                 # Who-Is / I-Am
+├── BacView.BACnet.SubscriptionManager       # COV subscribe / renew / notification log
 ├── BacView.BACnet.NotificationClassRecipient
-├── BacView.BACnet.AlarmEvent           # GetAlarmSummary + event notifications
-├── BacView.BACnet.DeviceRegistry       # Registry for per-device sessions
-├── BacView.BACnet.DeviceSessionSupervisor  # DynamicSupervisor → DeviceSession
-└── BacViewWeb.Endpoint
-    # (+ Desktop.Window when BACVIEW_DESKTOP=1)
+├── BacView.BACnet.AlarmEvent                # GetAlarmSummary + event notifications
+├── BacView.BACnet.NetworkNumber             # What-Is / Network-Number-Is (NPDU)
+│
+│  # always started (also when start_bacnet: false):
+├── BacView.BACnet.DeviceRegistry            # Registry :unique → DeviceSession
+├── BacView.BACnet.DeviceSessionSupervisor   # DynamicSupervisor → DeviceSession
+│
+├── BacViewWeb.Endpoint
+└── # desktop only (BACVIEW_DESKTOP=1 compile):
+    ├── ElixirKit.PubSub
+    └── Task (broadcasts ready:http://… to the desktop shell)
 ```
 
-BACnet children (Cache through DeviceSessionSupervisor) start only when
-`config :bacview, start_bacnet: true` (the default). Tests set `start_bacnet: false`.
-The stack transport/client is started after the supervisor boots via
-`Stack.Boot.start_runtime/0` so invalid settings leave the app up with BACnet offline.
+**`BacView.BACnet.Stack`** (child supervisor):
+
+```
+Stack
+├── Stack.Boot                               # GenServer: start/restart/monitor runtime
+└── Stack.Runtime                            # started later via Boot.start_runtime/0
+    ├── Transport.*                          # IPv4 or MS/TP (named TransportLayer)
+    ├── Segmentator                          # bacstack segmentation
+    ├── SegmentsStore
+    └── Client                               # bacstack client (named ClientStack)
+```
+
+Notes:
+
+- **BACnet domain processes** (Cache through NetworkNumber) start only when
+  `config :bacview, start_bacnet: true`. Tests set `start_bacnet: false` to avoid UDP.
+- **DeviceRegistry + DeviceSessionSupervisor** always start so session APIs stay available
+  even with BACnet offline.
+- The stack **Runtime** (transport + client) is **not** started inside `init/1`. After the
+  root supervisor is up, `Application` calls `Stack.Boot.start_runtime/0`. Invalid settings
+  leave the app running with BACnet offline; settings can be fixed and the stack restarted
+  from the UI (`Stack.restart/0`).
+- `Stack.Runtime` uses `:one_for_all` and is registered as a **temporary** child of `Stack`
+  so a crash does not loop forever; Boot monitors it and exposes `status/last_error`.
+- After the root supervisor starts, `LogStore.attach/0` installs a `:logger` handler for the in-app viewer.
 
 ### Layers
 
 | Layer | Modules | Role |
 |-------|---------|------|
-| Stack / transport | `Stack`, `Stack.Boot` / `Runtime`, `Transport.*`, `Client` | bacstack client, IPv4/MS/TP, BBMD foreign registration |
-| Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list in ETS |
-| Per-device session | `DeviceSession`, `DeviceSessionSupervisor` | Load/scan device, object cache, property read/write, scan recovery |
-| Property IO | `PropertyLoad`, `Protocol.PropertyReader`, `ObjectScanRead` | RPM first, individual ReadProperty fallback, scan fallback on hard errors |
+| Settings / platform | `Settings`, `LogStore`, `Platform`, `Timezone` | Persisted stack config, log buffer, desktop vs web |
+| Stack / transport | `Stack`, `Stack.Boot` / `Runtime`, `Transport.*`, `Client`, `TransportResolver` | bacstack client, IPv4/MS/TP, APDU segmentation |
+| BBMD / foreign device | `ForeignRegistration` | Register with remote BBMD; TTL re-registration |
+| Network layer | `NetworkNumber` | Local network number, What-Is-Network-Number / Network-Number-Is |
+| Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list + share ETS |
+| Per-device session | `DeviceSession`, `DeviceSessionSupervisor`, `DeviceRegistry` | Load/scan device, object cache, property read/write, scan recovery |
+| Property IO | `PropertyLoad`, `Protocol.PropertyReader` / `PropertyWriter`, `ObjectScanRead` | RPM first, individual ReadProperty fallback, writes, scan fallback |
 | Validation recovery | `ValidationSkipStore` | Persist skip modes after scan recovery |
-| Subscriptions / COV | `SubscriptionManager` | COV subscribe, notification log, pruning |
-| Alarms | `AlarmEvent`, `ActiveAlarms` | Event state, active-alarm lists |
-| Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `HierarchySplit` | Structured View + name-split trees |
-| Web | `BacViewWeb.Live.*`, components | LiveViews, tables, popups, charts |
+| Subscriptions / COV | `SubscriptionManager`, `Subscription` | COV subscribe, auto-renew, notification log |
+| Alarms / events | `AlarmEvent`, `ActiveAlarms`, `NotificationClassRecipient` | Poll + live events, active lists, NC recipient enrollment |
+| Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `NameHierarchyCache`, `HierarchySplit` | Structured View + name-split trees |
+| Device services / files | `DeviceServices`, `FileTransfer`, `EdeExport` | Time sync, DCC, reinit, AtomicRead/WriteFile, EDE |
+| Protocol helpers | `Protocol.*` (formatters, charts, trend log, schedules, …) | Display, export, chart payloads |
+| Web | `BacViewWeb.Live.*`, components, helpers | LiveViews, tables, popups, charts |
 
 Primary UI routes:
 
@@ -181,7 +234,7 @@ Primary UI routes:
 | `/devices/:device_id` | `DeviceLive` |
 | `/devices/:device_id/objects/:type/:instance` | `ObjectLive` |
 
-Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. Runtime BACnet state uses **ETS** (`BacView.BACnet.Cache`) and JSON settings (`BacView.Settings`) - no Ecto for domain data.
+Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. Runtime BACnet state uses **ETS** (`BacView.BACnet.Cache` and a few owner-created tables) and JSON settings (`BacView.Settings`) - no Ecto for domain data.
 
 ### Device load vs object property load
 
@@ -198,10 +251,19 @@ Individual property progress is broadcast on `"device:#{id}:properties_progress"
 
 ### ETS tables
 
-Owned by `BacView.BACnet.Cache`:
+Owned by `BacView.BACnet.Cache` at startup:
 
-`:bacview_devices`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`,
-`:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`
+`:bacview_devices`, `:bacview_device_share`, `:bacview_objects`, `:bacview_properties`,
+`:bacview_subscriptions`, `:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`,
+`:bacview_validation_skip_modes`
+
+Created by other processes (still cleared with device data via `Cache.clear_all_device_data/0`):
+
+| Table | Owner |
+|-------|--------|
+| `:bacview_cov_notification_log` / `:bacview_cov_notification_seq` | `SubscriptionManager` |
+| `:bacview_notification_log` / `:bacview_notification_seq` | `AlarmEvent` |
+| `:bacview_nc_recipients` | `NotificationClassRecipient` |
 
 Web code must not open subscription ETS directly - use `SubscriptionManager` APIs.
 
