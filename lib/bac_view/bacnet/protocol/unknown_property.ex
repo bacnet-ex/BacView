@@ -159,8 +159,6 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
     value != [] and Enum.all?(value, &match?(%Encoding{}, &1))
   end
 
-  defp encoding_list?(_value), do: false
-
   defp encoding_list_binary(value) when is_list(value) do
     Enum.reduce_while(value, {:ok, <<>>}, fn %Encoding{} = encoding, {:ok, acc} ->
       with {:ok, raw} <- Encoding.to_encoding(encoding),

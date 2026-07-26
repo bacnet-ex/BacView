@@ -502,18 +502,12 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_info({:device_service_complete, _service, _result} = msg, socket) do
-    case DeviceServicesHandlers.handle_info(msg, socket) do
-      {:noreply, socket} -> {:noreply, socket}
-      :not_handled -> {:noreply, socket}
-    end
+    DeviceServicesHandlers.handle_info(msg, socket)
   end
 
   @impl true
   def handle_info({:device_scan_complete, _device_id, _result} = msg, socket) do
-    case DeviceServicesHandlers.handle_info(msg, socket) do
-      {:noreply, socket} -> {:noreply, socket}
-      :not_handled -> {:noreply, socket}
-    end
+    DeviceServicesHandlers.handle_info(msg, socket)
   end
 
   @impl true

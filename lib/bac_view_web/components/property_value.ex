@@ -406,9 +406,6 @@ defmodule BacViewWeb.PropertyValue do
     not writable
   end
 
-  defp collapsible?(%{kind: kind}, _writable) when kind in [:array, :list, :priority_array],
-    do: true
-
   defp collapsible?(%{kind: kind, formatted: formatted}, _writable)
        when kind in [:scalar, :object_identifier] and is_binary(formatted) do
     String.length(formatted) > @collapse_char_limit
@@ -423,6 +420,4 @@ defmodule BacViewWeb.PropertyValue do
       formatted
     end
   end
-
-  defp collapse_summary(display), do: PropertyDisplay.brief_summary(display)
 end

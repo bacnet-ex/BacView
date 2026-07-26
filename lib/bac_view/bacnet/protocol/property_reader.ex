@@ -34,7 +34,6 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   import BACnet.Protocol.ObjectsUtility, only: [is_object: 1]
 
-  require Constants
   require Logger
 
   @read_opts [allow_unknown_properties: :no_unpack, ignore_unsupported_object_types: true]
@@ -164,26 +163,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   @doc false
   @spec read_result_from_object(ObjectIdentifier.t(), term()) :: read_result()
   def read_result_from_object(%ObjectIdentifier{} = object_id, obj) do
-    bacnet_object = if is_object(obj), do: obj, else: nil
-
-    results =
-      cond do
-        is_object(obj) -> ObjectsUtility.to_map(obj)
-        is_map(obj) -> obj
-        true -> %{}
-      end
-
-    raw_properties =
-      cond do
-        is_object(obj) ->
-          obj |> ObjectsUtility.get_properties() |> normalize_properties()
-
-        is_map(obj) ->
-          normalize_properties(Map.keys(obj))
-
-        true ->
-          []
-      end
+    {bacnet_object, results, raw_properties} = object_results_and_properties(obj)
 
     properties = readable_properties(raw_properties, object_id)
 
@@ -194,6 +174,19 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       properties: rows,
       unknown_properties: unknown
     }
+  end
+
+  defp object_results_and_properties(obj) when is_object(obj) do
+    {obj, ObjectsUtility.to_map(obj), normalize_properties(ObjectsUtility.get_properties(obj))}
+  end
+
+  # Plain scan-map path (PropertyLoad fallback / tests); not a BACnet object struct.
+  defp object_results_and_properties(obj) when is_map(obj) do
+    {nil, obj, normalize_properties(Map.keys(obj))}
+  end
+
+  defp object_results_and_properties(_obj) do
+    {nil, %{}, []}
   end
 
   @doc false

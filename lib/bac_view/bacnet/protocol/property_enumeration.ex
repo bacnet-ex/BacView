@@ -49,16 +49,6 @@ defmodule BacView.BACnet.Protocol.PropertyEnumeration do
           %{value: name, label: option_label(enum_type, name, int_value)}
         end)
 
-      {names, _values, _doc} when is_list(names) ->
-        names
-        |> Enum.sort()
-        |> Enum.map(fn name ->
-          %{
-            value: name,
-            label: option_label(enum_type, name, Constants.by_name!(enum_type, name))
-          }
-        end)
-
       _enum_type ->
         []
     end

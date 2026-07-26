@@ -83,7 +83,7 @@ defmodule BacView.BACnet.FileTransfer do
         opts
       )
     else
-      <<chunk::binary-size(chunk_size), rest::binary>> = data
+      <<chunk::binary-size(^chunk_size), rest::binary>> = data
 
       write_stream_chunk(
         destination,
@@ -183,7 +183,7 @@ defmodule BacView.BACnet.FileTransfer do
     Stream.unfold(data, fn
       <<>> -> nil
       bin when byte_size(bin) <= size -> {bin, <<>>}
-      <<chunk::binary-size(size), rest::binary>> -> {chunk, rest}
+      <<chunk::binary-size(^size), rest::binary>> -> {chunk, rest}
     end)
   end
 

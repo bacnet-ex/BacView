@@ -1290,12 +1290,12 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp encoding_value_template(type, _template_type, _value),
     do: template_value_template(nil, type)
 
-  defp rebuild_encoding(type, value, %Encoding{} = template) when is_atom(type) do
-    finalize_encoding(%{template | type: type, value: value})
-  end
-
   defp rebuild_encoding(nil, value, %Encoding{} = template) do
     finalize_encoding(%{template | value: value})
+  end
+
+  defp rebuild_encoding(type, value, %Encoding{} = template) when is_atom(type) do
+    finalize_encoding(%{template | type: type, value: value})
   end
 
   defp finalize_encoding(%Encoding{} = encoding) do

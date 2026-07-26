@@ -168,18 +168,23 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
          series_acc,
          markers_acc
        ) do
-    with {:ok, at} <- datetime_to_ms(timestamp),
-         {:ok, value} <- TrendLogReader.numeric_value(datum),
-         series when not is_nil(series) <- Map.get(series_acc, "s0") do
-      point = build_chart_point(at, value, Map.get(series, :enum_object))
-
-      {Map.update!(series_acc, "s0", &Map.update!(&1, :points, fn pts -> [point | pts] end)),
-       maybe_marker(markers_acc, at, datum)}
-    else
+    case datetime_to_ms(timestamp) do
       {:ok, at} ->
-        {series_acc, maybe_marker(markers_acc, at, datum)}
+        case {Map.get(series_acc, "s0"), TrendLogReader.numeric_value(datum)} do
+          {series, {:ok, value}} when not is_nil(series) ->
+            point = build_chart_point(at, value, Map.get(series, :enum_object))
 
-      _record ->
+            {Map.update!(
+               series_acc,
+               "s0",
+               &Map.update!(&1, :points, fn pts -> [point | pts] end)
+             ), maybe_marker(markers_acc, at, datum)}
+
+          _record ->
+            {series_acc, maybe_marker(markers_acc, at, datum)}
+        end
+
+      _timestamp ->
         {series_acc, markers_acc}
     end
   end

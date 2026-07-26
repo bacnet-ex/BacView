@@ -196,6 +196,5 @@ defmodule BacView.BACnet.EventExport do
   defp csv_cell(nil), do: ""
   defp csv_cell(value) when is_binary(value), do: "\"#{String.replace(value, "\"", "\"\"")}\""
   defp csv_cell(value) when is_atom(value), do: Atom.to_string(value)
-  defp csv_cell(value) when is_boolean(value), do: if(value, do: "true", else: "false")
   defp csv_cell(value), do: to_string(value)
 end

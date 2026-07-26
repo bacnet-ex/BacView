@@ -194,12 +194,9 @@ defmodule BacViewWeb.WritePresentValueModal do
   defp commandable?(_object), do: false
 
   defp active_priority(object) when is_map(object), do: Map.get(object, :active_priority)
-  defp active_priority(_object), do: nil
 
   defp active_priority_value_formatted(object) when is_map(object),
     do: Map.get(object, :active_priority_value_formatted)
-
-  defp active_priority_value_formatted(_object), do: nil
 
   defp boolean_options(object) when is_map(object) do
     cond do
@@ -260,11 +257,9 @@ defmodule BacViewWeb.WritePresentValueModal do
 
   defp bitstring_size(object) when is_map(object) do
     case Map.get(object, :present_value) do
-      value when is_tuple(value) -> tuple_size(value)
       {:bitstring, value} when is_tuple(value) -> tuple_size(value)
+      value when is_tuple(value) -> tuple_size(value)
       _other -> 0
     end
   end
-
-  defp bitstring_size(_object), do: 0
 end

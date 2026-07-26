@@ -157,10 +157,8 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
   defp received_naive(_entry), do: nil
 
   defp received_at_to_ms(%DateTime{} = received_at) do
-    case received_naive(%{received_at: received_at}) do
-      %NaiveDateTime{} = naive -> {:ok, TrendLogChart.naive_to_unix_ms(naive)}
-      _received_at -> :error
-    end
+    naive = received_naive(%{received_at: received_at})
+    {:ok, TrendLogChart.naive_to_unix_ms(naive)}
   end
 
   defp received_at_to_ms(_received_at), do: :error
