@@ -45,6 +45,18 @@ defmodule BacView.BACnet.DiscoveryTest do
     {:bacview_validation_skip_modes, [:named_table, :set, :public]}
   ]
 
+  describe "list_devices/0" do
+    test "sorts by instance and tolerates partial maps without instance" do
+      BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+        :ets.insert(:bacview_devices, {30, %{id: 30, instance: 30}})
+        :ets.insert(:bacview_devices, {1, %{id: 1}})
+        :ets.insert(:bacview_devices, {10, %{id: 10, instance: 10}})
+
+        assert Enum.map(Discovery.list_devices(), & &1.id) == [1, 10, 30]
+      end)
+    end
+  end
+
   describe "cancel_scan/0" do
     test "removes all discovered devices" do
       BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->

@@ -63,6 +63,12 @@ defmodule BacViewWeb.KeyboardNavigationTest do
     assert Shortcuts.device_action(shift_c, base) == {:event, "subscribe_all_pv"}
     assert Shortcuts.device_action(shift_u, base) == {:event, "unsubscribe_all_cov"}
 
+    hierarchy = %{base | tab: "hierarchy"}
+    assert Shortcuts.device_action(c, hierarchy) == {:event, "subscribe_selected_cov"}
+    assert Shortcuts.device_action(u, hierarchy) == {:event, "unsubscribe_selected_cov"}
+    assert Shortcuts.device_action(shift_c, hierarchy) == {:event, "subscribe_all_pv"}
+    assert Shortcuts.device_action(shift_u, hierarchy) == {:event, "unsubscribe_all_cov"}
+
     cov = %{base | tab: "subscriptions"}
     assert Shortcuts.device_action(c, cov) == {:event, "resubscribe_selected_subscriptions"}
     assert Shortcuts.device_action(shift_c, cov) == {:event, "subscribe_all_pv"}
@@ -80,7 +86,7 @@ defmodule BacViewWeb.KeyboardNavigationTest do
     assert Shortcuts.device_action(shift_u, no_subs) == :none
   end
 
-  test "device_action ignores shortcuts outside their list context" do
+  test "device_action ignores selected-object shortcuts without selection" do
     assigns = %{
       tab: "hierarchy",
       cov_view: "subscriptions",
@@ -91,13 +97,16 @@ defmodule BacViewWeb.KeyboardNavigationTest do
       nc_subscribing: false,
       nc_enrolled_count: 0,
       nc_total: 2,
-      selected_object_keys: MapSet.new([{:analog_input, 1}]),
-      selected_subscription_keys: MapSet.new([{:analog_input, 1, :present_value}])
+      selected_object_keys: MapSet.new(),
+      selected_subscription_keys: MapSet.new(),
+      subscriptions: []
     }
 
     c = %{"key" => "c", "code" => "KeyC", "shift" => false}
+    u = %{"key" => "u", "code" => "KeyU", "shift" => false}
 
     assert Shortcuts.device_action(c, assigns) == :none
+    assert Shortcuts.device_action(u, assigns) == :none
   end
 
   test "blocking_modal_open? detects write and other modal assigns" do

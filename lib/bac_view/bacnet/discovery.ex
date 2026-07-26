@@ -176,9 +176,15 @@ defmodule BacView.BACnet.Discovery do
       @table
       |> :ets.tab2list()
       |> Enum.map(fn {_id, device} -> device end)
-      |> Enum.sort_by(& &1.instance)
+      |> Enum.sort_by(&device_sort_key/1)
     end
   end
+
+  # Prefer :instance (I-Am path); fall back to :id for partial test fixtures /
+  # incomplete maps so dashboard mounts never KeyError under concurrent ETS use.
+  defp device_sort_key(%{instance: instance}) when is_integer(instance), do: instance
+  defp device_sort_key(%{id: id}) when is_integer(id), do: id
+  defp device_sort_key(_device), do: 0
 
   @doc false
   @spec normalize_device_name(term()) :: String.t() | nil

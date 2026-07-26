@@ -120,6 +120,9 @@ msgstr "Subscriptions"
 msgid "Abonnements suchen… (-Begriff zum Ausschliessen)"
 msgstr "Search subscriptions… (-term to exclude)"
 
+msgid "Abonnements, Hierarchie & Objektliste"
+msgstr "Hierarchy, object list & subscriptions"
+
 msgid "Actions"
 msgstr "Actions"
 
@@ -650,9 +653,6 @@ msgstr "Learned"
 
 msgid "Erneut abonnieren"
 msgstr "Resubscribe"
-
-msgid "Erneut abonnieren (Auswahl)"
-msgstr "Resubscribe (selection)"
 
 msgid "Erweitert"
 msgstr "Advanced"
@@ -1199,9 +1199,6 @@ msgstr "Open object properties"
 
 msgid "Objektfehler"
 msgstr "Object error"
-
-msgid "Objektliste"
-msgstr "Object list"
 
 msgid "Objektliste abrufen…"
 msgstr "Fetching object list…"

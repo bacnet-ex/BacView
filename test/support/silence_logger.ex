@@ -27,16 +27,26 @@ defmodule BacView.Test.SilenceLogger do
   Runs `fun` while holding the module-level lock so log assertions are not
   affected by other tests silencing the same module.
 
-  Pass modules in `unsilence` to temporarily clear their module-level overrides
+  Pass modules in `unsilence` to temporarily enable logging for them
   (e.g. another async test called `silence_for_test/2` on `Client`).
+
+  Options:
+  * `:unsilence` — modules whose level overrides are replaced for the duration
+  * `:level` — level to apply while unsilenced (default `:debug`)
   """
   @spec with_logging((-> term()), keyword()) :: term()
   def with_logging(fun, opts \\ []) when is_function(fun, 0) do
     modules = Keyword.get(opts, :unsilence, [])
+    enable_level = Keyword.get(opts, :level, :debug)
 
     trans(fn ->
       previous = Map.new(modules, fn mod -> {mod, Logger.get_module_level(mod)} end)
-      Enum.each(modules, &Logger.delete_module_level/1)
+
+      # Explicit permissive override (not delete_module_level/1): app log level
+      # in test is :warning, so debug assertions need a module override, and a
+      # bare delete leaves the module subject to other async silence_for_test/2
+      # races once the lock is released.
+      Enum.each(modules, &Logger.put_module_level(&1, enable_level))
 
       try do
         fun.()

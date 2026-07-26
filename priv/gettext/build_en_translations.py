@@ -443,6 +443,8 @@ TRANSLATIONS: dict[str, str] = {
     "Objektdetails": "Object details",
     "Passwort (optional)": "Password (optional)",
     "Objektliste": "Object list",
+    "Objektliste & Hierarchie": "Object list & hierarchy",
+    "Abonnements, Hierarchie & Objektliste": "Hierarchy, object list & subscriptions",
     "Objektliste abrufen…": "Fetching object list…",
     "Objekte": "Objects",
     "Objekte suchen…": "Search objects…",

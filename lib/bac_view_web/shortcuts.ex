@@ -243,8 +243,8 @@ defmodule BacViewWeb.Shortcuts do
   end
 
   defp device_shortcut(:subscribe_selected_cov, params, assigns) do
-    if letter_key_pressed?(params, "c") && not shift_pressed?(params) && objects_tab?(assigns) &&
-         not assigns.loading && selected_objects?(assigns) do
+    if letter_key_pressed?(params, "c") && not shift_pressed?(params) &&
+         object_selection_tab?(assigns) && not assigns.loading && selected_objects?(assigns) do
       {:event, "subscribe_selected_cov"}
     else
       :none
@@ -252,8 +252,8 @@ defmodule BacViewWeb.Shortcuts do
   end
 
   defp device_shortcut(:unsubscribe_selected_cov, params, assigns) do
-    if letter_key_pressed?(params, "u") && not shift_pressed?(params) && objects_tab?(assigns) &&
-         not assigns.loading && selected_objects?(assigns) do
+    if letter_key_pressed?(params, "u") && not shift_pressed?(params) &&
+         object_selection_tab?(assigns) && not assigns.loading && selected_objects?(assigns) do
       {:event, "unsubscribe_selected_cov"}
     else
       :none
@@ -307,10 +307,11 @@ defmodule BacViewWeb.Shortcuts do
     end
   end
 
-  defp objects_tab?(assigns), do: assigns.tab == "objects"
+  # Object selection bar is shared by hierarchy explorer/tree and the objects list.
+  defp object_selection_tab?(assigns), do: assigns.tab in ["hierarchy", "objects"]
 
   defp subscribe_all_pv_tab?(assigns) do
-    objects_tab?(assigns) or assigns.tab == "subscriptions"
+    object_selection_tab?(assigns) or assigns.tab == "subscriptions"
   end
 
   defp cov_subscriptions_list?(assigns) do

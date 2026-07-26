@@ -88,13 +88,12 @@ defmodule BacView.BACnet.ClientTest do
     log =
       SilenceLogger.with_logging(
         fn ->
-          Logger.put_module_level(Client, :debug)
-
           capture_log([level: :debug], fn ->
             Client.log_read_error(:read_object, nil, nil, nil, :timeout, level: :debug)
           end)
         end,
-        unsilence: [Client]
+        unsilence: [Client],
+        level: :debug
       )
 
     assert log =~ "BACnet read_object failed"

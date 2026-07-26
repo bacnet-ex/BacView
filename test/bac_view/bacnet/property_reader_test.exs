@@ -503,13 +503,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
   describe "property_read_concurrency/1" do
     test "uses per-device max_concurrency when set" do
       BacnetEtsLock.with_tables([:bacview_devices], fn ->
-        if :ets.whereis(:bacview_devices) == :undefined do
-          :ets.new(:bacview_devices, [:named_table, :set, :public])
-        else
-          :ets.delete_all_objects(:bacview_devices)
-        end
-
-        :ets.insert(:bacview_devices, {42, %{id: 42, max_concurrency: 1}})
+        :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42, max_concurrency: 1}})
 
         assert PropertyReader.property_read_concurrency(device_id: 42) == 1
         assert PropertyReader.property_read_concurrency(remote_device_id: 42) == 1

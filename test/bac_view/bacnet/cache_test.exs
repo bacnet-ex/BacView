@@ -18,7 +18,7 @@ defmodule BacView.BACnet.CacheTest do
 
   test "clear_all_device_data empties owned and related tables" do
     BacnetEtsLock.with_tables(@tables, fn ->
-      :ets.insert(:bacview_devices, {1, %{id: 1}})
+      :ets.insert(:bacview_devices, {1, %{id: 1, instance: 1}})
       :ets.insert(:bacview_objects, {1, []})
       :ets.insert(:bacview_properties, {{1, :analog_input, 1}, []})
       :ets.insert(:bacview_hierarchy, {1, %{}})

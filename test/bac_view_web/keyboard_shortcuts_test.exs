@@ -15,13 +15,13 @@ defmodule BacViewWeb.KeyboardShortcutsTest do
       )
 
     assert html =~ "List actions"
-    assert html =~ "Object list"
+    assert html =~ "Hierarchy, object list &amp; subscriptions"
     assert html =~ "Subscribe COV (selection)"
     assert html =~ "Unsubscribe COV (selection)"
     assert html =~ "Subscribe all present values"
-    assert html =~ "Resubscribe (selection)"
-    assert html =~ "Cancel selected"
     assert html =~ "Unsubscribe all COV"
+    refute html =~ "Resubscribe (selection)"
+    refute html =~ ">Subscriptions<"
     assert html =~ "Enroll recipient list"
     assert html =~ "Remove recipient list"
     assert html =~ "Fetch events"
