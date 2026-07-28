@@ -125,7 +125,7 @@ Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 | `BACVIEW_DESKTOP_LOCALE` | - | The locale to use on startup (automatically set by the desktop app) |
 | `BACVIEW_LOG_PATH` | `~/.config/bacview/bacview.log` on desktop, `tmp/bacview.log` otherwise | Location of the Logger logfile |
 | `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback - lower (e.g. `1`) if old devices are overwhelmed |
-| `BACVIEW_READ_CONCUR_DISABLE_SHARED_RED` | - | Disable concurrency reduction for shared addresses (routers) to prevent overwhelm of router (`1` / `true`) |
+| `BACVIEW_READ_CONCUR_ENABLE_SHARED_RED` | - | Cap property-read concurrency to 1 when multiple devices share a transport address (e.g. router) (`1` / `true`) |
 | `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
 | `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
 
@@ -242,12 +242,35 @@ Domain logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`. R
 
 **Single-object properties** (`DeviceSession.read_properties` → `PropertyLoad` → `PropertyReader`):
 
-1. Prefer RPM (`read_object` / ReadPropertyMultiple).
+1. Prefer RPM (`read_object` / ReadPropertyMultiple with `read_level: :all`).
 2. On segmentation/buffer-style failures → individual concurrent `ReadProperty` (default concurrency **8**, `BACVIEW_PROPERTY_READ_CONCURRENCY`).
 3. Validation skip mode (from scan recovery) is applied via bacstack `object_opts` on the normal path - it does not force the scan path alone.
-4. On certain hard failures → `ObjectScanRead` fallback.
+4. On certain hard failures → `ObjectScanRead` fallback (same individual-read style as step 2).
 
 Individual property progress is broadcast on `"device:#{id}:properties_progress"` and shown in the object detail UI.
+
+#### Heavy properties (RPM vs fallback)
+
+Some properties are treated as **heavy**: large or expensive lists that can stall the UI for a long time if each element (or the whole list) is fetched with individual `ReadProperty` calls. The behaviour depends on the load path:
+
+| Path | Heavy properties |
+|------|------------------|
+| **RPM success** (`read_object` / `:all`) | **Included** in the object property table. Values were already returned in the RPM response, so they are kept for display and debugging (e.g. `object_list`, bindings, COV subscription lists). |
+| **Any individual / fallback path** | **Not read at all** — removed from the candidate list *before* `ReadProperty` is issued. They do not appear in the UI and are not requested from the device. |
+
+This applies to:
+
+- Object property view when RPM fails and BacView falls back to per-property reads
+- Schema / `property_list` fallback when the device has no usable property list
+- `ObjectScanRead` / scan-style map loads used during device scan and hard-error recovery
+
+Examples of heavy identifiers (see `PropertyReader.heavy_properties_for/1` for the full list):
+
+- **Device objects:** `object_list`, `structured_object_list`, `device_address_binding`, `active_cov_subscriptions`, slave/manual slave bindings, time-sync / restart notification recipient lists, `configuration_files`, and `property_list` itself
+- **Trend Log / Trend Log Multiple:** `log_buffer` (and `property_list`)
+- **All other object types:** `property_list` only (used only to discover which properties exist; not shown as a row)
+
+**Practical effect:** if a device supports RPM well, open the Device object (or any object loaded via RPM) and heavy lists show up like any other property. If the device forces the individual path, those rows are simply missing — BacView is not hiding a value it already has; it never asked for them, so discovery and object loads stay usable on limited devices.
 
 ### ETS tables
 

@@ -1,12 +1,20 @@
 defmodule BacView.Test.BacnetEtsLock do
   @moduledoc false
 
-  @lock {:bacview_ets_test_lock, node()}
+  alias BacView.Test.BacnetEtsOwner
+
+  # Runtime lock id (avoid compile-time node/0 in the lock term).
+  @lock_key :bacview_ets_test_lock
 
   @default_table_opts [:named_table, :set, :public]
 
   @doc """
-  Resets the given named ETS tables, runs `fun`, then deletes them.
+  Ensures the given named ETS tables exist (owned by `BacnetEtsOwner`), empties
+  them, runs `fun`, then empties them again.
+
+  Tables are **not** created in the test process — ownership stays with the
+  suite-lifetime owner so async test process exits cannot drop tables mid-run
+  for other tests.
 
   Serializes access across async tests that share global BACnet cache tables.
 
@@ -18,35 +26,34 @@ defmodule BacView.Test.BacnetEtsLock do
     specs = normalize_specs(table_specs)
 
     trans(fn ->
-      reset_tables!(specs)
+      BacnetEtsOwner.ensure_tables!(specs)
 
       try do
         fun.()
       after
-        delete_tables!(specs)
+        BacnetEtsOwner.clear_tables!(specs)
       end
     end)
   end
 
+  @doc """
+  Ensures tables exist under `BacnetEtsOwner` and are empty (takes the global
+  ETS lock).
+  """
   @spec reset_tables!([atom() | {atom(), [atom() | tuple()]}]) :: :ok
   def reset_tables!(table_specs) do
     specs = normalize_specs(table_specs)
-    delete_tables!(specs)
-
-    for {table, opts} <- specs do
-      :ets.new(table, opts)
-    end
-
-    :ok
+    trans(fn -> BacnetEtsOwner.ensure_tables!(specs) end)
   end
 
+  @doc """
+  Empties tables if present. Prefer this over deleting named tables so other
+  async tests do not observe a missing name.
+  """
   @spec delete_tables!([atom() | {atom(), [atom() | tuple()]}]) :: :ok
   def delete_tables!(table_specs) do
-    for {table, _opts} <- normalize_specs(table_specs) do
-      if :ets.whereis(table) != :undefined, do: :ets.delete(table)
-    end
-
-    :ok
+    specs = normalize_specs(table_specs)
+    trans(fn -> BacnetEtsOwner.clear_tables!(specs) end)
   end
 
   defp normalize_specs(table_specs) when is_list(table_specs) do
@@ -57,6 +64,6 @@ defmodule BacView.Test.BacnetEtsLock do
   end
 
   defp trans(fun) do
-    :global.trans(@lock, fun, [node()], :infinity)
+    :global.trans({@lock_key, node()}, fun, [node()], :infinity)
   end
 end

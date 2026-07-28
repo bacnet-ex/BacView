@@ -440,15 +440,7 @@ defmodule BacView.BACnet.Discovery do
     scan_gen = state.scan_generation + 1
 
     Task.start(fn ->
-      result =
-        try do
-          execute_scan(opts, scan_gen)
-        rescue
-          exception ->
-            Logger.error("Discovery scan crashed: #{Exception.format(:error, exception)}")
-            {:error, {:scan_failed, exception}}
-        end
-
+      result = scan_task_result(opts, scan_gen)
       GenServer.cast(__MODULE__, {:scan_finished, scan_gen, caller, result})
     end)
 
@@ -551,10 +543,30 @@ defmodule BacView.BACnet.Discovery do
     {execute_scan(opts), %{state | scanning: false, last_scan_at: DateTime.utc_now()}}
   end
 
+  # Async scan wrapper: never let the Task exit abnormally (avoids Logger.error
+  # from Task.Supervised). Stack-down is expected and returned as a normal error.
+  defp scan_task_result(opts, scan_gen) do
+    execute_scan(opts, scan_gen)
+  rescue
+    exception ->
+      Logger.error("Discovery scan crashed: #{Exception.format(:error, exception)}")
+      {:error, {:scan_failed, exception}}
+  catch
+    :exit, {:noproc, _call} ->
+      {:error, :stack_not_started}
+
+    :exit, reason ->
+      Logger.error("Discovery scan exited: #{inspect(reason)}")
+      {:error, {:scan_failed, reason}}
+  end
+
   defp execute_scan(opts, scan_gen \\ nil) do
     with {:ok, timeout} <- validate_timeout(Keyword.get(opts, :timeout, @default_timeout)) do
       do_execute_scan(opts, timeout, scan_gen)
     end
+  catch
+    :exit, {:noproc, _call} ->
+      {:error, :stack_not_started}
   end
 
   defp do_execute_scan(opts, timeout, scan_gen) do
@@ -668,6 +680,8 @@ defmodule BacView.BACnet.Discovery do
          {:ok, broadcast} <- GenServer.call(client, :get_broadcast_address) do
       StackClient.send(client, broadcast, apdu, [])
     end
+  catch
+    :exit, {:noproc, _call} -> {:error, :stack_not_started}
   end
 
   defp send_unicast_who_is(destination, opts) do
@@ -678,6 +692,8 @@ defmodule BacView.BACnet.Discovery do
       Logger.info("Who-Is unicast → #{format_single_destination(destination)}")
       :ok
     end
+  catch
+    :exit, {:noproc, _call} -> {:error, :stack_not_started}
   end
 
   defp format_single_destination({ip, port}) when is_tuple(ip) and is_integer(port),
@@ -1249,9 +1265,9 @@ defmodule BacView.BACnet.Discovery do
   defp do_normalize_device_name(_do_normalize_device_name), do: nil
 
   defp concurrency_shared_reduction?() do
-    not Application.get_env(
+    Application.get_env(
       :bacview,
-      :property_read_concurrency_disable_shared_reduction,
+      :property_read_concurrency_enable_shared_reduction,
       false
     )
   end

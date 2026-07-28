@@ -4,10 +4,13 @@ defmodule BacView.Text do
   @replacement "\uFFFD"
 
   @doc """
-  Ensures a binary is valid UTF-8 for JSON/LiveView serialization.
+  Ensures a binary is valid UTF-8 for JSON/LiveView **text** serialization.
 
   Tries a Latin-1 reinterpretation first (common for BACnet CharacterStrings),
   then replaces remaining invalid bytes.
+
+  **Do not** use this on opaque BACnet octet strings (MAC addresses, etc.).
+  Latin-1 expansion changes byte identity (e.g. `0x82` → `0xC2 0x82`).
   """
   @spec sanitize_utf8(binary() | nil) :: binary() | nil
   def sanitize_utf8(nil), do: nil
@@ -36,7 +39,20 @@ defmodule BacView.Text do
   end
 
   @doc """
-  Sanitizes string fields in a property row used by LiveView assigns.
+  Returns true when a binary should be treated as opaque octet data rather than
+  character text (invalid UTF-8, embedded NUL, or non-printable control bytes).
+  """
+  @spec opaque_binary?(term()) :: boolean()
+  def opaque_binary?(data) when is_binary(data), do: not printable_text?(data)
+  def opaque_binary?(_data), do: false
+
+  @doc """
+  Sanitizes **presentation** string fields on a property row used by LiveView assigns.
+
+  Domain binaries are preserved:
+  * `raw_binary` is never UTF-8-repaired (opaque octets / MAC bytes)
+  * top-level `:value` is only sanitized when it is character-string text
+  * nested display `field.value` binaries are left intact (domain data; UI uses `formatted`)
   """
   @spec sanitize_property_row(map()) :: map()
   def sanitize_property_row(row) when is_map(row) do
@@ -48,8 +64,7 @@ defmodule BacView.Text do
       %{kind: :scalar, formatted: "-", fields: [], items: []},
       &sanitize_display/1
     )
-    |> Map.update(:value, nil, &sanitize_property_value/1)
-    |> Map.update(:raw_binary, nil, &sanitize_utf8/1)
+    |> sanitize_row_value()
     |> Map.update(:enum_options, nil, &sanitize_enum_options/1)
   end
 
@@ -87,7 +102,8 @@ defmodule BacView.Text do
     field
     |> Map.update(:label, nil, &sanitize_utf8/1)
     |> Map.update!(:formatted, &sanitize_utf8/1)
-    |> Map.update(:value, nil, &sanitize_property_value/1)
+    # Nested field values are domain data (e.g. RecipientAddress.address MAC octets).
+    # Never Latin-1-expand them — only presentation strings above are sanitized.
     |> Map.update(:fields, [], &sanitize_fields/1)
     |> Map.update(:items, [], &sanitize_items/1)
   end
@@ -97,8 +113,56 @@ defmodule BacView.Text do
   defp sanitize_item(%{} = item), do: sanitize_field(item)
   defp sanitize_item(item), do: item
 
-  defp sanitize_property_value(value) when is_binary(value), do: sanitize_utf8(value)
-  defp sanitize_property_value(value), do: value
+  defp sanitize_row_value(row) when is_map(row) do
+    case Map.get(row, :value) do
+      value when is_binary(value) ->
+        if sanitize_top_level_binary?(row) do
+          Map.put(row, :value, sanitize_utf8(value))
+        else
+          row
+        end
+
+      %{__struct__: struct_mod, type: :character_string, value: inner} = encoding
+      when is_binary(inner) ->
+        if encoding_module?(struct_mod) do
+          Map.put(row, :value, %{encoding | value: sanitize_utf8(inner)})
+        else
+          row
+        end
+
+      _other ->
+        row
+    end
+  end
+
+  defp sanitize_top_level_binary?(row) do
+    cond do
+      octet_string_row?(row) -> false
+      character_string_row?(row) -> true
+      # Untyped binary presented as character text (fallback typing).
+      Map.get(row, :type) == "CHARACTER STRING" -> true
+      Map.get(row, :string_value?) == true and Map.get(row, :type) != "OCTET STRING" -> true
+      true -> false
+    end
+  end
+
+  defp character_string_row?(row) do
+    bac_type = Map.get(row, :bac_type)
+    type_label = Map.get(row, :type)
+
+    bac_type in [:string, :character_string] or type_label == "CHARACTER STRING"
+  end
+
+  defp octet_string_row?(row) do
+    bac_type = Map.get(row, :bac_type)
+    type_label = Map.get(row, :type)
+
+    bac_type == :octet_string or type_label == "OCTET STRING"
+  end
+
+  defp encoding_module?(mod) do
+    mod == BACnet.Protocol.ApplicationTags.Encoding
+  end
 
   defp latin1_to_utf8(binary) do
     case :unicode.characters_to_binary(binary, :latin1, :utf8) do

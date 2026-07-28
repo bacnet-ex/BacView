@@ -73,6 +73,9 @@ TRANSLATIONS: dict[str, str] = {
     "Aktionen": "Actions",
     "Als Hex": "As hex",
     "Als Text": "As text",
+    "Als Liste": "As list",
+    "Als Eingabe": "As input",
+    "Ganzzahl ≥ 0": "Integer ≥ 0",
     "Aktiv": "Active",
     "aktiv": "active",
     "Offline": "Offline",
@@ -144,8 +147,11 @@ TRANSLATIONS: dict[str, str] = {
     "COV abonnieren": "Subscribe COV",
     "COV abonnieren (Auswahl)": "Subscribe COV (selection)",
     "COV abonnieren erfolgreich.": "COV subscription successful.",
-    "COV abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen.": "COV subscribed: %{ok} succeeded, %{failed} failed.",
+    "COV abonniert: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.":
+        "COV subscribed: %{ok} succeeded, %{skipped} skipped, %{failed} failed.",
     "COV erneut abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen.": "COV resubscribed: %{ok} succeeded, %{failed} failed.",
+    "COV gekündigt: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.":
+        "COV cancelled: %{ok} succeeded, %{skipped} skipped, %{failed} failed.",
     "COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen.": "COV cancelled: %{ok} succeeded, %{failed} failed.",
     "COV kündigen": "Unsubscribe COV",
     "COV kündigen (Auswahl)": "Unsubscribe COV (selection)",
@@ -428,6 +434,11 @@ TRANSLATIONS: dict[str, str] = {
     "Nur I-Am-Antworten mit dieser BACnet-Hersteller-ID übernehmen.": "Only accept I-Am responses with this BACnet vendor ID.",
     "Nur diesen Status anzeigen": "Show only this status",
     "Nur diesen Typ anzeigen": "Show only this type",
+    "Nur lesen": "Read only",
+    "Nur primitive unbekannte Eigenschaften können bearbeitet werden.":
+        "Only primitive unknown properties can be edited.",
+    "erwartet nicht-negative Ganzzahl (Enumerated)":
+        "expected non-negative integer (Enumerated)",
     "Obergrenze": "High limit",
     "Objekt": "Object",
     "Objekt auswählen": "Select object",
@@ -655,6 +666,14 @@ TRANSLATIONS: dict[str, str] = {
     "%{count} Meldungsklassen eingetragen.": "%{count} notification classes enrolled.",
     "%{count} Meldungsklassen noch eingetragen.": "%{count} notification classes still enrolled.",
     "Keine bearbeitbaren Felder für diesen Wert. Wechseln Sie zu JSON.": "No editable fields for this value. Switch to JSON.",
+    "Keine Einträge. Fügen Sie einen Eintrag hinzu oder wechseln Sie zu JSON.":
+        "No entries. Add an entry or switch to JSON.",
+    "Eintrag hinzufügen": "Add entry",
+    "Eintrag entfernen": "Remove entry",
+    "Eintrag %{n}": "Entry %{n}",
+    "Diese Liste kann hier nicht erweitert werden.": "This list cannot be extended here.",
+    "Eintragsform unbekannt. Wechseln Sie zu JSON und fügen Sie ein Beispiel-Element ein.":
+        "Unknown entry shape. Switch to JSON and add a sample element.",
     "Eintrag in die Empfängerliste fehlgeschlagen.": "Failed to enroll in recipient list.",
     "Ungültiger Zeitraum. Bitte Start- und Endzeit prüfen.": "Invalid time range. Please check start and end time.",
     "Here is the string to translate": "Here is the string to translate",

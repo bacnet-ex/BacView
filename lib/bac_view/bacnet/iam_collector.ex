@@ -18,6 +18,10 @@ defmodule BacView.BACnet.IAmCollector do
 
   This mirrors `BACnet.Stack.ClientHelper.who_is/3` and ensures the collecting
   process is always registered as a client notification receiver.
+
+  When the BACnet client process is not running (stack not started, transport
+  bind failure, etc.), returns `{:error, :stack_not_started}` without raising
+  or exiting — that situation is expected and must not crash callers.
   """
   @spec collect_while((-> :ok | {:error, term()}), pos_integer(), keyword()) ::
           {:ok, [{term(), IAm.t()}]} | {:error, term()}
@@ -26,15 +30,20 @@ defmodule BacView.BACnet.IAmCollector do
   def collect_while(send_fun, timeout, opts)
       when is_function(send_fun, 0) and is_integer(timeout) and timeout > 0 and is_list(opts) do
     client = Client.stack_client()
-    :ok = StackClient.subscribe(client, self())
 
-    try do
-      case send_fun.() do
-        :ok -> {:ok, collect(timeout, opts)}
-        {:error, _send_fun} = err -> err
-      end
-    after
-      StackClient.unsubscribe(client, self())
+    case subscribe_client(client) do
+      :ok ->
+        try do
+          case send_fun.() do
+            :ok -> {:ok, collect(timeout, opts)}
+            {:error, _send_fun} = err -> err
+          end
+        after
+          unsubscribe_client(client)
+        end
+
+      {:error, _reason} = err ->
+        err
     end
   end
 
@@ -167,4 +176,29 @@ defmodule BacView.BACnet.IAmCollector do
 
   defp normalize_address(address), do: Address.normalize_destination(address)
   defp format_address(address), do: Address.format_destination(address)
+
+  defp subscribe_client(client) do
+    if client_running?(client) do
+      :ok = StackClient.subscribe(client, self())
+      :ok
+    else
+      {:error, :stack_not_started}
+    end
+  catch
+    :exit, {:noproc, _client} ->
+      {:error, :stack_not_started}
+  end
+
+  defp unsubscribe_client(client) do
+    if client_running?(client) do
+      StackClient.unsubscribe(client, self())
+    end
+
+    :ok
+  catch
+    :exit, _reason -> :ok
+  end
+
+  # stack_client/0 is the named ClientStack process (atom), not a bare pid.
+  defp client_running?(client) when is_atom(client), do: Process.whereis(client) != nil
 end

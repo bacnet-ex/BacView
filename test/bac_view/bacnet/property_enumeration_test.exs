@@ -24,6 +24,20 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
     end
   end
 
+  describe "format_constant/2" do
+    test "formats notify_type atoms and integers like known properties" do
+      assert PropertyEnumeration.format_constant(:notify_type, :alarm) == "alarm (0)"
+      assert PropertyEnumeration.format_constant(:notify_type, 0) == "alarm (0)"
+      assert PropertyEnumeration.format_constant(:notify_type, :event) == "event (1)"
+      assert PropertyEnumeration.format_constant(:notify_type, 1) == "event (1)"
+    end
+
+    test "returns nil for non-constant property types" do
+      assert PropertyEnumeration.format_constant(:vendor_prop, :alarm) == nil
+      assert PropertyEnumeration.format_constant(512, :alarm) == nil
+    end
+  end
+
   describe "enrich_property/2" do
     test "attaches enum metadata for constant property types" do
       prop = %{
@@ -39,7 +53,7 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
       assert enriched.enum_type == :event_state
       assert enriched.type == "ENUMERATED"
       assert length(enriched.enum_options) > 0
-      assert enriched.value_formatted == "Normal (0)"
+      assert enriched.value_formatted == "normal (0)"
     end
 
     test "attaches dropdown options for in_list property types" do
@@ -114,13 +128,13 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
       assert PropertyEnumeration.dropdown?(prop)
     end
 
-    test "falls back to text input when integer value is not in enum options" do
+    test "keeps dropdown when options are present even for unknown integer values" do
       prop = %{
         value: 99,
         enum_options: PropertyEnumeration.options(:event_state)
       }
 
-      refute PropertyEnumeration.dropdown?(prop)
+      assert PropertyEnumeration.dropdown?(prop)
     end
 
     test "uses dropdown when value is nil" do
@@ -133,14 +147,60 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
     end
   end
 
+  describe "enrich_property/2 with numeric constants" do
+    test "injects synthetic option and formats unknown integer constant" do
+      prop = %{
+        property: :event_state,
+        value: 99,
+        value_display: %{kind: :scalar, formatted: "99", fields: [], items: []},
+        type: "ENUMERATED"
+      }
+
+      enriched = PropertyEnumeration.enrich_property(prop, {:constant, :event_state})
+
+      assert enriched.enum_type == :event_state
+      assert Enum.any?(enriched.enum_options, &(&1.value == 99))
+      assert Enum.any?(enriched.enum_options, &(&1.value == :normal))
+      assert enriched.value_formatted == "99"
+      assert PropertyEnumeration.dropdown?(enriched)
+    end
+  end
+
+  describe "free_input_value_string/2" do
+    test "maps constant atoms to their integer value" do
+      assert PropertyEnumeration.free_input_value_string(:no_fault_detected, :reliability) == "0"
+      assert PropertyEnumeration.free_input_value_string(:normal, :event_state) == "0"
+    end
+
+    test "keeps integers as decimal strings" do
+      assert PropertyEnumeration.free_input_value_string(99, :event_state) == "99"
+    end
+
+    test "falls back to atom name without enum type" do
+      assert PropertyEnumeration.free_input_value_string(:polling, nil) == "polling"
+    end
+  end
+
   describe "parse_value/2" do
     test "accepts valid enum atoms" do
       assert PropertyEnumeration.parse_value("normal", :event_state) == {:ok, :normal}
     end
 
+    test "accepts unknown non-negative integers for vendor constants" do
+      assert PropertyEnumeration.parse_value("99", :event_state) == {:ok, 99}
+    end
+
+    test "maps known numeric constants to their atom name" do
+      assert PropertyEnumeration.parse_value("0", :event_state) == {:ok, :normal}
+    end
+
     test "rejects unknown enum values" do
       assert PropertyEnumeration.parse_value("not_a_state", :event_state) ==
                {:error, :invalid_enum}
+    end
+
+    test "rejects negative integers" do
+      assert PropertyEnumeration.parse_value("-1", :event_state) == {:error, :invalid_enum}
     end
   end
 
@@ -162,7 +222,13 @@ defmodule BacView.BACnet.Protocol.PropertyEnumerationTest do
       assert PropertyEnumeration.parse_option_value("2", options) == {:ok, 2}
     end
 
-    test "rejects values outside the option list" do
+    test "accepts free non-negative integers outside the option list" do
+      options = PropertyEnumeration.in_list_options([:polling, :confirmed_cov_if_possible])
+
+      assert PropertyEnumeration.parse_option_value("42", options) == {:ok, 42}
+    end
+
+    test "rejects non-numeric values outside the option list" do
       options = PropertyEnumeration.in_list_options([:polling, :confirmed_cov_if_possible])
 
       assert PropertyEnumeration.parse_option_value("not_an_option", options) ==

@@ -7,6 +7,7 @@ defmodule BacView.BACnet.ActiveAlarms do
   alias BACnet.Protocol.StatusFlags
   alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.Protocol.EventTimestamp
+  alias BacView.BACnet.Protocol.StatusFlagsParser
 
   @objects_table :bacview_objects
   @properties_table :bacview_properties
@@ -208,9 +209,13 @@ defmodule BacView.BACnet.ActiveAlarms do
   defp cached_event_timestamps(%{event_timestamps: event_timestamps}), do: event_timestamps
   defp cached_event_timestamps(_cached), do: nil
 
-  defp status_flag_alarm?(%{status_flags: %StatusFlags{in_alarm: true}}), do: true
-  defp status_flag_alarm?(%{status_flags: %StatusFlags{fault: true}}), do: true
-  defp status_flag_alarm?(_status_flag_alarm), do: false
+  defp status_flag_alarm?(obj) do
+    case StatusFlagsParser.from_object(obj) do
+      %StatusFlags{in_alarm: true} -> true
+      %StatusFlags{fault: true} -> true
+      _flags -> false
+    end
+  end
 
   defp object_event_state(obj) do
     Map.get(obj, :event_state) ||
@@ -227,8 +232,9 @@ defmodule BacView.BACnet.ActiveAlarms do
     }
   end
 
-  defp fault_state?(%{status_flags: %StatusFlags{fault: true}}), do: true
-  defp fault_state?(_fault_state), do: false
+  defp fault_state?(obj) do
+    match?(%StatusFlags{fault: true}, StatusFlagsParser.from_object(obj))
+  end
 
   defp device_info(device_id) do
     if :ets.whereis(@devices_table) == :undefined do

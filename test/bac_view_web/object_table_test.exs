@@ -194,6 +194,27 @@ defmodule BacViewWeb.ObjectTableTest do
              |> Enum.sort()
   end
 
+  test "filtered_objects reads status flags from _unknown_properties" do
+    objects = [
+      %{
+        type: :analog_input,
+        instance: 1,
+        status_flags: nil,
+        _unknown_properties: %{
+          status_flags: %StatusFlags{
+            in_alarm: false,
+            fault: true,
+            overridden: false,
+            out_of_service: false
+          }
+        }
+      },
+      %{type: :binary_value, instance: 2}
+    ]
+
+    assert [%{instance: 1}] = ObjectTable.filtered_objects(objects, "", [], [:fault])
+  end
+
   test "toggle_status_filter excludes and restores flags" do
     objects = [
       %{

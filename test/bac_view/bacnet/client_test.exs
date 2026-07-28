@@ -1,5 +1,7 @@
 defmodule BacView.BACnet.ClientTest do
-  use ExUnit.Case, async: true
+  # Log capture + Logger module levels must not race with async tests that
+  # call SilenceLogger.silence_for_test(Client, :error) (e.g. PropertyReaderTest).
+  use ExUnit.Case, async: false
 
   import ExUnit.CaptureLog
 
@@ -93,7 +95,7 @@ defmodule BacView.BACnet.ClientTest do
           end)
         end,
         unsilence: [Client],
-        level: :debug
+        level: :all
       )
 
     assert log =~ "BACnet read_object failed"

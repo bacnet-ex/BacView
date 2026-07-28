@@ -6,6 +6,7 @@ defmodule BacViewWeb.AlarmsPanel do
   alias BacView.BACnet.EventRecord
   alias BacView.BACnet.Protocol.EventFormatter
   alias BacView.BACnet.Protocol.ObjectTypes
+  alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacViewWeb.AlarmTable
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.SortHeader
@@ -458,7 +459,7 @@ defmodule BacViewWeb.AlarmsPanel do
               </td>
               <td>
                 <StatusFlagsIcons.status_flags_icons
-                  flags={Map.get(obj, :status_flags)}
+                  flags={StatusFlagsParser.from_object(obj)}
                   locale={@locale}
                   locale_version={@locale_version}
                 />

@@ -1,3 +1,7 @@
+# Own shared BACnet ETS tables for the whole suite (see BacView.Test.BacnetEtsOwner).
+# Must start before tests create/look up named tables from ephemeral test processes.
+{:ok, _ets_owner} = BacView.Test.BacnetEtsOwner.start_link([])
+
 ExUnit.start()
 
 # MAC only is used at runtime; network-number is chosen per device (0 = local BACnet net).

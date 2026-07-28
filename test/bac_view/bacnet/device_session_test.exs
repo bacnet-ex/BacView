@@ -81,6 +81,77 @@ defmodule BacView.BACnet.DeviceSessionTest do
     assert DateTime.compare(refreshed.updated_at, object.updated_at) == :gt
   end
 
+  test "apply_property_to_object_summary updates out_of_service on object summary" do
+    object = %{
+      type: :analog_input,
+      instance: 1,
+      name: "AI-1",
+      out_of_service: false,
+      present_value: 10.0
+    }
+
+    updated = DeviceSession.apply_property_to_object_summary(object, :out_of_service, true)
+
+    assert updated.out_of_service == true
+    assert %DateTime{} = updated.updated_at
+  end
+
+  test "apply_property_to_object_summary updates description and object_name" do
+    object = %{type: :analog_input, instance: 1, name: "Old", description: nil}
+
+    named = DeviceSession.apply_property_to_object_summary(object, :object_name, "New Name")
+    assert named.name == "New Name"
+
+    described =
+      DeviceSession.apply_property_to_object_summary(named, :description, "Updated desc")
+
+    assert described.description == "Updated desc"
+  end
+
+  test "refresh_object_from_properties promotes status_flags from unknown properties" do
+    object = %{
+      type: :analog_input,
+      instance: 1,
+      name: "AI-1",
+      status_flags: nil
+    }
+
+    flags = %StatusFlags{
+      in_alarm: false,
+      fault: true,
+      overridden: false,
+      out_of_service: false
+    }
+
+    refreshed =
+      DeviceSession.refresh_object_from_properties(object, [], [
+        %{property: :status_flags, value: flags}
+      ])
+
+    assert refreshed.status_flags == flags
+  end
+
+  test "refresh_object_from_properties promotes status_flags from object._unknown_properties" do
+    flags = %StatusFlags{
+      in_alarm: true,
+      fault: false,
+      overridden: false,
+      out_of_service: false
+    }
+
+    object = %{
+      type: :analog_input,
+      instance: 1,
+      name: "AI-1",
+      status_flags: nil,
+      _unknown_properties: %{status_flags: flags}
+    }
+
+    refreshed = DeviceSession.refresh_object_from_properties(object, [])
+
+    assert refreshed.status_flags == flags
+  end
+
   test "loaded_snapshot returns live objects instead of stale device embed" do
     stale_flags = %StatusFlags{
       in_alarm: true,

@@ -164,13 +164,9 @@ defmodule BacView.BACnet.Protocol.CovNotificationChart do
   defp received_at_to_ms(_received_at), do: :error
 
   defp find_property(device_id, %ObjectIdentifier{} = object_id, property) do
-    if :ets.whereis(:bacview_properties) == :undefined do
-      nil
-    else
-      device_id
-      |> DeviceSession.get_properties(object_id)
-      |> Enum.find(&(&1.property == property))
-    end
+    device_id
+    |> DeviceSession.get_properties(object_id)
+    |> Enum.find(&(&1.property == property))
   end
 
   defp trendable_value?(value) when is_number(value) or is_boolean(value), do: true

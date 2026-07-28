@@ -18,9 +18,10 @@ defmodule BacView.BACnet.DiscoverySharedReductionDisabledTest do
 
   setup do
     previous =
-      Application.get_env(:bacview, :property_read_concurrency_disable_shared_reduction)
+      Application.get_env(:bacview, :property_read_concurrency_enable_shared_reduction)
 
-    Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, true)
+    # Default is off; force false so suite order cannot enable reduction under us.
+    Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, false)
     # DashboardLive scan form tests leave filters in Application env; clear them so
     # I-Am upserts are not rejected mid-suite.
     Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
@@ -34,7 +35,7 @@ defmodule BacView.BACnet.DiscoverySharedReductionDisabledTest do
     end
 
     on_exit(fn ->
-      restore_disable_shared_reduction(previous)
+      restore_enable_shared_reduction(previous)
       Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
 
       for table <- [:bacview_devices, :bacview_device_share] do
@@ -83,9 +84,9 @@ defmodule BacView.BACnet.DiscoverySharedReductionDisabledTest do
     refute Map.get(device_200, :shared_destination?)
   end
 
-  defp restore_disable_shared_reduction(nil),
-    do: Application.delete_env(:bacview, :property_read_concurrency_disable_shared_reduction)
+  defp restore_enable_shared_reduction(nil),
+    do: Application.delete_env(:bacview, :property_read_concurrency_enable_shared_reduction)
 
-  defp restore_disable_shared_reduction(value),
-    do: Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, value)
+  defp restore_enable_shared_reduction(value),
+    do: Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, value)
 end

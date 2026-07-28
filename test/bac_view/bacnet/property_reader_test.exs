@@ -2,16 +2,19 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
   use ExUnit.Case, async: true
 
   alias BACnet.Protocol.{
+    BACnetArray,
     ObjectIdentifier,
     ObjectTypes.AnalogInput,
     ObjectTypes.AnalogOutput,
     ObjectTypes.CharacterStringValue,
+    ObjectTypes.Device,
     ObjectTypes.IntegerValue,
     ObjectTypes.OctetStringValue,
     ObjectsUtility
   }
 
   alias BacView.BACnet.Client
+  alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyReader
   alias BacView.Test.{BacnetEtsLock, SilenceLogger}
 
@@ -169,7 +172,9 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       assert row.bac_type == :octet_string
       assert row.type == "OCTET STRING"
-      assert row.value_formatted == "41:42:43:44:45:46"
+      # Six printable bytes are formatted as BACnet/IP IPv4:port when port is valid.
+      assert row.value_formatted == "65.66.67.68:17734"
+      assert row.raw_binary == "ABCDEF"
     end
 
     test "labels integer properties from object schema" do
@@ -193,6 +198,37 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
     end
   end
 
+  defmodule DeviceRpmClient do
+    @object (
+              {:ok, object} =
+                Device.create(1, "Device-1", %{
+                  segmentation_supported: :no_segmentation,
+                  vendor_name: "Test Vendor",
+                  model_name: "Test Model",
+                  firmware_revision: "1.0",
+                  application_software_version: "1.0",
+                  protocol_version: 1,
+                  protocol_revision: 14,
+                  max_apdu_length_accepted: 1476,
+                  vendor_identifier: 999,
+                  system_status: :operational,
+                  object_list:
+                    BACnetArray.from_list([
+                      %ObjectIdentifier{type: :device, instance: 1}
+                    ])
+                })
+
+              object
+            )
+
+    def read_object(_destination, _object, _opts), do: {:ok, @object}
+
+    def read_property_multiple(_destination, _object, _properties, _opts),
+      do: {:error, :not_used}
+
+    def read_property(_destination, _object, _property, _opts), do: {:error, :not_used}
+  end
+
   describe "read_all/3" do
     test "lists only properties reported by the BACnet object" do
       {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0, description: "test"})
@@ -210,6 +246,41 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert Enum.all?(rows, &Map.has_key?(&1, :value_display))
     end
 
+    test "RPM path keeps heavy device properties for display" do
+      object = %ObjectIdentifier{type: :device, instance: 1}
+
+      assert {:ok, %{properties: rows}} =
+               PropertyReader.read_all(DeviceRpmClient, :dest, object)
+
+      properties = Enum.map(rows, & &1.property)
+
+      assert :object_list in properties
+      assert :device_address_binding in properties
+      assert :vendor_name in properties
+
+      object_list_row = Enum.find(rows, &(&1.property == :object_list))
+      assert object_list_row != nil
+      assert object_list_row.value != nil
+    end
+
+    test "read_result_from_object keeps heavy properties already present" do
+      object_id = %ObjectIdentifier{type: :device, instance: 1}
+
+      result =
+        PropertyReader.read_result_from_object(object_id, %{
+          object_name: "Device-1",
+          vendor_name: "V",
+          object_list: [%ObjectIdentifier{type: :device, instance: 1}],
+          active_cov_subscriptions: []
+        })
+
+      properties = Enum.map(result.properties, & &1.property)
+
+      assert :object_list in properties
+      assert :active_cov_subscriptions in properties
+      assert :vendor_name in properties
+    end
+
     test "passes object_opts through to BACnet reads" do
       object = %ObjectIdentifier{type: :analog_input, instance: 1}
 
@@ -223,9 +294,11 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
       assert_receive {:read_object_opts, read_object_opts}
 
-      assert Keyword.get(read_object_opts, :object_opts) == [
-               skip_property_validation_remote_object: :value
-             ]
+      assert Keyword.get(read_object_opts, :allow_numeric_constants) == true
+
+      object_opts = Keyword.get(read_object_opts, :object_opts)
+      assert Keyword.get(object_opts, :allow_numeric_constants) == true
+      assert Keyword.get(object_opts, :skip_property_validation_remote_object) == :value
 
       refute_receive {:read_property_multiple_opts, _opts}
     end
@@ -408,8 +481,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       previous_flag = Application.get_env(:bacview, :debug_log_property_reader)
 
       # Module level only — never raise the global Logger level in async tests.
-      Logger.put_module_level(PropertyReader, :debug)
-      on_exit(fn -> Logger.delete_module_level(PropertyReader) end)
+      SilenceLogger.silence_for_test(PropertyReader, :debug)
 
       log =
         ExUnit.CaptureLog.capture_log(fn ->
@@ -572,6 +644,13 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       props = [:object_name, :property_list, :present_value]
 
       assert PropertyReader.skip_heavy_properties(props, object) == [:object_name, :present_value]
+    end
+
+    test "drops log_buffer for trend log objects" do
+      object = %ObjectIdentifier{type: :trend_log, instance: 1}
+      props = [:object_name, :log_buffer, :property_list, :enable]
+
+      assert PropertyReader.skip_heavy_properties(props, object) == [:object_name, :enable]
     end
   end
 
@@ -1086,6 +1165,50 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
         )
 
       assert row.type == "OCTET STRING"
+      # Printable octets default to text; hex toggle re-encodes raw_binary.
+      assert row.value_formatted == "ABCD"
+      assert row.hex_toggle?
+      assert row.string_value?
+      assert row.raw_binary == binary
+      assert PropertyFormatter.format_binary_hex(row.raw_binary) == "41:42:43:44"
+    end
+
+    test "hides hex toggle when opaque octet already defaults to hex" do
+      binary = <<1, 2, 0, 3>>
+
+      {:ok, object} =
+        OctetStringValue.create(52, "Data", %{present_value: binary})
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:present_value],
+          %{present_value: binary},
+          object
+        )
+
+      assert row.value_formatted == "01:02:00:03"
+      refute row.hex_toggle?
+    end
+
+    test "never offers hex toggle for character strings" do
+      {:ok, object} = AnalogInput.create(1, "AI-1", %{description: "hello"})
+
+      [printable] =
+        PropertyReader.format_property_rows(
+          [:description],
+          %{description: "hello"},
+          object
+        )
+
+      [non_printable] =
+        PropertyReader.format_property_rows(
+          [:description],
+          %{description: "a\0b"},
+          object
+        )
+
+      refute printable.hex_toggle?
+      refute non_printable.hex_toggle?
     end
 
     test "labels nil octet-string properties from schema" do
@@ -1116,20 +1239,43 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
 
     test "labels NetworkPort mac_address as OCTET STRING via ObjectIdentifier without cast struct" do
       object_id = %ObjectIdentifier{type: :network_port, instance: 3}
-      printable_mac = "ABCDEF"
+      # Six-byte BACnet/IP MAC (10.130.3.51:47808)
+      mac = <<10, 130, 3, 51, 186, 192>>
 
       [row] =
         PropertyReader.format_property_rows(
           [:mac_address],
-          %{mac_address: printable_mac},
+          %{mac_address: mac},
           nil,
           object_id
         )
 
       assert row.bac_type == :octet_string
       assert row.type == "OCTET STRING"
-      assert row.value_formatted == "41:42:43:44:45:46"
+      assert row.value_formatted == "10.130.3.51:47808"
+      assert row.raw_binary == mac
+      assert row.value == mac
       assert row.string_value?
+      assert row.hex_toggle?
+      # Hex re-encode must use original bytes, not Latin-1-expanded UTF-8.
+      assert PropertyFormatter.format_binary_hex(row.raw_binary) == "0A:82:03:33:BA:C0"
+    end
+
+    test "preserves non-UTF-8 NetworkPort mac_address octets through sanitize" do
+      object_id = %ObjectIdentifier{type: :network_port, instance: 1}
+      mac = <<10, 130, 3, 51, 186, 192>>
+
+      [row] =
+        PropertyReader.format_property_rows(
+          [:mac_address],
+          %{mac_address: mac},
+          nil,
+          object_id
+        )
+
+      assert row.raw_binary == mac
+      assert row.value == mac
+      refute row.raw_binary == <<10, 194, 130, 3, 51, 194, 186, 195, 128>>
     end
 
     test "falls back to value-shape typing when property is not in object schema" do
@@ -1248,6 +1394,31 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0})
       assert PropertyReader.format_unknown_properties(object) == []
     end
+
+    test "shows constant numeric value in parentheses for atom property enums" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :enumerated,
+        value: :alarm,
+        extras: []
+      }
+
+      {:ok, object} = AnalogInput.create(1, "AI-1", %{present_value: 1.0})
+      object = %{object | _unknown_properties: %{notify_type: encoding}}
+
+      [row] = PropertyReader.format_unknown_properties(object)
+
+      assert row.property == :notify_type
+      assert row.type == "ENUMERATED"
+      # Same style as known properties: atom name + wire code (no title-case).
+      assert row.value_formatted == "alarm (0)"
+      assert row.value_display.formatted == "alarm (0)"
+
+      int_encoding = %{encoding | value: 1}
+      object = %{object | _unknown_properties: %{notify_type: int_encoding}}
+      [int_row] = PropertyReader.format_unknown_properties(object)
+      assert int_row.value_formatted == "event (1)"
+    end
   end
 
   describe "format_property_rows/2 writable and enrichment" do
@@ -1320,7 +1491,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert row.enum_type == :event_state
       assert row.type == "ENUMERATED"
       assert length(row.enum_options) > 0
-      assert row.value_formatted == "Normal (0)"
+      assert row.value_formatted == "normal (0)"
     end
   end
 end

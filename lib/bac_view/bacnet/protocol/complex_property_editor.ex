@@ -7,7 +7,10 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   alias BACnet.Protocol.BACnetTime
   alias BACnet.Protocol.BACnetTimestamp
   alias BACnet.Protocol.DailySchedule
+  alias BACnet.Protocol.DaysOfWeek
+  alias BACnet.Protocol.Destination
   alias BACnet.Protocol.DeviceObjectPropertyRef
+  alias BACnet.Protocol.EventTransitionBits
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.ObjectPropertyRef
   alias BACnet.Protocol.PriorityArray
@@ -20,6 +23,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.StructFieldTypes
+  alias BacView.Text
 
   @type form_field :: %{
           path: String.t(),
@@ -28,6 +32,10 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
           readonly: boolean(),
           enum_options: [%{value: atom(), label: String.t()}] | nil
         }
+
+  @type form_field_group ::
+          {:flat, [form_field()]}
+          | {:items, [%{index: non_neg_integer(), fields: [form_field()]}]}
 
   @spec editor_type(term()) :: atom()
   def editor_type(%DailySchedule{}), do: :daily_schedule
@@ -56,6 +64,149 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     Map.new(fields, fn %{path: path, value: value} -> {path, value} end)
   end
 
+  @doc """
+  Groups form fields for collection UIs.
+
+  Variable lists/arrays with indexed paths become `{:items, [...]}` so the modal
+  can show per-entry remove actions. Everything else stays `{:flat, fields}`.
+  """
+  @spec form_field_groups([form_field()]) :: form_field_group()
+  def form_field_groups(fields) when is_list(fields) do
+    indexed? =
+      fields != [] and
+        Enum.all?(fields, fn %{path: path} ->
+          match?({:ok, _index}, collection_index_from_path(path))
+        end)
+
+    if indexed? do
+      groups =
+        fields
+        |> Enum.group_by(fn %{path: path} ->
+          {:ok, index} = collection_index_from_path(path)
+          index
+        end)
+        |> Enum.sort_by(fn {index, _fields} -> index end)
+        |> Enum.map(fn {index, group_fields} ->
+          %{index: index, fields: Enum.sort_by(group_fields, & &1.path)}
+        end)
+
+      {:items, groups}
+    else
+      {:flat, fields}
+    end
+  end
+
+  @doc """
+  True when the value is a variable-size list or BACnetArray that can gain/lose entries.
+  """
+  @spec editable_collection?(term()) :: boolean()
+  def editable_collection?(%BACnetArray{fixed_size: nil}), do: true
+  def editable_collection?(list) when is_list(list), do: true
+  def editable_collection?(_value), do: false
+
+  @doc """
+  True when a new entry can be appended (known item template or property hint).
+  """
+  @spec can_add_item?(term(), keyword()) :: boolean()
+  def can_add_item?(value, opts \\ [])
+
+  def can_add_item?(value, opts) do
+    editable_collection?(value) and match?({:ok, _item}, default_collection_item(value, opts))
+  end
+
+  @spec can_remove_item?(term()) :: boolean()
+  def can_remove_item?(value), do: editable_collection?(value) and collection_size(value) > 0
+
+  @spec collection_size(term()) :: non_neg_integer()
+  def collection_size(%BACnetArray{} = array), do: BACnetArray.size(array)
+  def collection_size(list) when is_list(list), do: length(list)
+  def collection_size(_value), do: 0
+
+  @doc """
+  Appends a blank entry using an existing element, array default, or property hint.
+  """
+  @spec add_item(term(), keyword()) :: {:ok, term()} | {:error, term()}
+  def add_item(value, opts \\ [])
+
+  def add_item(%BACnetArray{fixed_size: nil} = array, opts) do
+    with {:ok, item} <- default_collection_item(array, opts) do
+      BACnetArray.set_item(array, nil, item)
+    end
+  end
+
+  def add_item(list, opts) when is_list(list) do
+    with {:ok, item} <- default_collection_item(list, opts) do
+      # credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem
+      {:ok, list ++ [item]}
+    end
+  end
+
+  def add_item(_value, _opts), do: {:error, :not_editable_collection}
+
+  @doc """
+  Removes the entry at the given 0-based index.
+
+  Rebuilds variable BACnetArrays from a dense list so middle removals do not leave
+  sparse holes (bacstack `remove_item/2` only shrinks trailing defaults).
+  """
+  @spec remove_item(term(), non_neg_integer()) :: {:ok, term()} | {:error, term()}
+  def remove_item(%BACnetArray{fixed_size: nil} = array, index)
+      when is_integer(index) and index >= 0 do
+    items = bacnet_array_elements(array)
+
+    if index < length(items) do
+      new_items = List.delete_at(items, index)
+      # Keep default :undefined so remaining items are never sparse-dropped on write.
+      {:ok, BACnetArray.from_list(new_items, false, :undefined)}
+    else
+      {:error, :invalid_path}
+    end
+  end
+
+  def remove_item(list, index) when is_list(list) and is_integer(index) and index >= 0 do
+    if index < length(list) do
+      {:ok, List.delete_at(list, index)}
+    else
+      {:error, :invalid_path}
+    end
+  end
+
+  def remove_item(_value, _index), do: {:error, :not_editable_collection}
+
+  @doc """
+  Builds a blank collection item for add-entry UX.
+  """
+  @spec default_collection_item(term(), keyword()) :: {:ok, term()} | {:error, term()}
+  def default_collection_item(value, opts \\ [])
+
+  def default_collection_item(%BACnetArray{} = array, opts) do
+    case bacnet_array_elements(array) do
+      [item | _rest] ->
+        {:ok, blank_collection_item(item)}
+
+      [] ->
+        case BACnetArray.get_default(array) do
+          default when is_struct(default) ->
+            {:ok, blank_collection_item(default)}
+
+          default when default not in [nil, :undefined] and not is_atom(default) ->
+            {:ok, blank_collection_item(default)}
+
+          _default ->
+            default_item_from_property(opts)
+        end
+    end
+  end
+
+  def default_collection_item(list, opts) when is_list(list) do
+    case list do
+      [item | _rest] -> {:ok, blank_collection_item(item)}
+      [] -> default_item_from_property(opts)
+    end
+  end
+
+  def default_collection_item(_value, _opts), do: {:error, :not_editable_collection}
+
   # Root scalar form fields (empty path) use this key so the HTML name is
   # `field[_]` instead of invalid `field[]` (which Phoenix parses as a list).
   @root_field_path "_"
@@ -83,10 +234,11 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
       fields ->
         finalize_apply_result(
-          Enum.reduce_while(Enum.sort(Map.keys(fields)), {:ok, template}, fn path,
-                                                                             {:ok, current} ->
+          Enum.reduce_while(sorted_field_paths(fields), {:ok, template}, fn path,
+                                                                            {:ok, current} ->
             with {:ok, segments} <- parse_path(path),
-                 {:ok, updated} <- update_in_structure(current, segments, Map.get(fields, path)) do
+                 {:ok, ensured} <- ensure_path_collection_slots(current, segments),
+                 {:ok, updated} <- update_in_structure(ensured, segments, Map.get(fields, path)) do
               {:cont, {:ok, updated}}
             else
               {:error, _params} = err -> {:halt, err}
@@ -361,6 +513,228 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp map_child(%_list{} = struct, key, value), do: {:ok, struct(struct, [{key, value}])}
   defp map_child(_list, _key, _value), do: {:error, :invalid_path}
 
+  # Sort numeric collection indices in path order so slots are filled 0..n before nested fields.
+  defp sorted_field_paths(fields) when is_map(fields) do
+    Enum.sort_by(Map.keys(fields), &path_sort_key/1)
+  end
+
+  defp path_sort_key(path) when is_binary(path) do
+    path
+    |> String.split(".")
+    |> Enum.map(fn segment ->
+      case Integer.parse(segment) do
+        {index, ""} -> {0, index}
+        _segment -> {1, segment}
+      end
+    end)
+  end
+
+  defp collection_index_from_path(path) when is_binary(path) do
+    case String.split(path, ".", parts: 2) do
+      [index | _rest] ->
+        case Integer.parse(index) do
+          {n, ""} when n >= 0 -> {:ok, n}
+          _index -> :error
+        end
+
+      _path ->
+        :error
+    end
+  end
+
+  # Grow variable collections when form paths reference a new last index (size).
+  defp ensure_path_collection_slots(data, []), do: {:ok, data}
+
+  defp ensure_path_collection_slots(data, [key | rest]) when is_integer(key) do
+    with {:ok, data} <- ensure_collection_index(data, key),
+         {:ok, child} <- get_child(data, key),
+         {:ok, updated_child} <- ensure_path_collection_slots(child, rest) do
+      map_child(data, key, updated_child)
+    end
+  end
+
+  defp ensure_path_collection_slots(data, [key | rest]) do
+    case get_child(data, key) do
+      {:ok, child} ->
+        with {:ok, updated_child} <- ensure_path_collection_slots(child, rest) do
+          map_child(data, key, updated_child)
+        end
+
+      {:error, _data} = err ->
+        err
+    end
+  end
+
+  defp ensure_collection_index(%BACnetArray{fixed_size: nil} = array, key)
+       when is_integer(key) and key >= 0 do
+    size = BACnetArray.size(array)
+
+    cond do
+      key < size ->
+        {:ok, array}
+
+      key == size ->
+        with {:ok, item} <- default_collection_item(array, []) do
+          BACnetArray.set_item(array, nil, item)
+        end
+
+      true ->
+        {:error, :invalid_path}
+    end
+  end
+
+  defp ensure_collection_index(list, key) when is_list(list) and is_integer(key) and key >= 0 do
+    size = length(list)
+
+    cond do
+      key < size ->
+        {:ok, list}
+
+      key == size ->
+        with {:ok, item} <- default_collection_item(list, []) do
+          # credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem
+          {:ok, list ++ [item]}
+        end
+
+      true ->
+        {:error, :invalid_path}
+    end
+  end
+
+  defp ensure_collection_index(data, _key), do: {:ok, data}
+
+  defp blank_collection_item(%DeviceObjectPropertyRef{} = _item),
+    do: default_device_object_property_ref()
+
+  defp blank_collection_item(%ObjectPropertyRef{} = _item), do: default_object_property_ref()
+
+  defp blank_collection_item(%ObjectIdentifier{} = _item) do
+    %ObjectIdentifier{type: :analog_input, instance: 0}
+  end
+
+  defp blank_collection_item(%Destination{} = _item), do: default_destination()
+
+  defp blank_collection_item(%Recipient{} = item) do
+    case item.type do
+      :device ->
+        %Recipient{
+          type: :device,
+          address: nil,
+          device: %ObjectIdentifier{type: :device, instance: 0}
+        }
+
+      _address ->
+        %Recipient{
+          type: :address,
+          device: nil,
+          address: %RecipientAddress{network: 0, address: :broadcast}
+        }
+    end
+  end
+
+  defp blank_collection_item(%DailySchedule{} = _item), do: %DailySchedule{schedule: []}
+
+  defp blank_collection_item(%Encoding{} = encoding) do
+    %{encoding | value: blank_encoding_value(encoding.type, encoding.value)}
+  end
+
+  defp blank_collection_item(%_mod{} = struct) do
+    struct
+    |> Map.from_struct()
+    |> Enum.map(fn {key, value} -> {key, blank_collection_item(value)} end)
+    |> then(&struct(struct.__struct__, &1))
+  end
+
+  defp blank_collection_item(list) when is_list(list), do: []
+  defp blank_collection_item(value) when is_binary(value), do: ""
+  defp blank_collection_item(value) when is_integer(value), do: 0
+  defp blank_collection_item(value) when is_float(value), do: 0.0
+  defp blank_collection_item(value) when is_boolean(value), do: false
+  defp blank_collection_item(nil), do: nil
+  defp blank_collection_item(value) when is_atom(value), do: value
+  defp blank_collection_item(value), do: value
+
+  defp blank_encoding_value(:boolean, _value), do: false
+  defp blank_encoding_value(type, _value) when type in [:real, :double], do: 0.0
+
+  defp blank_encoding_value(type, _value)
+       when type in [:unsigned_integer, :signed_integer, :enumerated],
+       do: 0
+
+  defp blank_encoding_value(:null, _value), do: nil
+  defp blank_encoding_value(:character_string, _value), do: ""
+  defp blank_encoding_value(_type, value), do: blank_collection_item(value)
+
+  defp default_item_from_property(opts) when is_list(opts) do
+    case Keyword.get(opts, :property) do
+      :list_of_object_property_references ->
+        {:ok, default_device_object_property_ref()}
+
+      :log_device_object_property ->
+        {:ok, default_device_object_property_ref()}
+
+      property
+      when property in [
+             :object_property_reference,
+             :setpoint_reference,
+             :controlled_variable_reference,
+             :feedback_reference
+           ] ->
+        {:ok, default_object_property_ref()}
+
+      :recipient_list ->
+        {:ok, default_destination()}
+
+      _property ->
+        {:error, :unknown_collection_item_type}
+    end
+  end
+
+  defp default_device_object_property_ref() do
+    %DeviceObjectPropertyRef{
+      object_identifier: %ObjectIdentifier{type: :analog_input, instance: 0},
+      property_identifier: :present_value,
+      property_array_index: nil,
+      device_identifier: nil
+    }
+  end
+
+  defp default_object_property_ref() do
+    %ObjectPropertyRef{
+      object_identifier: %ObjectIdentifier{type: :analog_input, instance: 0},
+      property_identifier: :present_value,
+      property_array_index: nil
+    }
+  end
+
+  defp default_destination() do
+    %Destination{
+      recipient: %Recipient{
+        type: :address,
+        device: nil,
+        address: %RecipientAddress{network: 0, address: :broadcast}
+      },
+      process_identifier: 0,
+      issue_confirmed_notifications: false,
+      transitions: %EventTransitionBits{
+        to_offnormal: true,
+        to_fault: true,
+        to_normal: true
+      },
+      valid_days: %DaysOfWeek{
+        monday: true,
+        tuesday: true,
+        wednesday: true,
+        thursday: true,
+        friday: true,
+        saturday: true,
+        sunday: true
+      },
+      from_time: %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0},
+      to_time: %BACnetTime{hour: 23, minute: 59, second: 59, hundredth: 99}
+    }
+  end
+
   defp parse_field_value(current, string_value, enum_type \\ nil)
 
   defp parse_field_value(current, string_value, enum_type)
@@ -556,7 +930,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp value_to_string(value) when is_float(value),
     do: :erlang.float_to_binary(value, decimals: 10)
 
-  # Octet-string MACs are not valid UTF-8; format for form inputs / JSON.
+  # Opaque BACnet octet / MAC binaries are not character text; format for forms / JSON.
   defp value_to_string(value) when is_binary(value) do
     if mac_octet_string?(value) do
       PropertyFormatter.format_mac_address(value)
@@ -585,8 +959,9 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
   defp value_to_string(value), do: inspect(value, limit: 200)
 
-  # Raw BACnet data-link addresses vs UTF-8 text property values.
-  defp mac_octet_string?(value) when is_binary(value), do: not String.valid?(value)
+  # Raw BACnet data-link / opaque octet addresses vs character text property values.
+  # Use printable_text? so ASCII-range MACs with control bytes are still treated as binary.
+  defp mac_octet_string?(value) when is_binary(value), do: Text.opaque_binary?(value)
 
   defp path_string([]), do: @root_field_path
 
@@ -712,7 +1087,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp encode(value) when is_boolean(value), do: value
   defp encode(value) when is_atom(value), do: Atom.to_string(value)
 
-  # Jason rejects invalid UTF-8 binaries; format BACnet MAC octet strings.
+  # Jason rejects invalid UTF-8 binaries; format opaque BACnet MAC / octet strings.
   defp encode(value) when is_binary(value) do
     if mac_octet_string?(value) do
       PropertyFormatter.format_mac_address(value)
@@ -953,9 +1328,14 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
-  defp rebuild_bacnet_array(items, %BACnetArray{fixed_size: nil} = template, item_template) do
-    default = array_rebuild_default(template, item_template)
-    {:ok, BACnetArray.from_list(items, false, default)}
+  # Variable arrays must not use a real element as the Erlang :array default.
+  # `:array.sparse_to_list/1` (used by `BACnetArray.to_list/1` and thus write
+  # casting via `reduce_while`) omits entries equal to the default. If the
+  # default is the first existing item (or a blank template struct), any JSON
+  # entry that matches it is dropped — typically leaving only later items on
+  # the wire (e.g. schedule list_of_object_property_references).
+  defp rebuild_bacnet_array(items, %BACnetArray{fixed_size: nil}, _item_template) do
+    {:ok, BACnetArray.from_list(items, false, :undefined)}
   end
 
   defp rebuild_bacnet_array(
@@ -974,11 +1354,6 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
       end
     end)
   end
-
-  defp array_rebuild_default(_template, item_template) when is_struct(item_template),
-    do: item_template
-
-  defp array_rebuild_default(template, _item_template), do: BACnetArray.get_default(template)
 
   defp decode_recipient(map, %Recipient{} = fallback) when is_map(map) do
     template =

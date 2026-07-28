@@ -89,7 +89,10 @@ defmodule BacViewWeb.HierarchyExplorerTest do
     end
 
     objects_index = %{
-      {:binary_input, 1} => %{status_flags: flags.(fault: true)},
+      {:binary_input, 1} => %{
+        status_flags: nil,
+        _unknown_properties: %{status_flags: flags.(fault: true)}
+      },
       {:analog_input, 2} => %{status_flags: flags.(in_alarm: true, overridden: true)}
     }
 

@@ -3,7 +3,9 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   Parses user input and builds options for BACnet WriteProperty requests.
   """
 
+  alias BACnet.Protocol.ApplicationTags.Encoding
   alias BACnet.Protocol.BACnetArray
+  alias BACnet.Protocol.Constants
   alias BACnet.Protocol.PriorityArray
   alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.MultistateState
@@ -70,7 +72,11 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     if MultistateState.multistate_object?(object) do
       formatted = multistate_state_property_formatted(property, prop, object)
       display = Map.put(prop.value_display, :formatted, formatted)
-      options = MultistateState.state_options(object)
+
+      options =
+        object
+        |> MultistateState.state_options()
+        |> PropertyEnumeration.with_current_value_option(Map.get(prop, :value))
 
       prop
       |> Map.put(:value_display, display)
@@ -296,7 +302,12 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     }
 
     if MultistateState.multistate_object?(object) do
-      Map.put(hint, :enum_options, MultistateState.state_options(object))
+      options =
+        object
+        |> MultistateState.state_options()
+        |> PropertyEnumeration.with_current_value_option(value)
+
+      Map.put(hint, :enum_options, options)
     else
       hint
     end
@@ -438,7 +449,16 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   defp parse_typed_value(s, %{type: "REAL"}),
     do: parse_float(s)
 
+  defp parse_typed_value(s, %{type: "DOUBLE"}),
+    do: parse_float(s)
+
   defp parse_typed_value(s, %{type: "INTEGER"}),
+    do: parse_integer(s)
+
+  defp parse_typed_value(s, %{type: "UNSIGNED INTEGER"}),
+    do: parse_integer(s)
+
+  defp parse_typed_value(s, %{type: "SIGNED INTEGER"}),
     do: parse_integer(s)
 
   defp parse_typed_value(s, %{type: "CHARACTER STRING"}),
@@ -447,24 +467,204 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
   defp parse_typed_value(s, %{bac_type: :string}),
     do: {:ok, s}
 
-  defp parse_typed_value(s, %{type: "ENUMERATED", value: value}) when is_atom(value),
-    do: parse_enum(s, value)
+  # Text-mode octet writes (printable) keep the string bytes. Opaque octets are
+  # submitted with encoding=hex and handled by parse_hex_input/1 above.
+  defp parse_typed_value(s, %{type: "OCTET STRING"}), do: {:ok, s}
+  defp parse_typed_value(s, %{bac_type: :octet_string}), do: {:ok, s}
+
+  # Unknown props keep raw Encoding. Prefer wire integers; when the property id is a
+  # known constant type (often the same atom, e.g. :notify_type), also accept names.
+  defp parse_typed_value(s, %{type: "ENUMERATED", value: %Encoding{}} = prop),
+    do: parse_unknown_enumerated(s, prop)
+
+  defp parse_typed_value(s, %{type: "ENUMERATED"}),
+    do: parse_enumerated_input(s)
 
   defp parse_typed_value(s, %{value: value}) when is_binary(value),
+    do: {:ok, s}
+
+  defp parse_typed_value(s, %{value: %Encoding{value: value}}) when is_binary(value),
     do: {:ok, s}
 
   defp parse_typed_value(s, %{value: value}) when is_boolean(value),
     do: parse_boolean(s)
 
+  defp parse_typed_value(s, %{value: %Encoding{value: value}}) when is_boolean(value),
+    do: parse_boolean(s)
+
   defp parse_typed_value(s, %{value: value} = prop) do
-    if PropertyFormatter.bitstring_value?(value) do
-      parse_bitstring_input(s, prop)
+    scalar = unwrap_encoding_value(value)
+
+    if PropertyFormatter.bitstring_value?(scalar) do
+      parse_bitstring_input(s, Map.put(prop, :value, scalar))
     else
-      parse_typed_value_by_scalar(s, value)
+      parse_typed_value_by_scalar(s, scalar)
     end
   end
 
   defp parse_typed_value(s, _prop), do: parse_number(s)
+
+  defp unwrap_encoding_value(%Encoding{value: inner}), do: inner
+  defp unwrap_encoding_value(value), do: value
+
+  defp parse_enumerated_integer(s) when is_binary(s) do
+    trimmed = String.trim(s)
+
+    case Integer.parse(trimmed) do
+      {i, ""} when i >= 0 -> {:ok, i}
+      {_neg, ""} -> {:error, :invalid_enum}
+      _other -> {:error, :invalid_enum}
+    end
+  end
+
+  defp parse_unknown_enumerated(s, prop) when is_binary(s) and is_map(prop) do
+    trimmed = String.trim(s)
+
+    if trimmed == "" do
+      {:error, :empty_value}
+    else
+      case parse_enumerated_integer(trimmed) do
+        {:ok, _int} = ok ->
+          ok
+
+        {:error, :invalid_enum} ->
+          resolve_enumerated_name(trimmed, Map.get(prop, :property))
+      end
+    end
+  end
+
+  # Resolve a constant name to its integer when property id is also a Constants type
+  # (e.g. :notify_type / :event_state). Returns the integer for Encoding wire form.
+  defp resolve_enumerated_name(trimmed, property) when is_atom(property) do
+    case existing_atom(String.downcase(trimmed)) do
+      nil ->
+        {:error, :invalid_enum}
+
+      atom ->
+        case Constants.by_name(property, atom) do
+          {:ok, int} when is_integer(int) and int >= 0 -> {:ok, int}
+          _error -> {:error, :invalid_enum}
+        end
+    end
+  end
+
+  defp resolve_enumerated_name(_trimmed, _property), do: {:error, :invalid_enum}
+
+  # Returns an existing atom, or nil when the name is not an atom yet.
+  # Do not use is_atom/1 on the result: nil is an atom in the BEAM type system.
+  defp existing_atom(name) when is_binary(name) do
+    String.to_existing_atom(name)
+  rescue
+    ArgumentError -> nil
+  end
+
+  defp parse_enumerated_input(s) do
+    trimmed = String.trim(s)
+
+    if trimmed == "" do
+      {:error, :empty_value}
+    else
+      case parse_enumerated_integer(trimmed) do
+        {:ok, _value} = ok ->
+          ok
+
+        {:error, :invalid_enum} ->
+          # Named atoms help known-property casting. Bare strings are never valid.
+          case existing_atom(String.downcase(trimmed)) do
+            nil -> {:error, :invalid_enum}
+            atom -> {:ok, atom}
+          end
+      end
+    end
+  end
+
+  @doc """
+  Prepares a parsed scalar for WriteProperty.
+
+  Unknown / proprietary properties often arrive as primitive `Encoding` values and
+  integer property identifiers require an `Encoding` payload for bacstack.
+  """
+  @spec prepare_write_value(term(), map()) :: {:ok, term()} | {:error, term()}
+  def prepare_write_value(value, prop) when is_map(prop) do
+    case Map.get(prop, :value) do
+      %Encoding{encoding: :primitive, type: :enumerated} = encoding ->
+        prepare_enumerated_encoding(encoding, value, Map.get(prop, :property))
+
+      %Encoding{encoding: :primitive, type: type} = encoding
+      when type in [
+             :boolean,
+             :unsigned_integer,
+             :signed_integer,
+             :real,
+             :double,
+             :octet_string,
+             :character_string,
+             :bitstring
+           ] ->
+        {:ok, %{encoding | value: value}}
+
+      %Encoding{} ->
+        {:error, :not_primitive}
+
+      _other ->
+        prepare_write_value_for_property_id(value, prop)
+    end
+  end
+
+  def prepare_write_value(value, _prop), do: {:ok, value}
+
+  # bacstack ApplicationTags encode only non-neg integers for :enumerated.
+  defp prepare_enumerated_encoding(encoding, value, _property)
+       when is_integer(value) and value >= 0 do
+    {:ok, %{encoding | value: value}}
+  end
+
+  defp prepare_enumerated_encoding(encoding, value, property)
+       when is_atom(value) and is_atom(property) do
+    case Constants.by_name(property, value) do
+      {:ok, int} when is_integer(int) and int >= 0 ->
+        {:ok, %{encoding | value: int}}
+
+      _error ->
+        {:error, :invalid_enum}
+    end
+  end
+
+  defp prepare_enumerated_encoding(_encoding, _value, _property), do: {:error, :invalid_enum}
+
+  defp prepare_write_value_for_property_id(value, %{property: property} = prop)
+       when is_integer(property) do
+    case type_atom_from_label(Map.get(prop, :type)) || infer_primitive_type(value) do
+      nil ->
+        {:error, :unknown_write_type}
+
+      type ->
+        Encoding.create({type, value})
+    end
+  end
+
+  defp prepare_write_value_for_property_id(value, _prop), do: {:ok, value}
+
+  defp type_atom_from_label("BOOLEAN"), do: :boolean
+  defp type_atom_from_label("ENUMERATED"), do: :enumerated
+  defp type_atom_from_label("UNSIGNED INTEGER"), do: :unsigned_integer
+  defp type_atom_from_label("SIGNED INTEGER"), do: :signed_integer
+  defp type_atom_from_label("INTEGER"), do: :signed_integer
+  defp type_atom_from_label("REAL"), do: :real
+  defp type_atom_from_label("DOUBLE"), do: :double
+  defp type_atom_from_label("OCTET STRING"), do: :octet_string
+  defp type_atom_from_label("CHARACTER STRING"), do: :character_string
+  defp type_atom_from_label("BITSTRING"), do: :bitstring
+  defp type_atom_from_label(_type), do: nil
+
+  defp infer_primitive_type(value) when is_boolean(value), do: :boolean
+  defp infer_primitive_type(value) when is_float(value), do: :real
+  defp infer_primitive_type(value) when is_integer(value), do: :unsigned_integer
+  defp infer_primitive_type(value) when is_binary(value), do: :character_string
+  defp infer_primitive_type(value) when is_atom(value), do: :enumerated
+
+  defp infer_primitive_type(value),
+    do: if(PropertyFormatter.bitstring_value?(value), do: :bitstring)
 
   defp parse_typed_value_by_scalar(s, value) when is_float(value), do: parse_float(s)
   defp parse_typed_value_by_scalar(s, value) when is_integer(value), do: parse_integer(s)
@@ -518,63 +718,90 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     end
   end
 
-  defp parse_enum(s, current) when is_atom(current) do
-    atom =
-      try do
-        String.to_existing_atom(String.downcase(s))
-      rescue
-        ArgumentError -> nil
-      end
-
-    if atom, do: {:ok, atom}, else: {:ok, s}
-  end
+  defp parse_enum(s, _current) when is_binary(s), do: parse_enumerated_input(s)
 
   @doc false
   @spec values_match?(term(), term()) :: boolean()
-  def values_match?(nil, _read), do: true
+  def values_match?(written, read), do: values_match?(written, read, nil)
 
-  def values_match?(written, read) when written == read, do: true
+  @doc false
+  @spec values_match?(term(), term(), atom() | integer() | nil) :: boolean()
+  def values_match?(nil, _read, _property), do: true
 
-  def values_match?(written, read) when is_float(written) and is_float(read) do
+  def values_match?(written, read, _property) when written == read, do: true
+
+  def values_match?(written, read, _property) when is_float(written) and is_float(read) do
     abs(written - read) < 1.0e-4
   end
 
-  def values_match?(written, read) when is_integer(written) and is_float(read) do
-    values_match?(written * 1.0, read)
+  def values_match?(written, read, property) when is_integer(written) and is_float(read) do
+    values_match?(written * 1.0, read, property)
   end
 
-  def values_match?(written, read) when is_float(written) and is_integer(read) do
-    values_match?(written, read * 1.0)
+  def values_match?(written, read, property) when is_float(written) and is_integer(read) do
+    values_match?(written, read * 1.0, property)
   end
 
-  def values_match?(written, read) when is_list(written) and is_list(read) do
+  def values_match?(written, read, property) when is_list(written) and is_list(read) do
     length(written) == length(read) and
-      Enum.all?(Enum.zip(written, read), fn {w, r} -> values_match?(w, r) end)
+      Enum.all?(Enum.zip(written, read), fn {w, r} -> values_match?(w, r, property) end)
   end
 
-  def values_match?(written, read)
+  def values_match?(written, read, _property)
       when is_tuple(written) and is_tuple(read) and tuple_size(written) == tuple_size(read) do
     PropertyFormatter.bitstring_value?(written) and PropertyFormatter.bitstring_value?(read) and
       written == read
   end
 
-  def values_match?(%BACnetArray{} = written, %BACnetArray{} = read) do
+  def values_match?(%Encoding{value: written}, %Encoding{value: read}, property),
+    do: values_match?(written, read, property)
+
+  def values_match?(%Encoding{value: written}, read, property),
+    do: values_match?(written, read, property)
+
+  def values_match?(written, %Encoding{value: read}, property),
+    do: values_match?(written, read, property)
+
+  # Written integer / read atom (or reverse): common when Encoding write uses wire
+  # integers but read_property unpacks BACnet constants back to atoms.
+  def values_match?(written, read, property)
+      when is_atom(property) and
+             ((is_integer(written) and is_atom(read)) or (is_atom(written) and is_integer(read))) do
+    constant_enum_equivalent?(property, written, read)
+  end
+
+  def values_match?(%BACnetArray{} = written, %BACnetArray{} = read, property) do
     written.fixed_size == read.fixed_size and
       BACnetArray.size(written) == BACnetArray.size(read) and
-      bacnet_array_items_match?(written, read)
+      bacnet_array_items_match?(written, read, property)
   end
 
-  def values_match?(%{__struct__: module} = written, %{__struct__: module} = read) do
+  def values_match?(%{__struct__: module} = written, %{__struct__: module} = read, property) do
     written
     |> Map.from_struct()
-    |> Enum.all?(fn {key, w_val} -> values_match?(w_val, Map.get(read, key)) end)
+    |> Enum.all?(fn {key, w_val} -> values_match?(w_val, Map.get(read, key), property) end)
   end
 
-  def values_match?(%{__struct__: _nil}, %{__struct__: _read}), do: false
+  def values_match?(%{__struct__: _written}, %{__struct__: _read}, _property), do: false
 
-  def values_match?(_written, _read), do: false
+  def values_match?(_written, _read, _property), do: false
 
-  defp bacnet_array_items_match?(written, read) do
+  defp constant_enum_equivalent?(type, atom, int)
+       when is_atom(type) and is_atom(atom) and is_integer(int) and int >= 0 do
+    case Constants.by_name(type, atom) do
+      {:ok, ^int} -> true
+      _error -> false
+    end
+  end
+
+  defp constant_enum_equivalent?(type, int, atom)
+       when is_atom(type) and is_integer(int) and is_atom(atom) do
+    constant_enum_equivalent?(type, atom, int)
+  end
+
+  defp constant_enum_equivalent?(_type, _left, _right), do: false
+
+  defp bacnet_array_items_match?(written, read, property) do
     size = BACnetArray.size(written)
 
     if size == 0 do
@@ -582,7 +809,7 @@ defmodule BacView.BACnet.Protocol.PropertyWriter do
     else
       Enum.all?(1..size, fn index ->
         case {BACnetArray.get_item(written, index), BACnetArray.get_item(read, index)} do
-          {{:ok, w}, {:ok, r}} -> values_match?(w, r)
+          {{:ok, w}, {:ok, r}} -> values_match?(w, r, property)
           _written -> false
         end
       end)

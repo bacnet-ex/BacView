@@ -34,13 +34,13 @@ defmodule BacViewWeb.ObjectSelectionBar do
         >
           {t(@locale, @locale_version, "COV kündigen")}
         </button>
-        <div class="flex flex-wrap items-center gap-1.5">
+        <div class="bac-btn-split">
           <button
             type="button"
             id="reset-selected-priority"
             phx-click="open_reset_priority_confirm"
             disabled={@bulk_resetting}
-            class="bac-btn bac-btn-ghost bac-btn-sm"
+            class="bac-btn bac-btn-ghost bac-btn-sm bac-btn-split-start"
             title={
               t(
                 @locale,
@@ -55,16 +55,35 @@ defmodule BacViewWeb.ObjectSelectionBar do
               priority: @write_priority
             )}
           </button>
-          <button
-            type="button"
-            id="reset-selected-priority-other"
-            phx-click="open_reset_priority_choose"
-            disabled={@bulk_resetting}
-            class="bac-btn bac-btn-ghost bac-btn-sm"
-            title={t(@locale, @locale_version, "Andere Priorität wählen und zurücksetzen")}
+          <details
+            id="reset-selected-priority-menu"
+            phx-hook="DetailsOutsideClose"
+            class={[
+              "bac-btn-split-details",
+              @bulk_resetting && "pointer-events-none opacity-45"
+            ]}
           >
-            {t(@locale, @locale_version, "Andere Priorität…")}
-          </button>
+            <summary
+              class="bac-btn bac-btn-ghost bac-btn-sm bac-btn-split-end bac-btn-split-toggle"
+              title={t(@locale, @locale_version, "Andere Priorität wählen und zurücksetzen")}
+              aria-label={t(@locale, @locale_version, "Andere Priorität wählen und zurücksetzen")}
+            >
+              <.icon name="hero-chevron-down" class="size-3.5 opacity-70" />
+            </summary>
+            <div class="bac-btn-split-menu" role="menu">
+              <button
+                type="button"
+                id="reset-selected-priority-other"
+                role="menuitem"
+                phx-click="open_reset_priority_choose"
+                disabled={@bulk_resetting}
+                class="bac-btn-split-menu-item"
+                title={t(@locale, @locale_version, "Andere Priorität wählen und zurücksetzen")}
+              >
+                {t(@locale, @locale_version, "Andere Priorität…")}
+              </button>
+            </div>
+          </details>
         </div>
         <button
           type="button"
@@ -77,5 +96,30 @@ defmodule BacViewWeb.ObjectSelectionBar do
       </div>
     </div>
     """
+  end
+
+  @doc """
+  Keys suitable for present_value COV (un)subscribe from a multi-object selection.
+
+  Returns `{keys, skipped}` where `skipped` is how many selectable selected objects
+  have no `present_value` (they are dropped silently before the network call).
+  """
+  @spec cov_present_value_keys(MapSet.t(), MapSet.t(), [map()]) ::
+          {[{atom() | integer(), non_neg_integer()}], non_neg_integer()}
+  def cov_present_value_keys(selected_keys, selectable_keys, objects)
+      when is_list(objects) do
+    candidates = MapSet.intersection(selected_keys, selectable_keys)
+
+    with_pv =
+      objects
+      |> Enum.filter(fn obj ->
+        MapSet.member?(candidates, {obj.type, obj.instance}) and
+          not is_nil(Map.get(obj, :present_value))
+      end)
+      |> Enum.map(fn obj -> {obj.type, obj.instance} end)
+      |> MapSet.new()
+
+    skipped = MapSet.size(candidates) - MapSet.size(with_pv)
+    {MapSet.to_list(with_pv), skipped}
   end
 end

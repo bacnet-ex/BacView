@@ -10,7 +10,6 @@ defmodule BacView.BACnet.DeviceSession do
   alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.EventTimestamps
   alias BACnet.Protocol.ObjectIdentifier
-  alias BACnet.Protocol.StatusFlags
   alias BacView.BACnet.Client
   alias BacView.BACnet.DeviceSessionSupervisor
   alias BacView.BACnet.Discovery
@@ -1189,10 +1188,7 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   defp extract_status_flags(obj) when is_map(obj) do
-    case Map.get(obj, :status_flags) do
-      %StatusFlags{} = flags -> flags
-      _obj -> nil
-    end
+    StatusFlagsParser.from_object(obj)
   end
 
   defp extract_event_timestamps(obj) when is_map(obj) do
@@ -1203,9 +1199,18 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   @doc false
-  @spec refresh_object_from_properties(map(), [map()]) :: map()
-  def refresh_object_from_properties(%{} = object, props) when is_list(props) do
-    apply_properties_to_object(object, props)
+  @spec refresh_object_from_properties(map(), [map()], [map()]) :: map()
+  def refresh_object_from_properties(%{} = object, props, unknown_props \\ [])
+      when is_list(props) and is_list(unknown_props) do
+    object
+    |> apply_properties_to_object(props)
+    |> maybe_put_status_flags_from_fallback(unknown_props)
+  end
+
+  @doc false
+  @spec apply_property_to_object_summary(map(), atom() | integer(), term()) :: map()
+  def apply_property_to_object_summary(%{} = object, property, value) do
+    apply_object_property(object, property, value, nil, DateTime.utc_now())
   end
 
   defp sync_object_fields_from_properties(
@@ -1308,6 +1313,19 @@ defmodule BacView.BACnet.DeviceSession do
           nil -> obj
           normalized -> Map.merge(obj, %{status_flags: normalized})
         end
+    end
+  end
+
+  defp maybe_put_status_flags_from_fallback(obj, unknown_props) do
+    case Map.get(obj, :status_flags) do
+      nil ->
+        case StatusFlagsParser.from_object(obj) do
+          nil -> maybe_put_status_flags(obj, unknown_props)
+          flags -> Map.put(obj, :status_flags, flags)
+        end
+
+      _flags ->
+        obj
     end
   end
 
@@ -1463,6 +1481,36 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
+  defp apply_object_property(obj, :object_name, value, _formatted, now)
+       when is_binary(value) and value != "" do
+    Map.merge(obj, %{name: Text.sanitize_utf8(value), updated_at: now})
+  end
+
+  defp apply_object_property(obj, :description, value, _formatted, now) when is_binary(value) do
+    Map.merge(obj, %{description: Text.sanitize_utf8(value), updated_at: now})
+  end
+
+  defp apply_object_property(obj, :out_of_service, value, _formatted, now)
+       when is_boolean(value) do
+    Map.merge(obj, %{out_of_service: value, updated_at: now})
+  end
+
+  defp apply_object_property(obj, :units, value, _formatted, now) do
+    Map.merge(obj, %{units: value, updated_at: now})
+  end
+
+  defp apply_object_property(obj, :event_state, value, _formatted, now) do
+    Map.merge(obj, %{event_state: value, updated_at: now})
+  end
+
+  defp apply_object_property(obj, :priority_array, value, _formatted, now) do
+    obj_with_pa = Map.put(obj, :priority_array, value)
+
+    obj_with_pa
+    |> Map.merge(PropertyWriter.active_priority_info(obj_with_pa))
+    |> Map.put(:updated_at, now)
+  end
+
   defp apply_object_property(obj, _property, _value, _formatted, _now), do: obj
 
   defp refresh_cached_property(prop, :present_value, value, _formatted, obj, now) do
@@ -1500,10 +1548,17 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
-  defp refresh_cached_property(prop, _property, value, formatted, _obj, now) do
+  defp refresh_cached_property(prop, _property, value, formatted, obj, now) do
+    display_opts =
+      if BinaryPV.binary_object?(obj), do: [object: obj], else: []
+
+    display = PropertyDisplay.build(value, display_opts)
+    value_formatted = formatted || Map.get(display, :formatted)
+
     Map.merge(prop, %{
       value: value,
-      value_formatted: formatted,
+      value_display: Map.put(display, :formatted, value_formatted),
+      value_formatted: value_formatted,
       updated_at: now
     })
   end

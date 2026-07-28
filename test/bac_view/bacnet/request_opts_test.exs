@@ -50,13 +50,6 @@ defmodule BacView.BACnet.RequestOptsTest do
     refute RequestOpts.shared_address?(@address)
   end
 
-  test "shared_address? is true when multiple devices share an address" do
-    store(100)
-    store(200)
-
-    assert RequestOpts.shared_address?(@address)
-  end
-
   test "for_device fills remote_device_id without adding invoke id when there is no NPCI source" do
     store(100)
 
@@ -74,18 +67,6 @@ defmodule BacView.BACnet.RequestOptsTest do
     assert is_integer(merged[:max_apdu])
   end
 
-  test "for_device adds npci destination but not invoke device_id on shared addresses" do
-    npci_source = %NpciTarget{net: 3, address: 200}
-
-    store(100)
-    store(200, npci_source)
-
-    merged = RequestOpts.for_device(200, remote_device_id: 200)
-    assert merged[:remote_device_id] == 200
-    assert merged[:destination] == npci_source
-    refute Keyword.has_key?(merged, :device_id)
-  end
-
   test "for_device adds npci destination and invoke device_id for a routed unique address" do
     npci_source = %NpciTarget{net: 3, address: 200}
 
@@ -97,25 +78,15 @@ defmodule BacView.BACnet.RequestOptsTest do
     assert merged[:destination] == npci_source
   end
 
-  test "merge omits npci destination and invoke device_id without npci source on shared addresses" do
-    store(100)
-    store(200)
-
-    merged = RequestOpts.merge(remote_device_id: 200)
-    assert merged[:remote_device_id] == 200
-    refute Keyword.has_key?(merged, :device_id)
-    refute Keyword.has_key?(merged, :destination)
-  end
-
-  describe "with shared reduction disabled" do
+  describe "with shared reduction disabled (default)" do
     setup do
       previous =
-        Application.get_env(:bacview, :property_read_concurrency_disable_shared_reduction)
+        Application.get_env(:bacview, :property_read_concurrency_enable_shared_reduction)
 
-      Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, true)
+      Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, false)
 
       on_exit(fn ->
-        restore_disable_shared_reduction(previous)
+        restore_enable_shared_reduction(previous)
       end)
 
       :ok
@@ -141,9 +112,53 @@ defmodule BacView.BACnet.RequestOptsTest do
     end
   end
 
-  defp restore_disable_shared_reduction(nil),
-    do: Application.delete_env(:bacview, :property_read_concurrency_disable_shared_reduction)
+  describe "with shared reduction enabled" do
+    setup do
+      previous =
+        Application.get_env(:bacview, :property_read_concurrency_enable_shared_reduction)
 
-  defp restore_disable_shared_reduction(value),
-    do: Application.put_env(:bacview, :property_read_concurrency_disable_shared_reduction, value)
+      Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, true)
+
+      on_exit(fn ->
+        restore_enable_shared_reduction(previous)
+      end)
+
+      :ok
+    end
+
+    test "shared_address? is true when multiple devices share an address" do
+      store(100)
+      store(200)
+
+      assert RequestOpts.shared_address?(@address)
+    end
+
+    test "for_device adds npci destination but not invoke device_id on shared addresses" do
+      npci_source = %NpciTarget{net: 3, address: 200}
+
+      store(100)
+      store(200, npci_source)
+
+      merged = RequestOpts.for_device(200, remote_device_id: 200)
+      assert merged[:remote_device_id] == 200
+      assert merged[:destination] == npci_source
+      refute Keyword.has_key?(merged, :device_id)
+    end
+
+    test "merge omits npci destination and invoke device_id without npci source on shared addresses" do
+      store(100)
+      store(200)
+
+      merged = RequestOpts.merge(remote_device_id: 200)
+      assert merged[:remote_device_id] == 200
+      refute Keyword.has_key?(merged, :device_id)
+      refute Keyword.has_key?(merged, :destination)
+    end
+  end
+
+  defp restore_enable_shared_reduction(nil),
+    do: Application.delete_env(:bacview, :property_read_concurrency_enable_shared_reduction)
+
+  defp restore_enable_shared_reduction(value),
+    do: Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, value)
 end

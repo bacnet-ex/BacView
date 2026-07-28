@@ -3,6 +3,7 @@ defmodule BacViewWeb.HierarchyExplorer do
 
   alias BACnet.Protocol.StatusFlags
   alias BacView.BACnet.HierarchyNode
+  alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacViewWeb.SearchQuery
 
   @type segment :: {atom(), non_neg_integer()}
@@ -191,7 +192,7 @@ defmodule BacViewWeb.HierarchyExplorer do
       commandable: Map.get(object, :commandable, false),
       present_value_formatted: Map.get(object, :present_value_formatted, "-"),
       active_priority: Map.get(object, :active_priority),
-      status_flags: Map.get(object, :status_flags),
+      status_flags: StatusFlagsParser.from_object(object),
       type_label: Map.get(object, :type_label)
     }
   end
@@ -252,13 +253,13 @@ defmodule BacViewWeb.HierarchyExplorer do
   end
 
   defp increment_status_flag_counts(acc, object) do
-    case Map.get(object, :status_flags) do
+    case StatusFlagsParser.from_object(object) do
       %StatusFlags{} = flags ->
         Enum.reduce(@status_flag_fields, acc, fn flag, counts ->
           if Map.fetch!(flags, flag), do: Map.update!(counts, flag, &(&1 + 1)), else: counts
         end)
 
-      _acc ->
+      _flags ->
         acc
     end
   end

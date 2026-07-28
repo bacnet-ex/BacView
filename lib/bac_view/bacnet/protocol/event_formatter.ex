@@ -7,7 +7,7 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
 
   alias BacView.BACnet.EventRecord
 
-  @spec event_state_label(atom() | nil) :: String.t()
+  @spec event_state_label(atom() | integer() | nil) :: String.t()
   def event_state_label(nil), do: "-"
 
   def event_state_label(state) do
@@ -18,7 +18,8 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
       :high_limit -> gettext("Obergrenze")
       :low_limit -> gettext("Untergrenze")
       :life_safety_alarm -> gettext("Lebensschutz-Alarm")
-      other -> Atom.to_string(other)
+      other when is_atom(other) -> Atom.to_string(other)
+      other -> to_string(other)
     end
   end
 
@@ -26,7 +27,7 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
   def notification_class_label(nil), do: "-"
   def notification_class_label(notification_class), do: "NC #{notification_class}"
 
-  @spec notify_type_label(atom() | nil) :: String.t()
+  @spec notify_type_label(atom() | integer() | nil) :: String.t()
   def notify_type_label(nil), do: "-"
 
   def notify_type_label(type) do
@@ -34,11 +35,12 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
       :alarm -> gettext("Alarm")
       :event -> gettext("Ereignis")
       :ack_notification -> gettext("Quittierung")
-      other -> Atom.to_string(other)
+      other when is_atom(other) -> Atom.to_string(other)
+      other -> to_string(other)
     end
   end
 
-  @spec event_type_label(atom() | nil) :: String.t()
+  @spec event_type_label(atom() | integer() | nil) :: String.t()
   def event_type_label(nil), do: "-"
 
   def event_type_label(type) do
@@ -55,7 +57,8 @@ defmodule BacView.BACnet.Protocol.EventFormatter do
       :extended -> gettext("Erweitert")
       :change_of_discrete_value -> gettext("Diskrete Wertänderung")
       :change_of_timer -> gettext("Timer-Änderung")
-      other -> Atom.to_string(other)
+      other when is_atom(other) -> Atom.to_string(other)
+      other -> to_string(other)
     end
   end
 

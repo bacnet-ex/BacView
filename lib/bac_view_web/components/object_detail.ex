@@ -4,16 +4,18 @@ defmodule BacViewWeb.ObjectDetail do
   use BacViewWeb.LocaleAttrs
 
   alias BACnet.Protocol.ApplicationTags.Encoding
+  alias BacView.BACnet.HierarchySplit
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyWriter
-
+  alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.BACnet.Protocol.TrendLogReader
-
-  alias BacView.BACnet.HierarchySplit
+  alias BacView.BACnet.Protocol.UnknownProperty
+  alias BacView.Text
   alias BacViewWeb.DeviceUrl
+
   alias BacViewWeb.FileTransferPanel
   alias BacViewWeb.ObjectTypeIcon
   alias BacViewWeb.PropertyTable
@@ -40,8 +42,10 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:properties_sort_dir, :atom, default: :asc)
   attr(:unknown_properties_sort_by, :string, default: nil)
   attr(:unknown_properties_sort_dir, :atom, default: :asc)
+  attr(:unknown_properties_editing, :boolean, default: false)
   attr(:unknown_property_hex_keys, :any, default: MapSet.new())
   attr(:property_hex_keys, :any, default: MapSet.new())
+  attr(:property_enum_free_keys, :any, default: MapSet.new())
   attr(:loading, :boolean, default: false)
   attr(:properties_loading, :boolean, default: false)
   attr(:properties_progress, :map, default: nil)
@@ -74,6 +78,28 @@ defmodule BacViewWeb.ObjectDetail do
           assigns.unknown_properties_sort_dir
         )
       )
+      |> then(fn assigns ->
+        assign(
+          assigns,
+          :header_status_flags,
+          resolve_header_status_flags(
+            assigns.object,
+            assigns.properties,
+            assigns.unknown_properties
+          )
+        )
+      end)
+      |> then(fn assigns ->
+        has_editable? =
+          Enum.any?(assigns.unknown_properties, &UnknownProperty.primitive_editable?/1)
+
+        assigns
+        |> assign(:has_editable_unknown_properties?, has_editable?)
+        |> assign(
+          :unknown_properties_editing,
+          assigns.unknown_properties_editing and has_editable?
+        )
+      end)
 
     ~H"""
     <div class="flex flex-col flex-1 min-h-0">
@@ -100,12 +126,18 @@ defmodule BacViewWeb.ObjectDetail do
             </div>
             <div
               :if={
-                @object && show_status_flags_in_header?(@object, @properties, @properties_loading)
+                @object &&
+                  show_status_flags_in_header?(
+                    @header_status_flags,
+                    @properties,
+                    @unknown_properties,
+                    @properties_loading
+                  )
               }
               class="shrink-0 pl-4"
             >
               <StatusFlagsIcons.status_flags_icons
-                flags={@object.status_flags}
+                flags={@header_status_flags}
                 mode={:stats}
                 locale={@locale}
                 locale_version={@locale_version}
@@ -476,7 +508,7 @@ defmodule BacViewWeb.ObjectDetail do
                         value={@write_priority}
                       />
                       <input
-                        :if={property_hex_mode?(prop, @property_hex_keys)}
+                        :if={hex_write_encoding?(prop, @property_hex_keys)}
                         type="hidden"
                         name="encoding"
                         value="hex"
@@ -493,8 +525,12 @@ defmodule BacViewWeb.ObjectDetail do
                         <span class="text-sm">{t(@locale, @locale_version, "Aktiv")}</span>
                       </label>
                       <select
-                        :if={enumeration_property?(prop)}
+                        :if={
+                          enumeration_property?(prop) and
+                            not property_enum_free_mode?(prop, @property_enum_free_keys)
+                        }
                         name="value"
+                        id={"write-enum-select-#{prop.property}"}
                         class="bac-input bac-input-sm w-full"
                       >
                         <option
@@ -506,23 +542,36 @@ defmodule BacViewWeb.ObjectDetail do
                         </option>
                         <option
                           :for={opt <- prop.enum_options}
-                          value={opt.value}
+                          value={PropertyEnumeration.option_value_to_string(opt.value)}
                           selected={enum_option_selected?(prop.value, opt.value)}
                         >
                           {opt.label}
                         </option>
                       </select>
                       <input
-                        :if={!boolean_property?(prop) && !enumeration_property?(prop)}
+                        :if={
+                          !boolean_property?(prop) &&
+                            (!enumeration_property?(prop) or
+                               property_enum_free_mode?(prop, @property_enum_free_keys))
+                        }
                         type="text"
                         name="value"
-                        value={input_value(prop, @object, @property_hex_keys)}
+                        id={"write-input-#{prop.property}"}
+                        value={
+                          enum_or_scalar_input_value(
+                            prop,
+                            @object,
+                            @property_hex_keys,
+                            @property_enum_free_keys
+                          )
+                        }
                         placeholder={
                           write_placeholder(
                             prop,
                             @locale,
                             @locale_version,
-                            property_hex_mode?(prop, @property_hex_keys)
+                            property_hex_mode?(prop, @property_hex_keys),
+                            property_enum_free_mode?(prop, @property_enum_free_keys)
                           )
                         }
                         class="bac-input bac-input-sm bac-mono w-full"
@@ -533,6 +582,7 @@ defmodule BacViewWeb.ObjectDetail do
                         writing_property={@writing_property}
                         write_priority={@write_priority}
                         hex_keys={@property_hex_keys}
+                        enum_free_keys={@property_enum_free_keys}
                         locale={@locale}
                         locale_version={@locale_version}
                       />
@@ -582,7 +632,7 @@ defmodule BacViewWeb.ObjectDetail do
           class="bac-panel w-full min-w-0"
           aria-busy={to_string(@properties_loading)}
         >
-          <div class="bac-panel-header">
+          <div class="bac-panel-header flex-wrap gap-3">
             <div class="min-w-0">
               <p class="bac-section-title">
                 {t(@locale, @locale_version, "Unbekannte Eigenschaften")}
@@ -592,6 +642,39 @@ defmodule BacViewWeb.ObjectDetail do
                   count: length(@unknown_properties)
                 )}
               </p>
+            </div>
+            <div
+              :if={@has_editable_unknown_properties?}
+              class="flex items-center gap-2 ml-auto shrink-0"
+            >
+              <button
+                type="button"
+                id="toggle-unknown-properties-editing"
+                phx-click="toggle_unknown_properties_editing"
+                class={[
+                  "bac-btn bac-btn-sm",
+                  if(@unknown_properties_editing,
+                    do: "bac-btn-primary",
+                    else: "bac-btn-ghost"
+                  )
+                ]}
+                aria-pressed={to_string(@unknown_properties_editing)}
+              >
+                <.icon
+                  name={
+                    if(@unknown_properties_editing,
+                      do: "hero-lock-closed",
+                      else: "hero-pencil-square"
+                    )
+                  }
+                  class="size-4"
+                />
+                <%= if @unknown_properties_editing do %>
+                  {t(@locale, @locale_version, "Nur lesen")}
+                <% else %>
+                  {t(@locale, @locale_version, "Bearbeiten")}
+                <% end %>
+              </button>
             </div>
           </div>
 
@@ -645,12 +728,87 @@ defmodule BacViewWeb.ObjectDetail do
                 <tr :for={prop <- @sorted_unknown_properties} id={"unknown-prop-#{prop.property}"}>
                   <td class="bac-mono align-top">{prop.property_name}</td>
                   <td class="align-top min-w-0">
-                    <.unknown_property_value
-                      prop={prop}
-                      hex_keys={@unknown_property_hex_keys}
-                      locale={@locale}
-                      locale_version={@locale_version}
-                    />
+                    <div :if={!@unknown_properties_editing or !unknown_primitive_editable?(prop)}>
+                      <.unknown_property_value
+                        prop={prop}
+                        hex_keys={@unknown_property_hex_keys}
+                        locale={@locale}
+                        locale_version={@locale_version}
+                      />
+                    </div>
+                    <.form
+                      :if={@unknown_properties_editing && unknown_primitive_editable?(prop)}
+                      for={%{}}
+                      as={:write}
+                      id={"write-unknown-form-#{prop.property}"}
+                      phx-submit="write_property"
+                      class="bac-property-write space-y-2"
+                    >
+                      <input type="hidden" name="property" value={property_param(prop.property)} />
+                      <input type="hidden" name="unknown" value="true" />
+                      <input
+                        :if={hex_write_encoding?(prop, @unknown_property_hex_keys)}
+                        type="hidden"
+                        name="encoding"
+                        value="hex"
+                      />
+                      <label :if={boolean_property?(prop)} class="flex items-center gap-2">
+                        <input type="hidden" name="value" value="false" />
+                        <input
+                          type="checkbox"
+                          name="value"
+                          value="true"
+                          checked={unknown_boolean_checked?(prop)}
+                          class="bac-checkbox"
+                        />
+                        <span class="text-sm">{t(@locale, @locale_version, "Aktiv")}</span>
+                      </label>
+                      <input
+                        :if={!boolean_property?(prop)}
+                        type="text"
+                        name="value"
+                        id={"write-unknown-input-#{prop.property}"}
+                        value={unknown_input_value(prop, @unknown_property_hex_keys)}
+                        placeholder={
+                          write_placeholder(
+                            prop,
+                            @locale,
+                            @locale_version,
+                            property_hex_mode?(prop, @unknown_property_hex_keys),
+                            false
+                          )
+                        }
+                        class="bac-input bac-input-sm bac-mono w-full"
+                      />
+                      <div class="flex flex-wrap items-center gap-1.5">
+                        <button
+                          type="submit"
+                          disabled={@writing_property == prop.property}
+                          class="bac-btn bac-btn-primary bac-btn-xs"
+                        >
+                          <.icon
+                            :if={@writing_property == prop.property}
+                            name="hero-arrow-path"
+                            class="size-3 animate-spin"
+                          />
+                          {t(@locale, @locale_version, "Schreiben")}
+                        </button>
+                        <button
+                          :if={write_hex_modes_differ?(prop, @object)}
+                          type="button"
+                          id={"unknown-prop-hex-toggle-write-#{prop.property}"}
+                          phx-click="toggle_unknown_property_hex"
+                          phx-value-property={property_param(prop.property)}
+                          class="bac-btn bac-btn-ghost bac-btn-xs"
+                        >
+                          {hex_toggle_label(
+                            property_hex_mode?(prop, @unknown_property_hex_keys),
+                            @locale,
+                            @locale_version
+                          )}
+                        </button>
+                      </div>
+                    </.form>
                   </td>
                   <td class="bac-text-faint align-top" title={PropertyFormatter.property_type_tooltip(prop)}>
                     {prop.type}
@@ -672,7 +830,9 @@ defmodule BacViewWeb.ObjectDetail do
 
   defp known_property_value(assigns) do
     assigns =
-      assign(assigns, :hex_mode?, property_hex_mode?(assigns.prop, assigns.hex_keys))
+      assigns
+      |> assign(:hex_mode?, property_hex_mode?(assigns.prop, assigns.hex_keys))
+      |> assign(:show_hex_toggle?, display_hex_modes_differ?(assigns.prop))
 
     ~H"""
     <div :if={@prop[:string_value?]} class="space-y-2">
@@ -680,7 +840,7 @@ defmodule BacViewWeb.ObjectDetail do
         {binary_property_display_text(@prop, @hex_mode?)}
       </span>
       <button
-        :if={@prop[:hex_toggle?]}
+        :if={@show_hex_toggle?}
         type="button"
         id={"prop-hex-toggle-#{@prop.property}"}
         phx-click="toggle_property_hex"
@@ -703,7 +863,9 @@ defmodule BacViewWeb.ObjectDetail do
 
   defp unknown_property_value(assigns) do
     assigns =
-      assign(assigns, :hex_mode?, MapSet.member?(assigns.hex_keys, assigns.prop.property))
+      assigns
+      |> assign(:hex_mode?, MapSet.member?(assigns.hex_keys, assigns.prop.property))
+      |> assign(:show_hex_toggle?, display_hex_modes_differ?(assigns.prop))
 
     ~H"""
     <div :if={@prop[:string_value?]} class="space-y-2">
@@ -711,7 +873,7 @@ defmodule BacViewWeb.ObjectDetail do
         {binary_property_display_text(@prop, @hex_mode?)}
       </span>
       <button
-        :if={@prop[:hex_toggle?]}
+        :if={@show_hex_toggle?}
         type="button"
         id={"unknown-prop-hex-toggle-#{@prop.property}"}
         phx-click="toggle_unknown_property_hex"
@@ -784,12 +946,36 @@ defmodule BacViewWeb.ObjectDetail do
     t(locale, locale_version, "Warte auf BACnet-Antwort…")
   end
 
-  defp show_status_flags_in_header?(_object, properties, _properties_loading)
-       when is_list(properties) do
-    Enum.any?(properties, &(&1.property == :status_flags))
+  defp show_status_flags_in_header?(
+         header_flags,
+         properties,
+         unknown_properties,
+         _properties_loading
+       ) do
+    not is_nil(header_flags) or property_row_present?(properties, :status_flags) or
+      property_row_present?(unknown_properties, :status_flags)
   end
 
-  defp show_status_flags_in_header?(_object, _properties, _properties_loading), do: false
+  defp resolve_header_status_flags(object, properties, unknown_properties) do
+    StatusFlagsParser.from_object(object) ||
+      status_flags_from_rows(properties) ||
+      status_flags_from_rows(unknown_properties)
+  end
+
+  defp status_flags_from_rows(rows) when is_list(rows) do
+    case Enum.find(rows, &(&1.property == :status_flags)) do
+      %{value: value} -> StatusFlagsParser.normalize(value)
+      _row -> nil
+    end
+  end
+
+  defp status_flags_from_rows(_rows), do: nil
+
+  defp property_row_present?(rows, property) when is_list(rows) do
+    Enum.any?(rows, &(&1.property == property))
+  end
+
+  defp property_row_present?(_rows, _property), do: false
 
   defp property_writable_in_ui?(%{property: :log_buffer}), do: false
   defp property_writable_in_ui?(%{writable: writable}), do: writable
@@ -854,7 +1040,39 @@ defmodule BacViewWeb.ObjectDetail do
   defp boolean_property?(%{bac_type: :boolean}), do: true
   defp boolean_property?(%{type: "BOOLEAN"}), do: true
   defp boolean_property?(%{value: value}) when is_boolean(value), do: true
+  defp boolean_property?(%{value: %Encoding{value: value}}) when is_boolean(value), do: true
   defp boolean_property?(_value), do: false
+
+  defp unknown_primitive_editable?(prop), do: UnknownProperty.primitive_editable?(prop)
+
+  defp unknown_boolean_checked?(%{value: value}) when is_boolean(value), do: value
+
+  defp unknown_boolean_checked?(%{value: %Encoding{value: value}}) when is_boolean(value),
+    do: value
+
+  defp unknown_boolean_checked?(_prop), do: false
+
+  defp unknown_input_value(prop, hex_keys) do
+    if property_hex_mode?(prop, hex_keys) do
+      case Map.get(prop, :raw_binary) || extract_binary_value(Map.get(prop, :value)) do
+        binary when is_binary(binary) -> PropertyFormatter.format_binary_hex(binary)
+        _other -> unknown_text_edit_value(prop)
+      end
+    else
+      unknown_text_edit_value(prop)
+    end
+  end
+
+  defp unknown_text_edit_value(prop) do
+    source =
+      cond do
+        is_binary(Map.get(prop, :raw_binary)) -> Map.get(prop, :raw_binary)
+        match?(%Encoding{}, Map.get(prop, :value)) -> Map.get(prop, :value).value
+        true -> Map.get(prop, :value)
+      end
+
+    PropertyFormatter.format_edit_value(source, nil, prop)
+  end
 
   defp enumeration_property?(prop), do: PropertyEnumeration.dropdown?(prop)
 
@@ -880,10 +1098,15 @@ defmodule BacViewWeb.ObjectDetail do
   attr(:writing_property, :any, default: nil)
   attr(:write_priority, :integer, default: 8)
   attr(:hex_keys, :any, default: MapSet.new())
+  attr(:enum_free_keys, :any, default: MapSet.new())
   attr(:locale, :string, default: "de")
   attr(:locale_version, :integer, default: 0)
 
   defp write_actions(assigns) do
+    # Write form: only show hex/text when the write field value would actually change.
+    assigns =
+      assign(assigns, :show_hex_toggle?, write_hex_modes_differ?(assigns.prop, assigns.object))
+
     ~H"""
     <div class="flex flex-wrap items-center gap-1.5">
       <button
@@ -911,7 +1134,7 @@ defmodule BacViewWeb.ObjectDetail do
         {t(@locale, @locale_version, "Null")}
       </button>
       <button
-        :if={@prop[:hex_toggle?]}
+        :if={@show_hex_toggle?}
         type="button"
         id={"prop-hex-toggle-#{@prop.property}"}
         phx-click="toggle_property_hex"
@@ -920,8 +1143,42 @@ defmodule BacViewWeb.ObjectDetail do
       >
         {hex_toggle_label(property_hex_mode?(@prop, @hex_keys), @locale, @locale_version)}
       </button>
+      <button
+        :if={enumeration_property?(@prop)}
+        type="button"
+        id={"prop-enum-free-toggle-#{@prop.property}"}
+        phx-click="toggle_property_enum_free"
+        phx-value-property={property_param(@prop.property)}
+        class="bac-btn bac-btn-ghost bac-btn-xs"
+      >
+        {enum_free_toggle_label(
+          property_enum_free_mode?(@prop, @enum_free_keys),
+          @locale,
+          @locale_version
+        )}
+      </button>
     </div>
     """
+  end
+
+  defp property_enum_free_mode?(%{property: property}, keys),
+    do: MapSet.member?(keys, property)
+
+  defp enum_free_toggle_label(true, locale, locale_version),
+    do: t(locale, locale_version, "Als Liste")
+
+  defp enum_free_toggle_label(false, locale, locale_version),
+    do: t(locale, locale_version, "Als Eingabe")
+
+  defp enum_or_scalar_input_value(prop, object, hex_keys, enum_free_keys) do
+    if enumeration_property?(prop) and property_enum_free_mode?(prop, enum_free_keys) do
+      PropertyEnumeration.free_input_value_string(
+        Map.get(prop, :value),
+        Map.get(prop, :enum_type)
+      )
+    else
+      input_value(prop, object, hex_keys)
+    end
   end
 
   defp input_value(prop, object, hex_keys) do
@@ -935,20 +1192,81 @@ defmodule BacViewWeb.ObjectDetail do
     end
   end
 
+  # Read-only value cell: trust presentation flag (set when default view ≠ colon-hex).
+  defp display_hex_modes_differ?(prop), do: Map.get(prop, :hex_toggle?) == true
+
+  # Write form: octet strings only, and only when text-mode edit ≠ colon-hex.
+  defp write_hex_modes_differ?(prop, object) do
+    if octet_string_property?(prop) do
+      case extract_prop_binary(prop) do
+        binary when is_binary(binary) ->
+          text_mode = PropertyFormatter.format_edit_value(Map.get(prop, :value), object, prop)
+          hex_mode = PropertyFormatter.format_binary_hex(binary)
+          text_mode != hex_mode
+
+        _other ->
+          false
+      end
+    else
+      false
+    end
+  end
+
+  # Non-printable / invalid-UTF-8 octet values are shown as hex in the write form
+  # (see format_edit_value/3). Submit must use hex encoding so those bytes round-trip.
+  defp hex_write_encoding?(prop, hex_keys) do
+    property_hex_mode?(prop, hex_keys) or force_hex_write_encoding?(prop)
+  end
+
+  defp force_hex_write_encoding?(prop) do
+    # Opaque octet edit values are colon-hex (format_edit_value/3); submit as hex.
+    octet_string_property?(prop) and opaque_binary_property?(prop)
+  end
+
+  defp octet_string_property?(%{bac_type: :octet_string}), do: true
+  defp octet_string_property?(%{type: "OCTET STRING"}), do: true
+  defp octet_string_property?(_prop), do: false
+
+  defp opaque_binary_property?(prop) do
+    case extract_prop_binary(prop) do
+      binary when is_binary(binary) -> Text.opaque_binary?(binary)
+      _other -> false
+    end
+  end
+
+  defp extract_prop_binary(prop) do
+    case Map.get(prop, :raw_binary) || extract_binary_value(Map.get(prop, :value)) do
+      binary when is_binary(binary) -> binary
+      _other -> nil
+    end
+  end
+
   defp extract_binary_value(value) when is_binary(value), do: value
   defp extract_binary_value(%Encoding{value: inner}) when is_binary(inner), do: inner
   defp extract_binary_value(_value), do: nil
 
-  defp write_placeholder(_prop, locale, locale_version, true),
+  defp write_placeholder(_prop, locale, locale_version, true, _enum_free),
     do: t(locale, locale_version, "Hex z. B. 41:42:00")
 
-  defp write_placeholder(%{property: :present_value, type: "REAL"}, locale, locale_version, _hex),
-    do: t(locale, locale_version, "z. B. 21.5")
+  defp write_placeholder(_prop, locale, locale_version, _hex, true),
+    do: t(locale, locale_version, "Ganzzahl ≥ 0")
 
-  defp write_placeholder(%{type: "BOOLEAN"}, locale, locale_version, _hex),
+  defp write_placeholder(
+         %{property: :present_value, type: "REAL"},
+         locale,
+         locale_version,
+         _hex,
+         _enum_free
+       ),
+       do: t(locale, locale_version, "z. B. 21.5")
+
+  defp write_placeholder(%{type: "BOOLEAN"}, locale, locale_version, _hex, _enum_free),
     do: t(locale, locale_version, "true oder false")
 
-  defp write_placeholder(_prop, locale, locale_version, _hex),
+  defp write_placeholder(%{type: "ENUMERATED"}, locale, locale_version, _hex, _enum_free),
+    do: t(locale, locale_version, "Ganzzahl ≥ 0")
+
+  defp write_placeholder(_prop, locale, locale_version, _hex, _enum_free),
     do: t(locale, locale_version, "Neuer Wert")
 
   defp format_time(nil), do: "-"

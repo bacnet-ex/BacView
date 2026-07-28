@@ -3,6 +3,8 @@ defmodule BacViewWeb.WritePropertyModalTest do
 
   import Phoenix.LiveViewTest
 
+  alias BACnet.Protocol.{BACnetArray, DeviceObjectPropertyRef, ObjectIdentifier}
+  alias BacView.BACnet.Protocol.ComplexPropertyEditor
   alias BacViewWeb.WritePropertyModal
 
   defp encoding_fields do
@@ -31,6 +33,7 @@ defmodule BacViewWeb.WritePropertyModalTest do
         property: %{
           property: :present_value,
           property_name: "Present Value",
+          value: 1.0,
           value_display: %{kind: :scalar, formatted: "REAL: 1", fields: [], items: []}
         },
         editor_mode: :fields,
@@ -53,6 +56,7 @@ defmodule BacViewWeb.WritePropertyModalTest do
         property: %{
           property: :present_value,
           property_name: "Present Value",
+          value: 1.0,
           value_display: %{kind: :scalar, formatted: "REAL: 1", fields: [], items: []}
         },
         editor_mode: :fields,
@@ -65,5 +69,67 @@ defmodule BacViewWeb.WritePropertyModalTest do
 
     refute html =~
              ~s(name="field[extras.tag_number]" type="text" value="" class="flex-1 bac-input bac-input-sm bac-mono text-xs" disabled)
+  end
+
+  test "shows add entry button for empty list_of_object_property_references array" do
+    array = BACnetArray.new()
+
+    html =
+      render_component(&WritePropertyModal.modal/1, %{
+        object: %{type: :schedule, instance: 1, name: "Schedule"},
+        property: %{
+          property: :list_of_object_property_references,
+          property_name: "List Of Object Property References",
+          value: array,
+          value_display: %{kind: :list, formatted: "[]", fields: [], items: []}
+        },
+        editor_mode: :fields,
+        form_fields: [],
+        draft_fields: %{},
+        draft_value: array,
+        draft_json: "[]",
+        locale: "de",
+        locale_version: 0
+      })
+
+    assert html =~ ~s(id="write-property-add-item")
+    assert html =~ "Eintrag hinzufügen"
+    assert html =~ "Keine Einträge"
+    # Empty collections are valid writes (e.g. clear all object refs)
+    refute html =~ ~s(id="write-property-submit" disabled)
+  end
+
+  test "groups collection fields with remove buttons" do
+    ref = %DeviceObjectPropertyRef{
+      object_identifier: %ObjectIdentifier{type: :analog_value, instance: 1},
+      property_identifier: :present_value,
+      property_array_index: nil,
+      device_identifier: nil
+    }
+
+    array = BACnetArray.from_list([ref], false)
+    form_fields = ComplexPropertyEditor.form_fields(array)
+
+    html =
+      render_component(&WritePropertyModal.modal/1, %{
+        object: %{type: :schedule, instance: 1, name: "Schedule"},
+        property: %{
+          property: :list_of_object_property_references,
+          property_name: "List Of Object Property References",
+          value: array,
+          value_display: %{kind: :list, formatted: "[1]", fields: [], items: []}
+        },
+        editor_mode: :fields,
+        form_fields: form_fields,
+        draft_fields: ComplexPropertyEditor.initial_field_params(form_fields),
+        draft_value: array,
+        draft_json: "[]",
+        locale: "de",
+        locale_version: 0
+      })
+
+    assert html =~ ~s(id="write-property-item-0")
+    assert html =~ ~s(id="write-property-remove-item-0")
+    assert html =~ ~s(id="write-property-add-item")
   end
 end

@@ -7,13 +7,28 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.Text
 
+  # Application-tag primitives that the object UI can edit with a simple control.
+  # Excludes constructed/tagged encodings, proprietary blobs, date/time, and object IDs.
+  @editable_primitive_types [
+    :boolean,
+    :enumerated,
+    :unsigned_integer,
+    :signed_integer,
+    :real,
+    :double,
+    :octet_string,
+    :character_string,
+    :bitstring
+  ]
+
   @type t :: %{
           type: String.t(),
           display_value: term(),
           formatted: String.t(),
           string_value?: boolean(),
           hex_toggle?: boolean(),
-          raw_binary: binary() | nil
+          raw_binary: binary() | nil,
+          primitive_editable?: boolean()
         }
 
   @doc """
@@ -29,7 +44,8 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
           formatted: PropertyFormatter.format_binary_hex(binary),
           string_value?: true,
           hex_toggle?: false,
-          raw_binary: binary
+          raw_binary: binary,
+          primitive_editable?: false
         }
 
       {:encoding_list, :encode_failed, original} ->
@@ -41,20 +57,25 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
           formatted: display.formatted,
           string_value?: false,
           hex_toggle?: false,
-          raw_binary: nil
+          raw_binary: nil,
+          primitive_editable?: false
         }
 
       {:encoding, %Encoding{} = encoding} ->
         present_encoding(encoding)
 
       {:binary, binary} ->
+        formatted = Text.sanitize_utf8(binary)
+
         %{
           type: PropertyFormatter.property_type(binary),
           display_value: binary,
-          formatted: Text.sanitize_utf8(binary),
+          formatted: formatted,
           string_value?: true,
-          hex_toggle?: not Text.printable_text?(binary),
-          raw_binary: binary
+          # Bare binaries are treated as character text — no hex toggle.
+          hex_toggle?: false,
+          raw_binary: binary,
+          primitive_editable?: true
         }
 
       {:other, other} ->
@@ -66,10 +87,20 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
           formatted: display.formatted,
           string_value?: false,
           hex_toggle?: false,
-          raw_binary: nil
+          raw_binary: nil,
+          primitive_editable?: other_primitive_editable?(other)
         }
     end
   end
+
+  @doc """
+  Returns true when the unknown property row can be edited as a simple primitive.
+  """
+  @spec primitive_editable?(map() | t()) :: boolean()
+  def primitive_editable?(%{primitive_editable?: editable}) when is_boolean(editable),
+    do: editable
+
+  def primitive_editable?(_prop), do: false
 
   defp classify(value) when is_list(value) do
     if encoding_list?(value) do
@@ -93,20 +124,30 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
       display_value: inner,
       formatted: Text.sanitize_utf8(inner),
       string_value?: true,
-      hex_toggle?: not Text.printable_text?(inner),
-      raw_binary: inner
+      hex_toggle?: false,
+      raw_binary: inner,
+      primitive_editable?: encoding_primitive_editable?(encoding)
     }
   end
 
   defp present_encoding(%Encoding{type: :octet_string, value: inner} = encoding)
        when is_binary(inner) do
+    formatted =
+      if Text.printable_text?(inner) do
+        inner
+      else
+        PropertyFormatter.format_binary_hex(inner)
+      end
+
     %{
       type: PropertyFormatter.property_type(encoding),
       display_value: inner,
-      formatted: PropertyFormatter.format_binary_hex(inner),
+      formatted: formatted,
       string_value?: true,
-      hex_toggle?: not Text.printable_text?(inner),
-      raw_binary: inner
+      # Octet strings only — and only when default view differs from colon-hex.
+      hex_toggle?: PropertyFormatter.hex_display_differs?(formatted, inner),
+      raw_binary: inner,
+      primitive_editable?: encoding_primitive_editable?(encoding)
     }
   end
 
@@ -117,8 +158,9 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
       display_value: inner,
       formatted: Text.sanitize_utf8(inner),
       string_value?: true,
-      hex_toggle?: not Text.printable_text?(inner),
-      raw_binary: inner
+      hex_toggle?: false,
+      raw_binary: inner,
+      primitive_editable?: encoding_primitive_editable?(encoding)
     }
   end
 
@@ -129,7 +171,8 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
       formatted: PropertyFormatter.format_value(inner, nil),
       string_value?: false,
       hex_toggle?: false,
-      raw_binary: nil
+      raw_binary: nil,
+      primitive_editable?: encoding_primitive_editable?(encoding)
     }
   end
 
@@ -139,8 +182,9 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
       display_value: encoding,
       formatted: PropertyDisplay.build(encoding).formatted,
       string_value?: true,
-      hex_toggle?: not Text.printable_text?(inner),
-      raw_binary: inner
+      hex_toggle?: false,
+      raw_binary: inner,
+      primitive_editable?: false
     }
   end
 
@@ -151,9 +195,25 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
       formatted: PropertyDisplay.build(encoding).formatted,
       string_value?: false,
       hex_toggle?: false,
-      raw_binary: nil
+      raw_binary: nil,
+      primitive_editable?: false
     }
   end
+
+  defp encoding_primitive_editable?(%Encoding{encoding: :primitive, type: type})
+       when type in @editable_primitive_types,
+       do: true
+
+  defp encoding_primitive_editable?(_encoding), do: false
+
+  defp other_primitive_editable?(value)
+       when is_boolean(value) or is_float(value) or is_integer(value) or is_binary(value),
+       do: true
+
+  defp other_primitive_editable?(value) when is_atom(value) and value not in [nil, :unspecified],
+    do: true
+
+  defp other_primitive_editable?(value), do: PropertyFormatter.bitstring_value?(value)
 
   defp encoding_list?(value) when is_list(value) do
     value != [] and Enum.all?(value, &match?(%Encoding{}, &1))

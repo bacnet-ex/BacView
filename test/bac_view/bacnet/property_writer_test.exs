@@ -77,6 +77,167 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
     end
   end
 
+  describe "parse_write_params for unknown primitive types" do
+    test "parses unsigned integer type labels and Encoding values" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 10,
+        extras: []
+      }
+
+      prop = %{
+        type: "UNSIGNED INTEGER",
+        value: encoding,
+        value_display: %{kind: :scalar, formatted: "10", fields: [], items: []}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "42"}, prop) == {:ok, 42}
+    end
+
+    test "parses boolean Encoding values" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :boolean,
+        value: false,
+        extras: []
+      }
+
+      prop = %{
+        type: "BOOLEAN",
+        value: encoding,
+        value_display: %{kind: :scalar, formatted: "false", fields: [], items: []}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "true"}, prop) == {:ok, true}
+    end
+
+    test "unknown enumerated Encoding values accept non-negative integers" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :enumerated,
+        value: 3,
+        extras: []
+      }
+
+      prop = %{
+        property: 512,
+        type: "ENUMERATED",
+        value: encoding,
+        value_display: %{kind: :scalar, formatted: "3", fields: [], items: []}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "7"}, prop) == {:ok, 7}
+      assert PropertyWriter.parse_write_params(%{"value" => "0"}, prop) == {:ok, 0}
+
+      assert PropertyWriter.parse_write_params(%{"value" => "-1"}, prop) ==
+               {:error, :invalid_enum}
+
+      assert PropertyWriter.parse_write_params(%{"value" => "normal"}, prop) ==
+               {:error, :invalid_enum}
+
+      assert PropertyWriter.parse_write_params(%{"value" => "not_a_value"}, prop) ==
+               {:error, :invalid_enum}
+    end
+
+    test "resolves constant names via property id for unknown Encoding enums" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :enumerated,
+        value: :event,
+        extras: []
+      }
+
+      prop = %{
+        property: :notify_type,
+        type: "ENUMERATED",
+        value: encoding,
+        value_display: %{kind: :scalar, formatted: "event", fields: [], items: []}
+      }
+
+      # Constants.by_name(:notify_type, :alarm) => 0
+      assert PropertyWriter.parse_write_params(%{"value" => "alarm"}, prop) == {:ok, 0}
+      assert PropertyWriter.parse_write_params(%{"value" => "0"}, prop) == {:ok, 0}
+
+      assert PropertyWriter.parse_write_params(%{"value" => "bogus_name"}, prop) ==
+               {:error, :invalid_enum}
+    end
+  end
+
+  describe "prepare_write_value/2" do
+    test "rewraps primitive Encoding values" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 10,
+        extras: []
+      }
+
+      prop = %{property: 512, type: "UNSIGNED INTEGER", value: encoding}
+
+      assert {:ok, %BACnet.Protocol.ApplicationTags.Encoding{} = prepared} =
+               PropertyWriter.prepare_write_value(99, prop)
+
+      assert prepared.type == :unsigned_integer
+      assert prepared.value == 99
+    end
+
+    test "builds Encoding for integer property identifiers" do
+      prop = %{property: 900, type: "REAL", value: 1.5}
+
+      assert {:ok, %BACnet.Protocol.ApplicationTags.Encoding{} = prepared} =
+               PropertyWriter.prepare_write_value(2.25, prop)
+
+      assert prepared.type == :real
+      assert prepared.value == 2.25
+    end
+
+    test "rejects constructed Encoding values" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :constructed,
+        type: nil,
+        value: <<1, 2>>,
+        extras: [tag_number: 1]
+      }
+
+      prop = %{property: 512, type: "CONSTRUCTED", value: encoding}
+      assert PropertyWriter.prepare_write_value(<<3>>, prop) == {:error, :not_primitive}
+    end
+
+    test "rejects non-integer values for enumerated Encoding without constant type" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :enumerated,
+        value: 1,
+        extras: []
+      }
+
+      prop = %{property: 512, type: "ENUMERATED", value: encoding}
+      assert PropertyWriter.prepare_write_value(:normal, prop) == {:error, :invalid_enum}
+      assert PropertyWriter.prepare_write_value("normal", prop) == {:error, :invalid_enum}
+
+      assert {:ok, %BACnet.Protocol.ApplicationTags.Encoding{value: 4}} =
+               PropertyWriter.prepare_write_value(4, prop)
+    end
+
+    test "resolves constant atoms to integers for known property ids" do
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :enumerated,
+        value: :event,
+        extras: []
+      }
+
+      prop = %{property: :notify_type, type: "ENUMERATED", value: encoding}
+
+      assert {:ok, %BACnet.Protocol.ApplicationTags.Encoding{value: 0}} =
+               PropertyWriter.prepare_write_value(:alarm, prop)
+
+      assert {:ok, %BACnet.Protocol.ApplicationTags.Encoding{value: 0}} =
+               PropertyWriter.prepare_write_value(0, prop)
+    end
+  end
+
   describe "write_opts/3" do
     test "includes priority for commandable present_value" do
       object = %{commandable: true}
@@ -252,6 +413,18 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
       assert PropertyWriter.parse_write_params(%{"value" => "fault"}, prop) == {:ok, :fault}
     end
 
+    test "parses vendor numeric constants for enumeration properties" do
+      prop = %{
+        property: :event_state,
+        enum_type: :event_state,
+        value: 99,
+        value_display: %{kind: :scalar, formatted: "99"}
+      }
+
+      assert PropertyWriter.parse_write_params(%{"value" => "99"}, prop) == {:ok, 99}
+      assert PropertyWriter.parse_write_params(%{"value" => "0"}, prop) == {:ok, :normal}
+    end
+
     test "rejects invalid enumeration values" do
       prop = %{
         property: :event_state,
@@ -424,6 +597,23 @@ defmodule BacView.BACnet.Protocol.PropertyWriterTest do
       {:ok, read} = BACnetArray.set_item(BACnetArray.new(), 1, other)
 
       refute PropertyWriter.values_match?(written, read)
+    end
+
+    test "matches constant enum integer writes against atom read-back" do
+      # Write path encodes wire int 0; read_property often returns :alarm.
+      assert PropertyWriter.values_match?(0, :alarm, :notify_type)
+      assert PropertyWriter.values_match?(:alarm, 0, :notify_type)
+
+      encoding = %BACnet.Protocol.ApplicationTags.Encoding{
+        encoding: :primitive,
+        type: :enumerated,
+        value: 0,
+        extras: []
+      }
+
+      assert PropertyWriter.values_match?(encoding, :alarm, :notify_type)
+      refute PropertyWriter.values_match?(1, :alarm, :notify_type)
+      refute PropertyWriter.values_match?(0, :alarm, nil)
     end
   end
 

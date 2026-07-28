@@ -15,6 +15,13 @@ defmodule BacView.BACnet.PropertyLoad do
   alias BacView.BACnet.Protocol.PropertyReader
   alias BacView.BACnet.Segmentation
 
+  # Top-level for cast_read_properties_ack / cast_property_to_value; also in
+  # object_opts so ObjectsMacro create/update accepts integer constants.
+  @numeric_constant_opts [
+    allow_numeric_constants: true,
+    object_opts: [allow_numeric_constants: true]
+  ]
+
   @doc false
   @spec property_read_opts(:value | true | nil, ObjectIdentifier.t() | nil) :: keyword()
   def property_read_opts(skip_mode \\ nil, device_obj \\ nil) do
@@ -31,13 +38,20 @@ defmodule BacView.BACnet.PropertyLoad do
           [allow_unknown_properties: :no_unpack, ignore_unsupported_object_types: true]
       end
 
-    case skip_mode do
-      nil ->
-        base
+    base
+    |> Keyword.merge(@numeric_constant_opts)
+    |> put_skip_mode_object_opts(skip_mode)
+  end
 
-      mode when mode in [:value, true] ->
-        Keyword.put(base, :object_opts, skip_property_validation_remote_object: mode)
-    end
+  defp put_skip_mode_object_opts(opts, nil), do: opts
+
+  defp put_skip_mode_object_opts(opts, mode) when mode in [:value, true] do
+    object_opts =
+      opts
+      |> Keyword.get(:object_opts, [])
+      |> Keyword.put(:skip_property_validation_remote_object, mode)
+
+    Keyword.put(opts, :object_opts, object_opts)
   end
 
   @doc false

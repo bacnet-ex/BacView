@@ -104,8 +104,10 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:properties_sort_dir, :asc)
            |> assign(:unknown_properties_sort_by, nil)
            |> assign(:unknown_properties_sort_dir, :asc)
+           |> assign(:unknown_properties_editing, false)
            |> assign(:unknown_property_hex_keys, MapSet.new())
            |> assign(:property_hex_keys, MapSet.new())
+           |> assign(:property_enum_free_keys, MapSet.new())
            |> assign(:trend_chart_modal_open, false)
            |> assign(:trend_chart_loading, false)
            |> assign(:trend_chart_error, nil)
@@ -248,8 +250,10 @@ defmodule BacViewWeb.ObjectLive do
       |> assign(:object, Text.sanitize_object(object))
       |> assign(:properties, properties)
       |> assign(:unknown_properties, unknown_properties)
+      |> assign(:unknown_properties_editing, false)
       |> assign(:unknown_property_hex_keys, MapSet.new())
       |> assign(:property_hex_keys, MapSet.new())
+      |> assign(:property_enum_free_keys, MapSet.new())
       |> assign(:properties_loading, properties_loading)
       |> assign(:properties_progress, nil)
       |> assign(:page_title, page_title)
@@ -426,8 +430,29 @@ defmodule BacViewWeb.ObjectLive do
             |> update_property_row(:status_flags, flags, update.at)
             |> sync_device_object_flags(object, flags, update.at)
 
-          _load_object ->
+          property ->
+            properties =
+              Enum.map(socket.assigns.properties, fn prop ->
+                if prop.property == property do
+                  refresh_property_value(prop, update.value, object, update.at)
+                else
+                  prop
+                end
+              end)
+
             socket
+            |> assign(:properties, properties)
+            |> maybe_refresh_object_summary(properties, object)
+            |> then(fn s ->
+              assign(
+                s,
+                :properties,
+                PropertyReader.sync_input_present_value_writable(
+                  s.assigns.properties,
+                  s.assigns.object
+                )
+              )
+            end)
         end
       else
         socket
@@ -500,6 +525,7 @@ defmodule BacViewWeb.ObjectLive do
           |> assign(:unknown_properties, unknown)
           |> assign(:unknown_property_hex_keys, MapSet.new())
           |> assign(:property_hex_keys, MapSet.new())
+          |> assign(:property_enum_free_keys, MapSet.new())
           |> assign(:properties_loading, false)
           |> assign(:properties_progress, nil)
           |> assign(:writing_property, nil)
@@ -708,22 +734,23 @@ defmodule BacViewWeb.ObjectLive do
   @impl true
   def handle_event("change_write_property_fields", %{"field" => fields}, socket) do
     case socket.assigns.write_property_modal do
-      %{property: prop} = modal ->
+      %{draft_value: draft_value} = modal ->
         fields =
           modal.draft_fields
           |> Map.merge(ComplexPropertyEditor.normalize_field_params(fields))
           |> clear_tag_number_for_primitive_encoding()
 
-        field_error =
-          case ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, prop.value) do
-            {:ok, _handle_event} -> nil
-            {:error, reason} -> format_editor_error(reason)
+        {draft_value, field_error} =
+          case ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, draft_value) do
+            {:ok, updated} -> {updated, nil}
+            {:error, reason} -> {draft_value, format_editor_error(reason)}
           end
 
         {:noreply,
          assign(socket, :write_property_modal, %{
            modal
            | draft_fields: fields,
+             draft_value: draft_value,
              field_error: field_error,
              submit_error: nil
          })}
@@ -737,20 +764,83 @@ defmodule BacViewWeb.ObjectLive do
   def handle_event("change_write_property_json", %{"json" => json}, socket) do
     case socket.assigns.write_property_modal do
       %{property: prop} = modal ->
-        json_error =
+        {draft_value, json_error} =
           case ComplexPropertyEditor.decode_json(json, prop.value) do
-            {:ok, _handle_event} -> nil
-            {:error, %Jason.DecodeError{}} -> gt("Ungültiges JSON.")
-            {:error, reason} -> format_editor_error(reason)
+            {:ok, decoded} -> {decoded, nil}
+            {:error, %Jason.DecodeError{}} -> {modal.draft_value, gt("Ungültiges JSON.")}
+            {:error, reason} -> {modal.draft_value, format_editor_error(reason)}
           end
 
         {:noreply,
          assign(socket, :write_property_modal, %{
            modal
            | draft_json: json,
+             draft_value: draft_value,
              json_error: json_error,
              submit_error: nil
          })}
+
+      _handle_event ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("write_property_add_item", _params, socket) do
+    case socket.assigns.write_property_modal do
+      %{editor: :generic, property: prop, draft_value: draft_value, draft_fields: draft_fields} =
+          modal ->
+        with {:ok, current} <-
+               ComplexPropertyEditor.apply_form_fields(%{"field" => draft_fields}, draft_value),
+             {:ok, updated} <-
+               ComplexPropertyEditor.add_item(current, property: prop.property) do
+          {:noreply,
+           assign(
+             socket,
+             :write_property_modal,
+             refresh_write_property_fields(modal, updated)
+           )}
+        else
+          {:error, reason} ->
+            {:noreply,
+             assign(socket, :write_property_modal, %{
+               modal
+               | field_error: format_editor_error(reason),
+                 submit_error: nil
+             })}
+        end
+
+      _handle_event ->
+        {:noreply, socket}
+    end
+  end
+
+  @impl true
+  def handle_event("write_property_remove_item", %{"index" => index_str}, socket) do
+    case socket.assigns.write_property_modal do
+      %{editor: :generic, draft_value: draft_value, draft_fields: draft_fields} = modal ->
+        with {index, ""} <- Integer.parse(to_string(index_str)),
+             {:ok, current} <-
+               ComplexPropertyEditor.apply_form_fields(%{"field" => draft_fields}, draft_value),
+             {:ok, updated} <- ComplexPropertyEditor.remove_item(current, index) do
+          {:noreply,
+           assign(
+             socket,
+             :write_property_modal,
+             refresh_write_property_fields(modal, updated)
+           )}
+        else
+          :error ->
+            {:noreply, socket}
+
+          {:error, reason} ->
+            {:noreply,
+             assign(socket, :write_property_modal, %{
+               modal
+               | field_error: format_editor_error(reason),
+                 submit_error: nil
+             })}
+        end
 
       _handle_event ->
         {:noreply, socket}
@@ -762,18 +852,24 @@ defmodule BacViewWeb.ObjectLive do
     editor_mode = if mode == "json", do: :json, else: :fields
 
     case socket.assigns.write_property_modal do
-      %{property: prop} = modal ->
+      %{property: prop, draft_value: draft_value} = modal ->
         modal =
           case editor_mode do
             :json ->
               case ComplexPropertyEditor.apply_form_fields(
                      %{"field" => modal.draft_fields},
-                     prop.value
+                     draft_value
                    ) do
-                {:ok, struct} ->
-                  case ComplexPropertyEditor.encode_json(struct) do
+                {:ok, value} ->
+                  case ComplexPropertyEditor.encode_json(value) do
                     {:ok, json} ->
-                      %{modal | draft_json: json, json_error: nil, field_error: nil}
+                      %{
+                        modal
+                        | draft_value: value,
+                          draft_json: json,
+                          json_error: nil,
+                          field_error: nil
+                      }
 
                     {:error, reason} ->
                       %{modal | field_error: format_editor_error(reason)}
@@ -784,15 +880,25 @@ defmodule BacViewWeb.ObjectLive do
               end
 
             :fields ->
-              form_fields = ComplexPropertyEditor.form_fields(prop.value)
+              case ComplexPropertyEditor.decode_json(modal.draft_json, prop.value) do
+                {:ok, value} ->
+                  refresh_write_property_fields(
+                    %{modal | json_error: nil, field_error: nil},
+                    value
+                  )
 
-              %{
-                modal
-                | form_fields: form_fields,
-                  draft_fields: ComplexPropertyEditor.initial_field_params(form_fields),
-                  field_error: nil,
-                  json_error: nil
-              }
+                {:error, reason} ->
+                  # Keep last good draft_value for fields if JSON is invalid
+                  form_fields = ComplexPropertyEditor.form_fields(draft_value)
+
+                  %{
+                    modal
+                    | form_fields: form_fields,
+                      draft_fields: ComplexPropertyEditor.initial_field_params(form_fields),
+                      field_error: format_editor_error(reason),
+                      json_error: format_editor_error(reason)
+                  }
+              end
           end
 
         {:noreply, assign(socket, :write_property_modal, %{modal | editor_mode: editor_mode})}
@@ -858,15 +964,44 @@ defmodule BacViewWeb.ObjectLive do
     form_params = WriteFormParams.normalize(params)
     property_name = form_params["property"]
     priority = WriteFormParams.priority(params, socket.assigns.write_priority)
+    unknown_write? = unknown_write_params?(form_params, params)
 
     with {:ok, property} <- parse_property(property_name),
-         prop <- find_property(socket.assigns.properties, property),
+         %{} = prop <- find_write_property(socket, property, unknown_write?),
          {:ok, parsed} <- PropertyWriter.parse_write_params(form_params, prop),
-         {:ok, socket} <- do_write_property(socket, property, parsed, priority) do
+         {:ok, write_value} <- PropertyWriter.prepare_write_value(parsed, prop),
+         {:ok, socket} <- do_write_property(socket, property, write_value, priority) do
       {:noreply, assign(socket, :write_priority, priority)}
     else
+      nil ->
+        {:noreply, put_flash(socket, :error, gt("Eigenschaft nicht gefunden."))}
+
       {:error, :empty_value} ->
         {:noreply, put_flash(socket, :error, gt("Bitte einen Wert eingeben."))}
+
+      {:error, :not_primitive} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gt("Nur primitive unbekannte Eigenschaften können bearbeitet werden.")
+         )}
+
+      {:error, :unknown_write_type} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gt("Nur primitive unbekannte Eigenschaften können bearbeitet werden.")
+         )}
+
+      {:error, :invalid_enum} ->
+        {:noreply,
+         put_flash(
+           socket,
+           :error,
+           gt("Ungültiger Wert: %{reason}", reason: format_parse_error(:invalid_enum))
+         )}
 
       {:error, {:write_failed, reason}} ->
         {:noreply, write_failed(socket, reason)}
@@ -1057,6 +1192,12 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   @impl true
+  def handle_event("toggle_unknown_properties_editing", _params, socket) do
+    editing? = not Map.get(socket.assigns, :unknown_properties_editing, false)
+    {:noreply, assign(socket, :unknown_properties_editing, editing?)}
+  end
+
+  @impl true
   def handle_event("toggle_unknown_property_hex", %{"property" => property_name}, socket) do
     {:ok, property} = parse_property(property_name)
     keys = socket.assigns.unknown_property_hex_keys
@@ -1084,6 +1225,21 @@ defmodule BacViewWeb.ObjectLive do
       end
 
     {:noreply, assign(socket, :property_hex_keys, new_keys)}
+  end
+
+  @impl true
+  def handle_event("toggle_property_enum_free", %{"property" => property_name}, socket) do
+    {:ok, property} = parse_property(property_name)
+    keys = socket.assigns.property_enum_free_keys
+
+    new_keys =
+      if MapSet.member?(keys, property) do
+        MapSet.delete(keys, property)
+      else
+        MapSet.put(keys, property)
+      end
+
+    {:noreply, assign(socket, :property_enum_free_keys, new_keys)}
   end
 
   @impl true
@@ -1417,7 +1573,7 @@ defmodule BacViewWeb.ObjectLive do
   defp read_back_property(device_id, object_id, property, written_value) do
     case DeviceSession.read_property(device_id, object_id, property) do
       {:ok, read_value} ->
-        if PropertyWriter.values_match?(written_value, read_value) do
+        if PropertyWriter.values_match?(written_value, read_value, property) do
           {:ok, read_value}
         else
           {:error, {:verify_mismatch, property, written_value, read_value}}
@@ -1510,30 +1666,46 @@ defmodule BacViewWeb.ObjectLive do
   end
 
   defp apply_read_property(socket, property, read_value) do
+    object = socket.assigns.object
+
     properties =
-      socket.assigns.properties
-      |> Enum.map(fn prop ->
+      Enum.map(socket.assigns.properties, fn prop ->
         if prop.property == property do
-          refresh_property_value(prop, read_value, socket.assigns.object)
+          refresh_property_value(prop, read_value, object)
         else
           prop
         end
       end)
-      |> PropertyReader.sync_input_present_value_writable(socket.assigns.object)
+
+    unknown_properties =
+      Enum.map(Map.get(socket.assigns, :unknown_properties, []), fn prop ->
+        if prop.property == property do
+          refresh_unknown_property_value(prop, read_value)
+        else
+          prop
+        end
+      end)
 
     socket =
       socket
       |> assign(:properties, properties)
-      |> maybe_refresh_object_summary(properties, socket.assigns.object)
+      |> assign(:unknown_properties, unknown_properties)
+      |> maybe_refresh_object_summary(properties, object)
 
-    if property == :present_value do
-      publish_present_value_write(socket, read_value)
-    else
-      socket
-    end
+    # Recompute PV writable after object summary has out_of_service etc.
+    properties =
+      PropertyReader.sync_input_present_value_writable(
+        socket.assigns.properties,
+        socket.assigns.object
+      )
+
+    socket
+    |> assign(:properties, properties)
+    |> publish_property_write(property, read_value)
   end
 
-  defp maybe_sync_status_flags_after_present_value_write(socket, :present_value) do
+  defp maybe_sync_status_flags_after_present_value_write(socket, property)
+       when property in [:present_value, :out_of_service] do
     device_id = socket.assigns.device_id
     object_id = socket.assigns.object_id
 
@@ -1565,14 +1737,14 @@ defmodule BacViewWeb.ObjectLive do
             end)
         end
 
-      _socket ->
+      _status_flags ->
         socket
     end
   end
 
   defp maybe_sync_status_flags_after_present_value_write(socket, _property), do: socket
 
-  defp publish_present_value_write(socket, value) do
+  defp publish_property_write(socket, :present_value, value) do
     object = socket.assigns.object
     present_prop = find_property(socket.assigns.properties, :present_value)
     coerced = PropertyFormatter.coerce_present_value(value, object, present_prop)
@@ -1586,6 +1758,20 @@ defmodule BacViewWeb.ObjectLive do
 
     socket
   end
+
+  defp publish_property_write(socket, property, value) do
+    DeviceSession.publish_property_update(
+      socket.assigns.device_id,
+      socket.assigns.object_id,
+      property,
+      value
+    )
+
+    socket
+  end
+
+  defp publish_present_value_write(socket, value),
+    do: publish_property_write(socket, :present_value, value)
 
   defp write_error(socket, reason) do
     socket
@@ -1625,6 +1811,33 @@ defmodule BacViewWeb.ObjectLive do
     Enum.find(properties, &(&1.property == property))
   end
 
+  defp find_write_property(socket, property, true) do
+    find_property(Map.get(socket.assigns, :unknown_properties, []), property) ||
+      find_property(socket.assigns.properties, property)
+  end
+
+  defp find_write_property(socket, property, false) do
+    find_property(socket.assigns.properties, property) ||
+      find_property(Map.get(socket.assigns, :unknown_properties, []), property)
+  end
+
+  defp unknown_write_params?(form_params, params) do
+    Map.get(form_params, "unknown") in [true, "true"] or
+      Map.get(params, "unknown") in [true, "true"]
+  end
+
+  defp refresh_unknown_property_value(prop, value) do
+    PropertyReader.format_unknown_property_row(prop.property, value)
+  end
+
+  defp refresh_object_from_properties(
+         object,
+         {:ok, %{properties: properties, unknown_properties: unknown}}
+       )
+       when is_map(object) and is_list(properties) and is_list(unknown) do
+    DeviceSession.refresh_object_from_properties(object, properties, unknown)
+  end
+
   defp refresh_object_from_properties(object, {:ok, %{properties: properties}})
        when is_map(object) do
     DeviceSession.refresh_object_from_properties(object, properties)
@@ -1638,7 +1851,13 @@ defmodule BacViewWeb.ObjectLive do
   defp refresh_object_from_properties(object, _result), do: object
 
   defp maybe_refresh_object_summary(socket, properties, object) when is_map(object) do
-    assign(socket, :object, refresh_object_from_properties(object, {:ok, properties}))
+    unknown = Map.get(socket.assigns, :unknown_properties, [])
+
+    assign(
+      socket,
+      :object,
+      DeviceSession.refresh_object_from_properties(object, properties, unknown)
+    )
   end
 
   defp maybe_refresh_object_summary(socket, _properties, _object), do: socket
@@ -1683,6 +1902,9 @@ defmodule BacViewWeb.ObjectLive do
   defp format_parse_error(:invalid_hex), do: gt("Ungültige Hex-Zeichenkette")
   defp format_parse_error(:invalid_bitstring), do: gt("erwartet Bitstring (0/1)")
 
+  defp format_parse_error(:invalid_enum),
+    do: gt("erwartet nicht-negative Ganzzahl (Enumerated)")
+
   defp format_parse_error({:bitstring_size_mismatch, expected, actual}),
     do:
       gt("Bitstring-Länge: %{expected} Bits erwartet (aktuell: %{actual})",
@@ -1714,8 +1936,12 @@ defmodule BacViewWeb.ObjectLive do
     WeeklyScheduleEditor.decode_json(json, prop.value)
   end
 
-  defp decode_write_property_modal(%{editor_mode: :fields, property: prop, draft_fields: fields}) do
-    ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, prop.value)
+  defp decode_write_property_modal(%{
+         editor_mode: :fields,
+         draft_value: draft_value,
+         draft_fields: fields
+       }) do
+    ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, draft_value)
   end
 
   defp decode_write_property_modal(%{editor_mode: :json, property: prop, draft_json: json}) do
@@ -1776,6 +2002,12 @@ defmodule BacViewWeb.ObjectLive do
   defp format_editor_error(:invalid_encoding),
     do: gt("Ungültiges Encoding.")
 
+  defp format_editor_error(:not_editable_collection),
+    do: gt("Diese Liste kann hier nicht erweitert werden.")
+
+  defp format_editor_error(:unknown_collection_item_type),
+    do: gt("Eintragsform unbekannt. Wechseln Sie zu JSON und fügen Sie ein Beispiel-Element ein.")
+
   defp format_editor_error(reason), do: format_parse_error(reason)
 
   defp build_write_property_modal(socket, prop) do
@@ -1832,6 +2064,7 @@ defmodule BacViewWeb.ObjectLive do
           editor_mode: :fields,
           form_fields: form_fields,
           draft_fields: ComplexPropertyEditor.initial_field_params(form_fields),
+          draft_value: prop.value,
           draft_json: draft_json,
           field_error: nil,
           json_error: nil,
@@ -1845,12 +2078,34 @@ defmodule BacViewWeb.ObjectLive do
           editor_mode: :json,
           form_fields: form_fields,
           draft_fields: ComplexPropertyEditor.initial_field_params(form_fields),
+          draft_value: prop.value,
           draft_json: "",
           field_error: format_editor_error(reason),
           json_error: nil,
           submit_error: nil
         }
     end
+  end
+
+  defp refresh_write_property_fields(modal, draft_value) do
+    form_fields = ComplexPropertyEditor.form_fields(draft_value)
+
+    draft_json =
+      case ComplexPropertyEditor.encode_json(draft_value) do
+        {:ok, json} -> json
+        {:error, _reason} -> Map.get(modal, :draft_json, "")
+      end
+
+    %{
+      modal
+      | draft_value: draft_value,
+        form_fields: form_fields,
+        draft_fields: ComplexPropertyEditor.initial_field_params(form_fields),
+        draft_json: draft_json,
+        field_error: nil,
+        json_error: nil,
+        submit_error: nil
+    }
   end
 
   defp update_weekly_schedule_day(socket, modal, entries) do
@@ -2153,8 +2408,10 @@ defmodule BacViewWeb.ObjectLive do
           properties_sort_dir={@properties_sort_dir}
           unknown_properties_sort_by={@unknown_properties_sort_by}
           unknown_properties_sort_dir={@unknown_properties_sort_dir}
+          unknown_properties_editing={@unknown_properties_editing}
           unknown_property_hex_keys={@unknown_property_hex_keys}
           property_hex_keys={@property_hex_keys}
+          property_enum_free_keys={@property_enum_free_keys}
           file_metadata={@file_metadata}
           file_content={@file_content}
           file_transfer_busy={@file_transfer_busy}
@@ -2243,6 +2500,7 @@ defmodule BacViewWeb.ObjectLive do
       editor_mode={@write_property_modal.editor_mode}
       form_fields={@write_property_modal.form_fields}
       draft_fields={@write_property_modal.draft_fields}
+      draft_value={@write_property_modal.draft_value}
       draft_json={@write_property_modal.draft_json}
       field_error={@write_property_modal.field_error}
       json_error={@write_property_modal.json_error}

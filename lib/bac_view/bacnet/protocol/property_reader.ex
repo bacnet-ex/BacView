@@ -4,10 +4,12 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   When `read_object` with `read_level: :all` succeeds, property rows are built
   from the decoded struct (no follow-up ReadPropertyMultiple / ReadProperty pass).
+  **Heavy properties** (e.g. `object_list`, bindings) that arrived on this path
+  are kept and shown — they were already paid for by RPM and help debugging.
 
-  The individual path (device `property_list` or schema fallback) reads properties
-  one-by-one, casts a remote object from successful reads when possible, and
-  falls back to a raw value map when casting fails.
+  The individual path (device `property_list` or schema fallback) skips heavy
+  properties before ReadProperty, casts a remote object from successful reads
+  when possible, and falls back to a raw value map when casting fails.
 
   Property type labels use the object type schema (`get_properties_type_map/0`)
   whenever the cast struct **or** the `ObjectIdentifier` is available (via
@@ -36,14 +38,20 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   require Logger
 
-  @read_opts [allow_unknown_properties: :no_unpack, ignore_unsupported_object_types: true]
+  @read_opts [
+    allow_unknown_properties: :no_unpack,
+    ignore_unsupported_object_types: true,
+    allow_numeric_constants: true,
+    object_opts: [allow_numeric_constants: true]
+  ]
 
   @input_object_types [:analog_input, :binary_input, :multi_state_input]
 
   @trend_log_types [:trend_log, :trend_log_multiple]
 
-  # Large or scan-irrelevant Device properties - skip during individual property reads
-  # (object_list alone can be thousands of entries and blocks the UI for minutes).
+  # Large Device properties — skip only on individual ReadProperty streams
+  # (object_list alone can be thousands of entries and block the UI for minutes).
+  # RPM `:all` already returned them; keep those rows for display/debug.
   @device_heavy_properties [
     :property_list,
     :object_list,
@@ -82,15 +90,14 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     case fetch_bacnet_object(client, destination, object, read_opts) do
       {:ok, bacnet_object, :rpm} ->
         with {:ok, properties} <- property_list(bacnet_object) do
-          readable = readable_properties(properties, object)
+          # RPM already fetched values (including heavy props) — show them all.
           results = ObjectsUtility.to_map(bacnet_object)
-          result = build_read_result(readable, results, bacnet_object, object)
+          result = build_read_result(properties, results, bacnet_object, object)
 
           debug_log(object, "read_all_done", fn ->
             %{
               path: :rpm,
               properties_list: length(properties),
-              readable: length(readable),
               result_keys: map_size(results),
               displayed: length(result.properties),
               unknown: length(result.unknown_properties)
@@ -101,7 +108,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
         end
 
       {:ok, properties, :individual} ->
-        readable = readable_properties(properties, object)
+        readable = skip_heavy_properties(properties, object)
 
         debug_log(object, "read_all_individual", fn ->
           %{candidate_count: length(readable)}
@@ -127,13 +134,31 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   end
 
   defp build_read_opts(opts) when is_list(opts) do
+    taken =
+      Keyword.take(opts, [
+        :remote_device_id,
+        :device_id,
+        :allow_numeric_constants,
+        :allow_unknown_properties
+      ])
+
     base =
-      Keyword.merge(@read_opts, Keyword.take(opts, [:object_opts, :remote_device_id, :device_id]))
+      @read_opts
+      |> Keyword.merge(taken)
+      |> merge_object_opts(Keyword.get(opts, :object_opts))
 
     case Keyword.get(opts, :on_property_progress) do
       fun when is_function(fun, 1) -> Keyword.put(base, :on_property_progress, fun)
       _no_progress -> base
     end
+  end
+
+  # Keep default allow_numeric_constants in object_opts when callers only pass skip mode.
+  defp merge_object_opts(base, nil), do: base
+
+  defp merge_object_opts(base, object_opts) when is_list(object_opts) do
+    defaults = Keyword.get(base, :object_opts, [])
+    Keyword.put(base, :object_opts, Keyword.merge(defaults, object_opts))
   end
 
   defp client_opts(read_opts) when is_list(read_opts),
@@ -163,10 +188,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   @doc false
   @spec read_result_from_object(ObjectIdentifier.t(), term()) :: read_result()
   def read_result_from_object(%ObjectIdentifier{} = object_id, obj) do
-    {bacnet_object, results, raw_properties} = object_results_and_properties(obj)
+    {bacnet_object, results, properties} = object_results_and_properties(obj)
 
-    properties = readable_properties(raw_properties, object_id)
-
+    # Show whatever is already present (RPM/struct may include heavy props;
+    # individual scan maps typically omit them because they were never read).
     rows = format_property_rows(properties, results, bacnet_object, object_id)
     unknown = format_unknown_properties(bacnet_object)
 
@@ -264,9 +289,6 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
       do: [:property_list, :log_buffer]
 
   def heavy_properties_for(_object_id), do: [:property_list]
-
-  defp readable_properties(properties, object_id),
-    do: skip_heavy_properties(properties, object_id)
 
   @doc false
   @spec format_property_rows([term()], map(), term(), ObjectIdentifier.t() | nil) :: [map()]
@@ -562,13 +584,21 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp cast_opts_from_read_opts(read_opts) when is_list(read_opts) do
     opts =
       read_opts
-      |> Keyword.take([:allow_unknown_properties, :remote_device_id, :device_id])
+      |> Keyword.take([
+        :allow_unknown_properties,
+        :allow_numeric_constants,
+        :remote_device_id,
+        :device_id
+      ])
       |> Keyword.put_new(:allow_unknown_properties, :no_unpack)
+      |> Keyword.put_new(:allow_numeric_constants, true)
 
-    case Keyword.get(read_opts, :object_opts) do
-      object_opts when is_list(object_opts) -> Keyword.put(opts, :object_opts, object_opts)
-      _no_object_opts -> opts
-    end
+    object_opts =
+      read_opts
+      |> Keyword.get(:object_opts, [])
+      |> Keyword.put_new(:allow_numeric_constants, true)
+
+    Keyword.put(opts, :object_opts, object_opts)
   end
 
   defp read_property_list(client, destination, object, read_opts) do
@@ -743,26 +773,52 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   def format_unknown_properties(bacnet_object) when is_object(bacnet_object) do
     bacnet_object
     |> Map.get(:_unknown_properties, %{})
-    |> Enum.map(fn {property, value} ->
-      presented = UnknownProperty.present(value)
-      display = PropertyDisplay.build(presented.display_value)
-
-      Text.sanitize_property_row(%{
-        property: property,
-        property_name: property_name(property),
-        value: value,
-        value_display: display,
-        value_formatted: presented.formatted,
-        type: presented.type,
-        string_value?: presented.string_value?,
-        hex_toggle?: presented.hex_toggle?,
-        raw_binary: presented.raw_binary
-      })
-    end)
+    |> Enum.map(fn {property, value} -> format_unknown_property_row(property, value) end)
     |> Enum.sort_by(& &1.property_name)
   end
 
   def format_unknown_properties(_bacnet_object), do: []
+
+  @doc """
+  Formats a single unknown property row for the object properties UI.
+
+  When `property` is a known Constants type atom (e.g. `:notify_type`), enum values
+  are shown as `Name (N)` like known properties.
+  """
+  @spec format_unknown_property_row(atom() | integer() | term(), term()) :: map()
+  def format_unknown_property_row(property, value) do
+    presented = UnknownProperty.present(value)
+    formatted = unknown_property_formatted(property, value, presented)
+    display = Map.put(PropertyDisplay.build(presented.display_value), :formatted, formatted)
+
+    Text.sanitize_property_row(%{
+      property: property,
+      property_name: property_name(property),
+      value: value,
+      value_display: display,
+      value_formatted: formatted,
+      type: presented.type,
+      string_value?: presented.string_value?,
+      hex_toggle?: presented.hex_toggle?,
+      raw_binary: presented.raw_binary,
+      primitive_editable?: presented.primitive_editable?
+    })
+  end
+
+  # Atom property ids that are also Constants types get `Name (N)` like known props.
+  defp unknown_property_formatted(property, value, presented) when is_atom(property) do
+    scalar = unwrap_unknown_scalar(value)
+
+    case PropertyEnumeration.format_constant(property, scalar) do
+      formatted when is_binary(formatted) -> formatted
+      nil -> presented.formatted
+    end
+  end
+
+  defp unknown_property_formatted(_property, _value, presented), do: presented.formatted
+
+  defp unwrap_unknown_scalar(%Encoding{value: inner}), do: inner
+  defp unwrap_unknown_scalar(value), do: value
 
   defp format_results(properties, results, bacnet_object, object_id)
        when is_list(properties) and is_map(results) do
@@ -772,7 +828,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     |> Enum.map(fn property ->
       value = Map.get(results, property)
       bac_type = Map.get(type_map, property)
-      binary_meta = binary_presentation(value, bac_type)
+      binary_meta = binary_presentation(value, bac_type, property)
       display = property_display(value, binary_meta)
 
       %{
@@ -802,38 +858,59 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   defp property_display(value, _binary_meta), do: PropertyDisplay.build(value)
 
   # Binary / character presentation for known properties (hex toggle support).
-  # Octet strings default to hex display; character strings to sanitized text.
-  # Non-printable values get `hex_toggle?: true` so the UI can switch views.
-  defp binary_presentation(value, bac_type) when is_binary(value) do
+  #
+  # Default view (`value_formatted`, hex_mode false):
+  #   * character strings → sanitized text (no hex toggle)
+  #   * printable octet strings → text (toggle "Als Hex" shows colon-hex)
+  #   * NetworkPort mac_address → MAC-aware form (IPv4:port / hex)
+  #   * opaque octets → colon-hex
+  #
+  # Hex mode re-encodes `raw_binary` as colon-hex. Toggle is **octet strings only**,
+  # and only when default view differs from colon-hex.
+  # `raw_binary` keeps the original bytes — never UTF-8-repair it.
+  defp binary_presentation(value, bac_type, property)
+
+  defp binary_presentation(value, bac_type, property) when is_binary(value) do
     octet? = bac_type == :octet_string
     printable? = Text.printable_text?(value)
 
     formatted =
-      if octet? do
-        PropertyFormatter.format_binary_hex(value)
-      else
-        Text.sanitize_utf8(value)
+      cond do
+        octet? and mac_address_property?(property) ->
+          PropertyFormatter.format_mac_address(value)
+
+        octet? and printable? ->
+          value
+
+        octet? ->
+          PropertyFormatter.format_binary_hex(value)
+
+        true ->
+          Text.sanitize_utf8(value)
       end
 
     %{
       string_value?: true,
-      hex_toggle?: not printable?,
+      hex_toggle?: octet? and PropertyFormatter.hex_display_differs?(formatted, value),
       raw_binary: value,
       formatted: formatted
     }
   end
 
-  defp binary_presentation(%Encoding{type: :character_string, value: inner}, _bac_type)
+  defp binary_presentation(%Encoding{type: :character_string, value: inner}, _bac_type, _property)
        when is_binary(inner) do
-    binary_presentation(inner, :character_string)
+    binary_presentation(inner, :character_string, nil)
   end
 
-  defp binary_presentation(%Encoding{type: :octet_string, value: inner}, _bac_type)
+  defp binary_presentation(%Encoding{type: :octet_string, value: inner}, _bac_type, property)
        when is_binary(inner) do
-    binary_presentation(inner, :octet_string)
+    binary_presentation(inner, :octet_string, property)
   end
 
-  defp binary_presentation(_value, _bac_type), do: %{}
+  defp binary_presentation(_value, _bac_type, _property), do: %{}
+
+  defp mac_address_property?(:mac_address), do: true
+  defp mac_address_property?(_property), do: false
 
   # Prefer the cast struct module; when cast failed / map-only results, resolve the
   # object type module from ObjectIdentifier via bacstack mappings so known properties

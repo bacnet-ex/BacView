@@ -3,6 +3,7 @@ defmodule BacViewWeb.ObjectDetailTest do
 
   import Phoenix.LiveViewTest
 
+  alias BACnet.Protocol.ApplicationTags.Encoding
   alias BACnet.Protocol.StatusFlags
   alias BacView.BACnet.Protocol.PropertyDisplay
   alias BacViewWeb.ObjectDetail
@@ -102,6 +103,246 @@ defmodule BacViewWeb.ObjectDetailTest do
 
     assert html =~ "Störung (aktiv)"
     assert html =~ "In Alarm (inaktiv)"
+  end
+
+  test "renders status flags in header from object._unknown_properties" do
+    flags = %StatusFlags{
+      in_alarm: false,
+      fault: true,
+      overridden: false,
+      out_of_service: false
+    }
+
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      status_flags: nil,
+      _unknown_properties: %{status_flags: flags},
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: [],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ "Störung (aktiv)"
+    assert html =~ "In Alarm (inaktiv)"
+  end
+
+  test "renders status flags in header from unknown_properties rows" do
+    flags = %StatusFlags{
+      in_alarm: true,
+      fault: false,
+      overridden: false,
+      out_of_service: false
+    }
+
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      status_flags: nil,
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    unknown_properties = [
+      %{
+        property: :status_flags,
+        property_name: "Status Flags",
+        type: "Status Flags",
+        value: flags,
+        value_display: %{kind: :scalar, formatted: "-", fields: [], items: []},
+        value_formatted: "-",
+        writable: false
+      }
+    ]
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: unknown_properties,
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ "In Alarm (aktiv)"
+  end
+
+  test "unknown properties section shows edit toggle and primitive write form when editing" do
+    encoding = %Encoding{
+      encoding: :primitive,
+      type: :unsigned_integer,
+      value: 41_160,
+      extras: []
+    }
+
+    proprietary = [
+      %Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 1,
+        extras: []
+      },
+      %Encoding{
+        encoding: :primitive,
+        type: :unsigned_integer,
+        value: 2,
+        extras: []
+      }
+    ]
+
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    unknown_properties = [
+      %{
+        property: 512,
+        property_name: "512",
+        type: "UNSIGNED INTEGER",
+        value: encoding,
+        value_display: %{kind: :scalar, formatted: "41160", fields: [], items: []},
+        value_formatted: "41160",
+        string_value?: false,
+        hex_toggle?: false,
+        raw_binary: nil,
+        primitive_editable?: true
+      },
+      %{
+        property: 900,
+        property_name: "900",
+        type: "PROPRIETARY",
+        value: proprietary,
+        value_display: %{kind: :scalar, formatted: "01:02", fields: [], items: []},
+        value_formatted: "01:02",
+        string_value?: true,
+        hex_toggle?: false,
+        raw_binary: <<1, 2>>,
+        primitive_editable?: false
+      }
+    ]
+
+    readonly_html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: unknown_properties,
+          unknown_properties_editing: false,
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert readonly_html =~ ~s(id="toggle-unknown-properties-editing")
+    assert readonly_html =~ "Bearbeiten"
+    refute readonly_html =~ ~s(id="write-unknown-form-512")
+    assert readonly_html =~ "41160"
+
+    editing_html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: unknown_properties,
+          unknown_properties_editing: true,
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert editing_html =~ "Nur lesen"
+    assert editing_html =~ ~s(id="write-unknown-form-512")
+    assert editing_html =~ ~s(id="write-unknown-input-512")
+    refute editing_html =~ ~s(id="write-unknown-form-900")
+  end
+
+  test "hides unknown-properties edit toggle when no primitive-editable rows exist" do
+    object = %{
+      name: "AI-1",
+      type: :analog_input,
+      instance: 1,
+      present_value: 21.0,
+      present_value_formatted: "21.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    unknown_properties = [
+      %{
+        property: 900,
+        property_name: "900",
+        type: "PROPRIETARY",
+        value: [],
+        value_display: %{kind: :scalar, formatted: "-", fields: [], items: []},
+        value_formatted: "-",
+        string_value?: true,
+        hex_toggle?: false,
+        raw_binary: <<>>,
+        primitive_editable?: false
+      }
+    ]
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [],
+          unknown_properties: unknown_properties,
+          unknown_properties_editing: true,
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    refute html =~ ~s(id="toggle-unknown-properties-editing")
+    refute html =~ ~s(id="write-unknown-form-900")
   end
 
   test "renders status flags header tiles in English when locale is en" do
@@ -254,7 +495,7 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "2 (On)"
   end
 
-  test "renders out-of-range multistate values as text inputs instead of dropdowns" do
+  test "renders out-of-range multistate values in dropdown with synthetic current option" do
     object = %{
       name: "MSV-1",
       type: :multi_state_value,
@@ -301,9 +542,11 @@ defmodule BacViewWeb.ObjectDetailTest do
         }
       )
 
-    refute html =~ ~s(<select)
-    assert html =~ ~s(type="text")
+    assert html =~ ~s(id="write-enum-select-present_value")
     assert html =~ ~s(value="0")
+    assert html =~ "1 (Off)"
+    assert html =~ "2 (On)"
+    assert html =~ ~s(id="prop-enum-free-toggle-present_value")
   end
 
   test "renders binary present_value with inactive/active text" do
@@ -902,7 +1145,7 @@ defmodule BacViewWeb.ObjectDetailTest do
         value_display: PropertyDisplay.build("a\0b"),
         value_formatted: "a\0b",
         string_value?: true,
-        hex_toggle?: true,
+        hex_toggle?: false,
         raw_binary: "a\0b"
       }
     ]
@@ -931,27 +1174,8 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ ~s(phx-click="sort_unknown_properties")
     assert html =~ ~s(id="unknown-property-sort-name")
     refute html =~ ~s(id="unknown-prop-hex-toggle-vendor_prop")
-    assert html =~ ~s(id="unknown-prop-hex-toggle-binary_prop")
-    assert html =~ "Als Hex"
+    refute html =~ ~s(id="unknown-prop-hex-toggle-binary_prop")
     refute html =~ ~s(id="unknown-prop-hex-toggle-512")
-
-    hex_html =
-      render_component(
-        &ObjectDetail.object_detail/1,
-        %{
-          device: %{id: 1},
-          object: object,
-          properties: [],
-          unknown_properties: unknown_properties,
-          unknown_property_hex_keys: MapSet.new([:binary_prop]),
-          properties_loading: false,
-          locale: "de",
-          locale_version: 0
-        }
-      )
-
-    assert hex_html =~ "61:00:62"
-    assert hex_html =~ "Als Text"
 
     unknown_section =
       html
@@ -963,18 +1187,85 @@ defmodule BacViewWeb.ObjectDetailTest do
     refute unknown_section =~ "subscribe_cov"
   end
 
-  test "shows hex toggle for known non-printable string properties" do
+  test "read-only printable octet string toggles between text and hex" do
+    raw = "ABCD"
+
+    prop = %{
+      property: :present_value,
+      property_name: "present value",
+      type: "OCTET STRING",
+      bac_type: :octet_string,
+      value: raw,
+      value_display: %{kind: :scalar, formatted: "ABCD", fields: [], items: []},
+      value_formatted: "ABCD",
+      string_value?: true,
+      hex_toggle?: true,
+      raw_binary: raw,
+      writable: false
+    }
+
+    object = %{
+      name: "OSV-1",
+      type: :octet_string_value,
+      instance: 1,
+      status_flags: nil,
+      present_value: raw,
+      present_value_formatted: "ABCD",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ "ABCD"
+    assert html =~ ~s(id="prop-hex-toggle-present_value")
+    assert html =~ "Als Hex"
+    refute html =~ "41:42:43:44"
+
+    hex_html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          property_hex_keys: MapSet.new([:present_value]),
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert hex_html =~ "41:42:43:44"
+    assert hex_html =~ "Als Text"
+  end
+
+  test "does not show hex toggle for character-string properties" do
     raw = "a\0b"
 
     prop = %{
       property: :description,
       property_name: "description",
       type: "CHARACTER STRING",
+      bac_type: :string,
       value: raw,
       value_display: %{kind: :scalar, formatted: raw, fields: [], items: []},
       value_formatted: raw,
       string_value?: true,
-      hex_toggle?: true,
+      hex_toggle?: false,
       raw_binary: raw,
       writable: false
     }
@@ -1005,7 +1296,245 @@ defmodule BacViewWeb.ObjectDetailTest do
         }
       )
 
-    assert html =~ ~s(id="prop-hex-toggle-description")
+    refute html =~ ~s(id="prop-hex-toggle-description")
+  end
+
+  test "shows hex toggle on writable printable octet-string properties" do
+    raw = "ABCD"
+
+    prop = %{
+      property: :present_value,
+      property_name: "present value",
+      type: "OCTET STRING",
+      bac_type: :octet_string,
+      value: raw,
+      value_display: %{
+        kind: :scalar,
+        formatted: "ABCD",
+        fields: [],
+        items: []
+      },
+      value_formatted: "ABCD",
+      string_value?: true,
+      hex_toggle?: true,
+      raw_binary: raw,
+      writable: true
+    }
+
+    object = %{
+      name: "OSV-1",
+      type: :octet_string_value,
+      instance: 1,
+      status_flags: nil,
+      present_value: raw,
+      present_value_formatted: "ABCD",
+      writable: true,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(id="write-form-present_value")
+    assert html =~ ~s(id="write-input-present_value")
+    assert html =~ ~s(id="prop-hex-toggle-present_value")
+    assert html =~ "Als Hex"
+    # Text mode (default): raw printable bytes in the input
+    assert html =~ ~s(value="ABCD")
+    # Printable octets do not force encoding=hex
+    refute html =~ ~s(name="encoding")
+
+    hex_html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          property_hex_keys: MapSet.new([:present_value]),
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert hex_html =~ ~s(value="41:42:43:44")
+    assert hex_html =~ "Als Text"
+    assert hex_html =~ ~s(name="encoding")
+    assert hex_html =~ ~s(value="hex")
+  end
+
+  test "writable opaque mac_address is hex-only with no text/hex toggle" do
+    mac = <<10, 130, 3, 51, 186, 192>>
+
+    prop = %{
+      property: :mac_address,
+      property_name: "mac address",
+      type: "OCTET STRING",
+      bac_type: :octet_string,
+      value: mac,
+      value_display: %{
+        kind: :scalar,
+        formatted: "10.130.3.51:47808",
+        fields: [],
+        items: []
+      },
+      value_formatted: "10.130.3.51:47808",
+      string_value?: true,
+      hex_toggle?: true,
+      raw_binary: mac,
+      writable: true
+    }
+
+    object = %{
+      name: "NP-1",
+      type: :network_port,
+      instance: 1,
+      status_flags: nil,
+      present_value: nil,
+      present_value_formatted: "-",
+      writable: true,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    # Write field is colon-hex; toggle is hidden because text/hex modes are identical.
+    assert html =~ ~s(id="write-form-mac_address")
+    assert html =~ ~s(value="0A:82:03:33:BA:C0")
+    refute html =~ "0A:C2:82"
+    assert html =~ ~s(name="encoding")
+    refute html =~ ~s(id="prop-hex-toggle-mac_address")
+    refute html =~ ~s(id="prop-display-mac_address")
+  end
+
+  test "writable opaque octet already in hex hides the no-op hex toggle" do
+    raw = <<0x00, 0x30, 0xDE, 0x52, 0x55, 0xCA>>
+
+    prop = %{
+      property: :present_value,
+      property_name: "present value",
+      type: "OCTET STRING",
+      bac_type: :octet_string,
+      value: raw,
+      value_display: %{
+        kind: :scalar,
+        formatted: "00:30:DE:52:55:CA",
+        fields: [],
+        items: []
+      },
+      value_formatted: "00:30:DE:52:55:CA",
+      string_value?: true,
+      hex_toggle?: false,
+      raw_binary: raw,
+      writable: true
+    }
+
+    object = %{
+      name: "OSV-1",
+      type: :octet_string_value,
+      instance: 1,
+      status_flags: nil,
+      present_value: raw,
+      present_value_formatted: "00:30:DE:52:55:CA",
+      writable: true,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(value="00:30:DE:52:55:CA")
+    refute html =~ ~s(id="prop-hex-toggle-present_value")
+  end
+
+  test "read-only mac_address shows MAC-aware formatting and correct hex toggle" do
+    mac = <<10, 130, 3, 51, 186, 192>>
+
+    prop = %{
+      property: :mac_address,
+      property_name: "mac address",
+      type: "OCTET STRING",
+      bac_type: :octet_string,
+      value: mac,
+      value_display: %{
+        kind: :scalar,
+        formatted: "10.130.3.51:47808",
+        fields: [],
+        items: []
+      },
+      value_formatted: "10.130.3.51:47808",
+      string_value?: true,
+      hex_toggle?: true,
+      raw_binary: mac,
+      writable: false
+    }
+
+    object = %{
+      name: "NP-1",
+      type: :network_port,
+      instance: 1,
+      status_flags: nil,
+      present_value: nil,
+      present_value_formatted: "-",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 1},
+          object: object,
+          properties: [prop],
+          properties_loading: false,
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ "10.130.3.51:47808"
+    assert html =~ ~s(id="prop-hex-toggle-mac_address")
     assert html =~ "Als Hex"
 
     hex_html =
@@ -1015,14 +1544,15 @@ defmodule BacViewWeb.ObjectDetailTest do
           device: %{id: 1},
           object: object,
           properties: [prop],
-          property_hex_keys: MapSet.new([:description]),
+          property_hex_keys: MapSet.new([:mac_address]),
           properties_loading: false,
           locale: "de",
           locale_version: 0
         }
       )
 
-    assert hex_html =~ "61:00:62"
+    assert hex_html =~ "0A:82:03:33:BA:C0"
+    refute hex_html =~ "0A:C2:82"
     assert hex_html =~ "Als Text"
   end
 

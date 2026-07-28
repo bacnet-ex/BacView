@@ -3,6 +3,7 @@ defmodule BacViewWeb.AlarmTable do
 
   alias BacView.BACnet.Protocol.EventFormatter
   alias BacView.BACnet.Protocol.ObjectTypes
+  alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacViewWeb.StatusFlagsIcons
   alias BacViewWeb.TableSort
 
@@ -101,7 +102,7 @@ defmodule BacViewWeb.AlarmTable do
     do: TableSort.nullable_string_key(Map.get(obj, :description))
 
   defp active_alarm_sort_key(obj, "status"),
-    do: length(StatusFlagsIcons.active_flags(Map.get(obj, :status_flags)))
+    do: length(StatusFlagsIcons.active_flags(StatusFlagsParser.from_object(obj)))
 
   defp active_alarm_sort_key(obj, "alarm_since"),
     do: Map.get(obj, :alarm_since_sort_key, 0)

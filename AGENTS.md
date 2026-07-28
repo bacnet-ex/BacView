@@ -77,10 +77,12 @@ Important keys (see `config/config.exs`, `config/runtime.exs`, `README.md`):
 | `BACVIEW_DESKTOP=1` | **Compile-time** desktop build (`elixir-desktop`); `mix clean` when switching web ↔ desktop |
 | `BACVIEW_TIMEZONE` | IANA timezone (default `Europe/Zurich`) |
 | `BACVIEW_PROPERTY_READ_CONCURRENCY` | Max parallel individual `ReadProperty` (default **8**). Set **1** if old devices are overwhelmed |
+| `BACVIEW_READ_CONCUR_ENABLE_SHARED_RED` | Cap concurrency to **1** when multiple devices share a transport address (router). **Off** by default (`1` / `true` to enable) |
 | `BACVIEW_SETTINGS_PATH` | Override path for persisted stack settings |
 | `BACVIEW_BACSTACK_DEBUG` | Verbose bacstack logging |
 | `BACVIEW_ENABLE_MSTP` | Force MS/TP enable when UART stack is available |
 | `:bacview, :property_read_concurrency` | Application env used by `PropertyReader.property_read_concurrency/0` |
+| `:bacview, :property_read_concurrency_enable_shared_reduction` | Application env for shared-address concurrency reduction (default `false`) |
 
 ---
 

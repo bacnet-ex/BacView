@@ -25,4 +25,31 @@ defmodule BacView.BACnet.Protocol.StatusFlagsParser do
   end
 
   def normalize(_flags), do: nil
+
+  @doc """
+  Resolves status flags from a BACnet/summary object map.
+
+  Prefers `object.status_flags`, then falls back to
+  `object._unknown_properties.status_flags` (common when bacstack leaves the
+  property unparsed under unknown properties).
+  """
+  @spec from_object(term()) :: StatusFlags.t() | nil
+  def from_object(obj) when is_map(obj) do
+    case normalize(Map.get(obj, :status_flags)) do
+      %StatusFlags{} = flags -> flags
+      nil -> unknown_status_flags(obj)
+    end
+  end
+
+  def from_object(_obj), do: nil
+
+  defp unknown_status_flags(obj) do
+    case Map.get(obj, :_unknown_properties) do
+      unknown when is_map(unknown) ->
+        normalize(Map.get(unknown, :status_flags))
+
+      _unknown ->
+        nil
+    end
+  end
 end

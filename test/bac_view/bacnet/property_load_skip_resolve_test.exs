@@ -41,9 +41,11 @@ defmodule BacView.BACnet.PropertyLoadSkipResolveTest do
 
       read_opts = PropertyLoad.property_read_opts(effective_skip, device_obj)
 
-      assert Keyword.get(read_opts, :object_opts) == [
-               skip_property_validation_remote_object: :value
-             ]
+      assert Keyword.get(read_opts, :allow_numeric_constants) == true
+
+      object_opts = Keyword.get(read_opts, :object_opts)
+      assert Keyword.get(object_opts, :allow_numeric_constants) == true
+      assert Keyword.get(object_opts, :skip_property_validation_remote_object) == :value
 
       assert Keyword.get(read_opts, :remote_device_id) == device_id
       assert Keyword.get(read_opts, :allow_unknown_properties) == :no_unpack
@@ -55,7 +57,7 @@ defmodule BacView.BACnet.PropertyLoadSkipResolveTest do
     end)
   end
 
-  test "nil skip mode keeps strict property read opts" do
+  test "nil skip mode still enables numeric constants for vendor enums" do
     device_obj = %ObjectIdentifier{type: :device, instance: 12}
     object = %ObjectIdentifier{type: :analog_input, instance: 1}
 
@@ -68,6 +70,9 @@ defmodule BacView.BACnet.PropertyLoadSkipResolveTest do
     assert ValidationSkipStore.resolve(state, object) == nil
 
     read_opts = PropertyLoad.property_read_opts(nil, device_obj)
-    refute Keyword.has_key?(read_opts, :object_opts)
+    assert Keyword.get(read_opts, :allow_numeric_constants) == true
+    object_opts = Keyword.get(read_opts, :object_opts)
+    assert object_opts == [allow_numeric_constants: true]
+    refute Keyword.has_key?(object_opts, :skip_property_validation_remote_object)
   end
 end

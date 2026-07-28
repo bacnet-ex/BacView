@@ -139,6 +139,150 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     assert {:ok, ^ref} = BACnetArray.get_item(roundtrip, 1)
   end
 
+  test "round-trips multiple DeviceObjectPropertyRef items in BACnetArray as JSON" do
+    array = BACnetArray.new()
+
+    json = """
+    [
+      {
+        "device_identifier": null,
+        "object_identifier": {"instance": 1, "type": "analog_value"},
+        "property_array_index": null,
+        "property_identifier": "present_value"
+      },
+      {
+        "device_identifier": null,
+        "object_identifier": {"instance": 2, "type": "binary_value"},
+        "property_array_index": null,
+        "property_identifier": "present_value"
+      }
+    ]
+    """
+
+    assert {:ok, decoded} = ComplexPropertyEditor.decode_json(json, array)
+    assert BACnetArray.size(decoded) == 2
+    assert {:ok, first} = BACnetArray.get_item(decoded, 1)
+    assert {:ok, second} = BACnetArray.get_item(decoded, 2)
+    assert first.object_identifier.instance == 1
+    assert second.object_identifier.instance == 2
+    assert second.object_identifier.type == :binary_value
+  end
+
+  test "JSON multi-item decode keeps all entries when first equals existing template item" do
+    # Regression: rebuild used the first existing element as :array default; any
+    # decoded item equal to that default was omitted by sparse_to_list / write cast.
+    existing = %DeviceObjectPropertyRef{
+      object_identifier: %ObjectIdentifier{type: :binary_value, instance: 258},
+      property_identifier: :present_value,
+      property_array_index: nil,
+      device_identifier: nil
+    }
+
+    template = BACnetArray.from_list([existing], false)
+
+    json = """
+    [
+      {
+        "device_identifier": null,
+        "object_identifier": {"instance": 258, "type": "binary_value"},
+        "property_array_index": null,
+        "property_identifier": "present_value"
+      },
+      {
+        "device_identifier": null,
+        "object_identifier": {"instance": 358, "type": "binary_value"},
+        "property_array_index": null,
+        "property_identifier": "present_value"
+      }
+    ]
+    """
+
+    assert {:ok, decoded} = ComplexPropertyEditor.decode_json(json, template)
+    assert BACnetArray.size(decoded) == 2
+
+    dense = BACnetArray.to_list(decoded)
+    assert length(dense) == 2
+    assert Enum.map(dense, & &1.object_identifier.instance) == [258, 358]
+
+    obj = %ObjectIdentifier{type: :schedule, instance: 1}
+
+    assert {:ok, encodings} =
+             BACnet.Protocol.ObjectsUtility.cast_value_to_property(
+               obj,
+               :list_of_object_property_references,
+               decoded
+             )
+
+    # Two refs × (object_identifier + property_identifier) context tags
+    assert length(encodings) == 4
+  end
+
+  test "adds blank DeviceObjectPropertyRef to empty BACnetArray via property hint" do
+    array = BACnetArray.new()
+
+    assert ComplexPropertyEditor.form_fields(array) == []
+
+    assert ComplexPropertyEditor.can_add_item?(array,
+             property: :list_of_object_property_references
+           )
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.add_item(array, property: :list_of_object_property_references)
+
+    assert BACnetArray.size(updated) == 1
+    assert {:ok, %DeviceObjectPropertyRef{} = ref} = BACnetArray.get_item(updated, 1)
+    assert ref.object_identifier.type == :analog_input
+    assert ref.property_identifier == :present_value
+
+    fields = ComplexPropertyEditor.form_fields(updated)
+    assert Enum.any?(fields, &(&1.path == "0.object_identifier.type"))
+    assert {:items, [%{index: 0}]} = ComplexPropertyEditor.form_field_groups(fields)
+  end
+
+  test "adds and removes multiple collection items and applies form fields for all" do
+    array = BACnetArray.new()
+
+    assert {:ok, one} =
+             ComplexPropertyEditor.add_item(array, property: :list_of_object_property_references)
+
+    assert {:ok, two} =
+             ComplexPropertyEditor.add_item(one, property: :list_of_object_property_references)
+
+    assert BACnetArray.size(two) == 2
+
+    fields = ComplexPropertyEditor.form_fields(two)
+    params = ComplexPropertyEditor.initial_field_params(fields)
+
+    params =
+      Map.merge(params, %{
+        "0.object_identifier.type" => "analog_value",
+        "0.object_identifier.instance" => "10",
+        "1.object_identifier.type" => "binary_value",
+        "1.object_identifier.instance" => "20"
+      })
+
+    assert {:ok, applied} = ComplexPropertyEditor.apply_form_fields(%{"field" => params}, two)
+    assert BACnetArray.size(applied) == 2
+    assert {:ok, first} = BACnetArray.get_item(applied, 1)
+    assert {:ok, second} = BACnetArray.get_item(applied, 2)
+    assert first.object_identifier == %ObjectIdentifier{type: :analog_value, instance: 10}
+    assert second.object_identifier == %ObjectIdentifier{type: :binary_value, instance: 20}
+
+    assert {:ok, removed} = ComplexPropertyEditor.remove_item(applied, 0)
+    assert BACnetArray.size(removed) == 1
+    assert {:ok, only} = BACnetArray.get_item(removed, 1)
+    assert only.object_identifier.instance == 20
+  end
+
+  test "adds Destination entries to empty recipient_list" do
+    assert {:ok, list} = ComplexPropertyEditor.add_item([], property: :recipient_list)
+    assert [%BACnet.Protocol.Destination{} = dest] = list
+    assert dest.recipient.type == :address
+
+    assert {:ok, two} = ComplexPropertyEditor.add_item(list, property: :recipient_list)
+    assert length(two) == 2
+  end
+
   test "rejects misspelled multistate_value object type in JSON" do
     array = BACnetArray.new()
 

@@ -57,21 +57,24 @@ defmodule BacView.BACnet.ScanValidationTest do
   end
 
   describe "PropertyLoad.property_read_opts/2" do
-    test "builds strict property read opts by default" do
-      assert PropertyLoad.property_read_opts() == [
-               allow_unknown_properties: :no_unpack,
-               ignore_unsupported_object_types: true
-             ]
+    test "builds property read opts with numeric constants enabled by default" do
+      opts = PropertyLoad.property_read_opts()
+
+      assert Keyword.get(opts, :allow_unknown_properties) == :no_unpack
+      assert Keyword.get(opts, :ignore_unsupported_object_types) == true
+      assert Keyword.get(opts, :allow_numeric_constants) == true
+      assert Keyword.get(opts, :object_opts) == [allow_numeric_constants: true]
     end
 
     test "includes remote_device_id when device object is known" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
+      opts = PropertyLoad.property_read_opts(nil, device_obj)
 
-      assert PropertyLoad.property_read_opts(nil, device_obj) == [
-               allow_unknown_properties: :no_unpack,
-               ignore_unsupported_object_types: true,
-               remote_device_id: 12
-             ]
+      assert Keyword.get(opts, :allow_unknown_properties) == :no_unpack
+      assert Keyword.get(opts, :ignore_unsupported_object_types) == true
+      assert Keyword.get(opts, :remote_device_id) == 12
+      assert Keyword.get(opts, :allow_numeric_constants) == true
+      assert Keyword.get(opts, :object_opts) == [allow_numeric_constants: true]
     end
 
     test "passes skip mode through object_opts for property reads" do
@@ -79,16 +82,16 @@ defmodule BacView.BACnet.ScanValidationTest do
       value_opts = PropertyLoad.property_read_opts(:value, device_obj)
 
       assert Keyword.get(value_opts, :remote_device_id) == 12
+      assert Keyword.get(value_opts, :allow_numeric_constants) == true
 
-      assert Keyword.get(value_opts, :object_opts) == [
-               skip_property_validation_remote_object: :value
-             ]
+      object_opts = Keyword.get(value_opts, :object_opts)
+      assert Keyword.get(object_opts, :allow_numeric_constants) == true
+      assert Keyword.get(object_opts, :skip_property_validation_remote_object) == :value
 
       all_opts = PropertyLoad.property_read_opts(true, device_obj)
-
-      assert Keyword.get(all_opts, :object_opts) == [
-               skip_property_validation_remote_object: true
-             ]
+      all_object_opts = Keyword.get(all_opts, :object_opts)
+      assert Keyword.get(all_object_opts, :allow_numeric_constants) == true
+      assert Keyword.get(all_object_opts, :skip_property_validation_remote_object) == true
     end
   end
 
@@ -135,10 +138,10 @@ defmodule BacView.BACnet.ScanValidationTest do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
 
       opts = PropertyLoad.property_read_opts(:value, device_obj)
+      object_opts = Keyword.get(opts, :object_opts)
 
-      assert Keyword.get(opts, :object_opts) == [
-               skip_property_validation_remote_object: :value
-             ]
+      assert Keyword.get(object_opts, :skip_property_validation_remote_object) == :value
+      assert Keyword.get(object_opts, :allow_numeric_constants) == true
     end
   end
 
@@ -182,14 +185,15 @@ defmodule BacView.BACnet.ScanValidationTest do
                PropertyLoad.property_read_opts(true, device_obj)
     end
 
-    test "builds strict scan opts by default" do
+    test "builds scan opts with numeric constants enabled by default" do
       device_obj = %ObjectIdentifier{type: :device, instance: 12}
+      opts = PropertyLoad.scan_read_opts(device_obj)
 
-      assert PropertyLoad.scan_read_opts(device_obj) == [
-               allow_unknown_properties: :no_unpack,
-               ignore_unsupported_object_types: true,
-               remote_device_id: 12
-             ]
+      assert Keyword.get(opts, :allow_unknown_properties) == :no_unpack
+      assert Keyword.get(opts, :ignore_unsupported_object_types) == true
+      assert Keyword.get(opts, :remote_device_id) == 12
+      assert Keyword.get(opts, :allow_numeric_constants) == true
+      assert Keyword.get(opts, :object_opts) == [allow_numeric_constants: true]
     end
 
     test "passes skip mode through object_opts" do
@@ -198,16 +202,16 @@ defmodule BacView.BACnet.ScanValidationTest do
       value_opts = PropertyLoad.scan_read_opts(device_obj, :value)
       assert Keyword.get(value_opts, :allow_unknown_properties) == :no_unpack
       assert Keyword.get(value_opts, :remote_device_id) == 12
+      assert Keyword.get(value_opts, :allow_numeric_constants) == true
 
-      assert Keyword.get(value_opts, :object_opts) == [
-               skip_property_validation_remote_object: :value
-             ]
+      object_opts = Keyword.get(value_opts, :object_opts)
+      assert Keyword.get(object_opts, :allow_numeric_constants) == true
+      assert Keyword.get(object_opts, :skip_property_validation_remote_object) == :value
 
       all_opts = PropertyLoad.scan_read_opts(device_obj, true)
-
-      assert Keyword.get(all_opts, :object_opts) == [
-               skip_property_validation_remote_object: true
-             ]
+      all_object_opts = Keyword.get(all_opts, :object_opts)
+      assert Keyword.get(all_object_opts, :allow_numeric_constants) == true
+      assert Keyword.get(all_object_opts, :skip_property_validation_remote_object) == true
     end
   end
 end

@@ -77,6 +77,19 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
 
       assert PropertyFormatter.format_edit_value(1.0, object, prop) == "1.0"
     end
+
+    test "formats opaque octet-string edit values as hex" do
+      mac = <<10, 130, 3, 51, 186, 192>>
+      prop = %{property: :mac_address, bac_type: :octet_string, type: "OCTET STRING"}
+
+      assert PropertyFormatter.format_edit_value(mac, nil, prop) == "0A:82:03:33:BA:C0"
+    end
+
+    test "keeps printable octet-string edit values as text" do
+      prop = %{property: :present_value, bac_type: :octet_string, type: "OCTET STRING"}
+
+      assert PropertyFormatter.format_edit_value("ABCD", nil, prop) == "ABCD"
+    end
   end
 
   describe "format_present_value/3" do
@@ -309,6 +322,21 @@ defmodule BacView.BACnet.Protocol.PropertyFormatterTest do
 
     test "formats non-six-byte addresses as hex" do
       assert PropertyFormatter.format_mac_address(<<1, 2, 3, 4, 5>>) == "01:02:03:04:05"
+    end
+
+    test "hex_display_differs? is true only when default and hex views differ" do
+      assert PropertyFormatter.hex_display_differs?("ABCD", "ABCD")
+      refute PropertyFormatter.hex_display_differs?("41:42:43:44", "ABCD")
+
+      assert PropertyFormatter.hex_display_differs?(
+               "10.130.3.51:47808",
+               <<10, 130, 3, 51, 186, 192>>
+             )
+
+      refute PropertyFormatter.hex_display_differs?(
+               "0A:82:03:33:BA:C0",
+               <<10, 130, 3, 51, 186, 192>>
+             )
     end
 
     test "format_binary_hex renders uppercase byte groups" do

@@ -210,8 +210,14 @@ msgstr "All: skip validation"
 msgid "Alle: Wertvalidierung überspringen"
 msgstr "All: skip value validation"
 
+msgid "Als Eingabe"
+msgstr "As input"
+
 msgid "Als Hex"
 msgstr "As hex"
+
+msgid "Als Liste"
+msgstr "As list"
 
 msgid "Als Text"
 msgstr "As text"
@@ -375,8 +381,8 @@ msgstr "Subscribe COV (selection)"
 msgid "COV abonnieren erfolgreich."
 msgstr "COV subscription successful."
 
-msgid "COV abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen."
-msgstr "COV subscribed: %{ok} succeeded, %{failed} failed."
+msgid "COV abonniert: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen."
+msgstr "COV subscribed: %{ok} succeeded, %{skipped} skipped, %{failed} failed."
 
 msgid "COV bestätigt"
 msgstr "COV confirmed"
@@ -386,6 +392,9 @@ msgstr "COV resubscribed: %{ok} succeeded, %{failed} failed."
 
 msgid "COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen."
 msgstr "COV cancelled: %{ok} succeeded, %{failed} failed."
+
+msgid "COV gekündigt: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen."
+msgstr "COV cancelled: %{ok} succeeded, %{skipped} skipped, %{failed} failed."
 
 msgid "COV kündigen"
 msgstr "Unsubscribe COV"
@@ -516,6 +525,9 @@ msgstr "This property does not support COV notifications."
 msgid "Diese Hilfe ein-/ausblenden"
 msgstr "Toggle this help"
 
+msgid "Diese Liste kann hier nicht erweitert werden."
+msgstr "This list cannot be extended here."
+
 msgid "Diese Objekte konnten nicht gelesen werden. Die Fehler sind unten aufgelistet."
 msgstr "These objects could not be read. The errors are listed below."
 
@@ -609,8 +621,20 @@ msgstr "Unit"
 msgid "Einige Objekte haben ungültige BACnet-Werte. Sie können sie mit reduzierter Validierung erneut lesen."
 msgstr "Some objects have invalid BACnet values. You can re-read them with reduced validation."
 
+msgid "Eintrag %{n}"
+msgstr "Entry %{n}"
+
+msgid "Eintrag entfernen"
+msgstr "Remove entry"
+
+msgid "Eintrag hinzufügen"
+msgstr "Add entry"
+
 msgid "Eintrag in die Empfängerliste fehlgeschlagen."
 msgstr "Failed to enroll in recipient list."
+
+msgid "Eintragsform unbekannt. Wechseln Sie zu JSON und fügen Sie ein Beispiel-Element ein."
+msgstr "Unknown entry shape. Switch to JSON and add a sample element."
 
 msgid "Empfangen"
 msgstr "Received"
@@ -683,6 +707,9 @@ msgstr "Foreign Device registration started."
 
 msgid "Foreign Device abgemeldet."
 msgstr "Foreign Device unregistered."
+
+msgid "Ganzzahl ≥ 0"
+msgstr "Integer ≥ 0"
 
 msgid "Geladen"
 msgstr "Loaded"
@@ -881,6 +908,9 @@ msgstr "No file available to download."
 
 msgid "Keine Eigenschaften verfügbar."
 msgstr "No properties available."
+
+msgid "Keine Einträge. Fügen Sie einen Eintrag hinzu oder wechseln Sie zu JSON."
+msgstr "No entries. Add an entry or switch to JSON."
 
 msgid "Keine Encode-Funktion für Typ %{type}."
 msgstr "No encode function for type %{type}."
@@ -1151,6 +1181,12 @@ msgstr "Show only this status"
 
 msgid "Nur diesen Typ anzeigen"
 msgstr "Show only this type"
+
+msgid "Nur lesen"
+msgstr "Read only"
+
+msgid "Nur primitive unbekannte Eigenschaften können bearbeitet werden."
+msgstr "Only primitive unknown properties can be edited."
 
 msgid "Obergrenze"
 msgstr "High limit"
@@ -1790,6 +1826,9 @@ msgstr "expected IPv4 or IPv6 address"
 
 msgid "erwartet Zahl"
 msgstr "expected number"
+
+msgid "erwartet nicht-negative Ganzzahl (Enumerated)"
+msgstr "expected non-negative integer (Enumerated)"
 
 msgid "erwartet true/false"
 msgstr "expected true/false"

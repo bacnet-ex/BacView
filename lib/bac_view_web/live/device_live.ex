@@ -356,6 +356,49 @@ defmodule BacViewWeb.DeviceLive do
           |> assign(:objects, objects)
           |> refresh_hierarchy_explorer()
 
+        :out_of_service when is_boolean(update.value) ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{
+                  out_of_service: update.value,
+                  updated_at: update.at
+                })
+              else
+                obj
+              end
+            end)
+
+          assign(socket, :objects, objects)
+
+        :object_name when is_binary(update.value) and update.value != "" ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{name: update.value, updated_at: update.at})
+              else
+                obj
+              end
+            end)
+
+          socket
+          |> assign(:objects, objects)
+          |> refresh_hierarchy_explorer()
+
+        :description when is_binary(update.value) ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{description: update.value, updated_at: update.at})
+              else
+                obj
+              end
+            end)
+
+          socket
+          |> assign(:objects, objects)
+          |> refresh_hierarchy_explorer()
+
         _property ->
           socket
       end
@@ -1134,10 +1177,15 @@ defmodule BacViewWeb.DeviceLive do
   def handle_event("subscribe_selected_cov", _params, socket) do
     device_id = socket.assigns.device_id
 
+    {keys, skipped} =
+      ObjectSelectionBar.cov_present_value_keys(
+        socket.assigns.selected_object_keys,
+        socket.assigns.selectable_object_keys,
+        socket.assigns.objects
+      )
+
     results =
-      socket.assigns.selected_object_keys
-      |> cov_subscribable_keys(socket.assigns.selectable_object_keys)
-      |> Enum.map(fn {type, instance} ->
+      Enum.map(keys, fn {type, instance} ->
         object_id = %ObjectIdentifier{type: type, instance: instance}
         SubscriptionManager.subscribe(device_id, object_id, :present_value)
       end)
@@ -1150,8 +1198,10 @@ defmodule BacViewWeb.DeviceLive do
       |> refresh_cov_state()
       |> put_flash(
         :info,
-        gt("COV abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
+        gt(
+          "COV abonniert: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
           ok: ok,
+          skipped: skipped,
           failed: failed
         )
       )
@@ -1163,10 +1213,15 @@ defmodule BacViewWeb.DeviceLive do
   def handle_event("unsubscribe_selected_cov", _params, socket) do
     device_id = socket.assigns.device_id
 
+    {keys, skipped} =
+      ObjectSelectionBar.cov_present_value_keys(
+        socket.assigns.selected_object_keys,
+        socket.assigns.selectable_object_keys,
+        socket.assigns.objects
+      )
+
     results =
-      socket.assigns.selected_object_keys
-      |> cov_subscribable_keys(socket.assigns.selectable_object_keys)
-      |> Enum.map(fn {type, instance} ->
+      Enum.map(keys, fn {type, instance} ->
         object_id = %ObjectIdentifier{type: type, instance: instance}
         SubscriptionManager.unsubscribe(device_id, object_id, :present_value)
       end)
@@ -1179,8 +1234,10 @@ defmodule BacViewWeb.DeviceLive do
       |> refresh_cov_state()
       |> put_flash(
         :info,
-        gt("COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
+        gt(
+          "COV gekündigt: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
           ok: ok,
+          skipped: skipped,
           failed: failed
         )
       )
@@ -1692,7 +1749,7 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   defp object_in_active_alarm?(obj) do
-    flags = Map.get(obj, :status_flags)
+    flags = StatusFlagsParser.from_object(obj)
 
     flags &&
       Enum.any?([:in_alarm, :fault], fn flag ->
@@ -2199,12 +2256,6 @@ defmodule BacViewWeb.DeviceLive do
 
   defp selection_group_selected?(selected_keys, group_keys) do
     group_keys != MapSet.new() and MapSet.subset?(group_keys, selected_keys)
-  end
-
-  defp cov_subscribable_keys(selected_keys, selectable_keys) do
-    selected_keys
-    |> MapSet.intersection(selectable_keys)
-    |> MapSet.to_list()
   end
 
   defp subscription_key(sub) do

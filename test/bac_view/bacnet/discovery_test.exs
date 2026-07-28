@@ -114,24 +114,20 @@ defmodule BacView.BACnet.DiscoveryTest do
 
   describe "shared destination max_concurrency" do
     setup do
-      for table <- [:bacview_devices, :bacview_device_share] do
-        if :ets.whereis(table) == :undefined do
-          :ets.new(table, [:named_table, :set, :public])
-        else
-          :ets.delete_all_objects(table)
-        end
-      end
+      previous =
+        Application.get_env(:bacview, :property_read_concurrency_enable_shared_reduction)
+
+      Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, true)
+
+      # Create under BacnetEtsOwner — never :ets.new from the test process.
+      BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices, :bacview_device_share])
 
       Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
 
       on_exit(fn ->
+        restore_enable_shared_reduction(previous)
         Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
-
-        for table <- [:bacview_devices, :bacview_device_share] do
-          if :ets.whereis(table) != :undefined do
-            :ets.delete_all_objects(table)
-          end
-        end
+        BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices, :bacview_device_share])
       end)
 
       {:ok, iam: elem(IAmCollector.parse_iam(@iam_apdu), 1)}
@@ -201,18 +197,13 @@ defmodule BacView.BACnet.DiscoveryTest do
 
   describe "upsert_iam_device/2" do
     setup do
-      if :ets.whereis(:bacview_devices) == :undefined do
-        :ets.new(:bacview_devices, [:named_table, :set, :public])
-      end
+      BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices])
 
       Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
 
       on_exit(fn ->
         Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
-
-        if :ets.whereis(:bacview_devices) != :undefined do
-          :ets.delete(:bacview_devices)
-        end
+        BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices])
       end)
 
       {:ok, iam: elem(IAmCollector.parse_iam(@iam_apdu), 1), address: {{10, 0, 0, 42}, 47_808}}
@@ -637,4 +628,10 @@ defmodule BacView.BACnet.DiscoveryTest do
       end
     end)
   end
+
+  defp restore_enable_shared_reduction(nil),
+    do: Application.delete_env(:bacview, :property_read_concurrency_enable_shared_reduction)
+
+  defp restore_enable_shared_reduction(value),
+    do: Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, value)
 end

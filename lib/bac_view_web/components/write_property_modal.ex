@@ -3,6 +3,8 @@ defmodule BacViewWeb.WritePropertyModal do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BacView.BACnet.Protocol.ComplexPropertyEditor
+  alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacViewWeb.PropertyValue
 
   attr(:object, :map, required: true)
@@ -10,6 +12,7 @@ defmodule BacViewWeb.WritePropertyModal do
   attr(:editor_mode, :atom, default: :fields)
   attr(:form_fields, :list, default: [])
   attr(:draft_fields, :map, default: %{})
+  attr(:draft_value, :any, default: nil)
   attr(:draft_json, :string, required: true)
   attr(:field_error, :string, default: nil)
   attr(:json_error, :string, default: nil)
@@ -18,6 +21,25 @@ defmodule BacViewWeb.WritePropertyModal do
   attr(:writing, :boolean, default: false)
 
   def modal(assigns) do
+    draft_value = assigns.draft_value || assigns.property.value
+    field_groups = ComplexPropertyEditor.form_field_groups(assigns.form_fields)
+
+    item_groups =
+      case field_groups do
+        {:items, groups} -> groups
+        _flat -> nil
+      end
+
+    assigns =
+      assigns
+      |> assign(:draft_value, draft_value)
+      |> assign(:item_groups, item_groups)
+      |> assign(
+        :can_add_item?,
+        ComplexPropertyEditor.can_add_item?(draft_value, property: assigns.property.property)
+      )
+      |> assign(:editable_collection?, ComplexPropertyEditor.editable_collection?(draft_value))
+
     ~H"""
     <div id="write-property-modal" class="bac-modal-backdrop">
       <button
@@ -94,61 +116,99 @@ defmodule BacViewWeb.WritePropertyModal do
           </div>
 
           <%= if @editor_mode == :fields do %>
-            <form
-              id="write-property-fields-form"
-              phx-change="change_write_property_fields"
-              class="space-y-3"
-            >
-              <%= if @form_fields == [] do %>
-                <p class="text-sm bac-text-faint">
-                  {t(
-                    @locale,
-                    @locale_version,
-                    "Keine bearbeitbaren Felder für diesen Wert. Wechseln Sie zu JSON."
+            <div class="space-y-3">
+              <div
+                :if={@editable_collection?}
+                class="flex items-center justify-between gap-3"
+              >
+                <p class="text-xs bac-text-faint">
+                  {t(@locale, @locale_version, "%{count} Einträge",
+                    count: ComplexPropertyEditor.collection_size(@draft_value)
                   )}
                 </p>
-              <% else %>
-                <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
-                  <%= for field <- @form_fields do %>
-                    <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
-                      <label
-                        for={field_dom_id(field.path)}
-                        class="sm:w-2/5 shrink-0 text-xs bac-mono bac-text-faint truncate"
-                        title={field.path}
-                      >
-                        {field.label}
-                      </label>
-                      <select
-                        :if={field.enum_options}
-                        id={field_dom_id(field.path)}
-                        name={"field[#{field.path}]"}
-                        class="flex-1 bac-input bac-input-sm text-xs min-w-0"
-                        disabled={field_disabled?(@draft_fields, field, @writing)}
-                        phx-debounce="300"
-                      >
-                        <option
-                          :for={opt <- field.enum_options}
-                          value={Atom.to_string(opt.value)}
-                          selected={enum_field_selected?(@draft_fields, field, opt)}
-                        >
-                          {opt.label}
-                        </option>
-                      </select>
-                      <input
-                        :if={!field.enum_options}
-                        id={field_dom_id(field.path)}
-                        name={"field[#{field.path}]"}
-                        type="text"
-                        value={Map.get(@draft_fields, field.path, field.value)}
-                        class="flex-1 bac-input bac-input-sm bac-mono text-xs"
-                        disabled={field_disabled?(@draft_fields, field, @writing)}
-                        phx-debounce="300"
-                      />
+                <button
+                  :if={@can_add_item?}
+                  type="button"
+                  id="write-property-add-item"
+                  class="bac-btn bac-btn-ghost bac-btn-xs"
+                  phx-click="write_property_add_item"
+                  disabled={@writing}
+                >
+                  <.icon name="hero-plus" class="size-3.5" />
+                  {t(@locale, @locale_version, "Eintrag hinzufügen")}
+                </button>
+              </div>
+
+              <form
+                id="write-property-fields-form"
+                phx-change="change_write_property_fields"
+                class="space-y-3"
+              >
+                <%= cond do %>
+                  <% @editable_collection? and @form_fields == [] -> %>
+                    <div class="bac-hero py-10">
+                      <p class="bac-hero-text text-sm">
+                        {t(
+                          @locale,
+                          @locale_version,
+                          "Keine Einträge. Fügen Sie einen Eintrag hinzu oder wechseln Sie zu JSON."
+                        )}
+                      </p>
                     </div>
-                  <% end %>
-                </div>
-              <% end %>
-            </form>
+                  <% is_list(@item_groups) -> %>
+                    <div class="space-y-3 max-h-[40vh] overflow-y-auto pr-1">
+                      <%= for group <- @item_groups do %>
+                        <div
+                          id={"write-property-item-#{group.index}"}
+                          class="space-y-2 rounded-lg border border-base-300/30 p-3"
+                        >
+                          <div class="flex items-center justify-between gap-2">
+                            <p class="text-xs font-medium bac-text-faint">
+                              {t(@locale, @locale_version, "Eintrag %{n}", n: group.index + 1)}
+                            </p>
+                            <button
+                              type="button"
+                              id={"write-property-remove-item-#{group.index}"}
+                              class="bac-btn bac-btn-ghost bac-btn-icon bac-btn-xs"
+                              phx-click="write_property_remove_item"
+                              phx-value-index={group.index}
+                              disabled={@writing}
+                              aria-label={t(@locale, @locale_version, "Eintrag entfernen")}
+                            >
+                              <.icon name="hero-trash" class="size-3.5" />
+                            </button>
+                          </div>
+                          <%= for field <- group.fields do %>
+                            <.field_input
+                              field={field}
+                              draft_fields={@draft_fields}
+                              writing={@writing}
+                            />
+                          <% end %>
+                        </div>
+                      <% end %>
+                    </div>
+                  <% @form_fields == [] -> %>
+                    <p class="text-sm bac-text-faint">
+                      {t(
+                        @locale,
+                        @locale_version,
+                        "Keine bearbeitbaren Felder für diesen Wert. Wechseln Sie zu JSON."
+                      )}
+                    </p>
+                  <% true -> %>
+                    <div class="space-y-2 max-h-[40vh] overflow-y-auto pr-1">
+                      <%= for field <- @form_fields do %>
+                        <.field_input
+                          field={field}
+                          draft_fields={@draft_fields}
+                          writing={@writing}
+                        />
+                      <% end %>
+                    </div>
+                <% end %>
+              </form>
+            </div>
             <p :if={@field_error} class="text-sm text-error">{@field_error}</p>
           <% else %>
             <form id="write-property-json-form" phx-change="change_write_property_json">
@@ -201,7 +261,16 @@ defmodule BacViewWeb.WritePropertyModal do
               type="button"
               id="write-property-submit"
               phx-click="write_property_modal"
-              disabled={@writing or editor_submit_disabled?(@editor_mode, @field_error, @json_error, @form_fields)}
+              disabled={
+                @writing or
+                  editor_submit_disabled?(
+                    @editor_mode,
+                    @field_error,
+                    @json_error,
+                    @form_fields,
+                    @editable_collection?
+                  )
+              }
               class="bac-btn bac-btn-primary bac-btn-sm"
             >
               <.icon :if={@writing} name="hero-arrow-path" class="size-4 animate-spin" />
@@ -210,6 +279,50 @@ defmodule BacViewWeb.WritePropertyModal do
           </div>
         </div>
       </div>
+    </div>
+    """
+  end
+
+  attr(:field, :map, required: true)
+  attr(:draft_fields, :map, required: true)
+  attr(:writing, :boolean, required: true)
+
+  defp field_input(assigns) do
+    ~H"""
+    <div class="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-3">
+      <label
+        for={field_dom_id(@field.path)}
+        class="sm:w-2/5 shrink-0 text-xs bac-mono bac-text-faint truncate"
+        title={@field.path}
+      >
+        {@field.label}
+      </label>
+      <select
+        :if={@field.enum_options}
+        id={field_dom_id(@field.path)}
+        name={"field[#{@field.path}]"}
+        class="flex-1 bac-input bac-input-sm text-xs min-w-0"
+        disabled={field_disabled?(@draft_fields, @field, @writing)}
+        phx-debounce="300"
+      >
+        <option
+          :for={opt <- @field.enum_options}
+          value={PropertyEnumeration.option_value_to_string(opt.value)}
+          selected={enum_field_selected?(@draft_fields, @field, opt)}
+        >
+          {opt.label}
+        </option>
+      </select>
+      <input
+        :if={!@field.enum_options}
+        id={field_dom_id(@field.path)}
+        name={"field[#{@field.path}]"}
+        type="text"
+        value={Map.get(@draft_fields, @field.path, @field.value)}
+        class="flex-1 bac-input bac-input-sm bac-mono text-xs"
+        disabled={field_disabled?(@draft_fields, @field, @writing)}
+        phx-debounce="300"
+      />
     </div>
     """
   end
@@ -233,11 +346,23 @@ defmodule BacViewWeb.WritePropertyModal do
     Map.get(draft_fields, field.path, field.value) == Atom.to_string(opt.value)
   end
 
-  defp editor_submit_disabled?(:fields, field_error, _json_error, form_fields) do
-    field_error != nil or form_fields == []
+  defp editor_submit_disabled?(
+         :fields,
+         field_error,
+         _json_error,
+         form_fields,
+         editable_collection?
+       ) do
+    field_error != nil or (form_fields == [] and not editable_collection?)
   end
 
-  defp editor_submit_disabled?(:json, _field_error, json_error, _form_fields) do
+  defp editor_submit_disabled?(
+         :json,
+         _field_error,
+         json_error,
+         _form_fields,
+         _editable_collection?
+       ) do
     json_error != nil
   end
 end

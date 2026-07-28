@@ -4,6 +4,7 @@ defmodule BacViewWeb.ObjectTable do
   use BacViewWeb.LocaleAttrs
 
   alias BacView.BACnet.Protocol.ObjectTypes
+  alias BacView.BACnet.Protocol.StatusFlagsParser
   alias BacView.NaturalSort
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.SearchQuery
@@ -338,7 +339,7 @@ defmodule BacViewWeb.ObjectTable do
               </td>
               <td>
                 <StatusFlagsIcons.status_flags_icons
-                  flags={Map.get(obj, :status_flags)}
+                  flags={StatusFlagsParser.from_object(obj)}
                   locale={@locale}
                   locale_version={@locale_version}
                 />
@@ -563,7 +564,7 @@ defmodule BacViewWeb.ObjectTable do
 
   @doc false
   def object_active_status_flags(obj) do
-    StatusFlagsIcons.active_flags(Map.get(obj, :status_flags))
+    StatusFlagsIcons.active_flags(StatusFlagsParser.from_object(obj))
   end
 
   @doc false

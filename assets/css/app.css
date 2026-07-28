@@ -362,6 +362,90 @@ body {
   overflow: visible;
 }
 
+/* Split button: primary action + narrow chevron (one control, shared edge square) */
+.bac-btn-split {
+  display: inline-flex;
+  align-items: stretch;
+  vertical-align: middle;
+}
+
+.bac-btn-split > .bac-btn-split-start {
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  /* Collapse double border on the shared edge */
+  border-right-width: 0;
+}
+
+.bac-btn-split-details {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.bac-btn-split-details > .bac-btn-split-end {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+  width: 1.5rem;
+  min-width: 1.5rem;
+  max-width: 1.5rem;
+  padding-left: 0;
+  padding-right: 0;
+  gap: 0;
+}
+
+.bac-btn-split-toggle {
+  list-style: none;
+  user-select: none;
+}
+
+.bac-btn-split-toggle::-webkit-details-marker {
+  display: none;
+}
+
+.bac-btn-split-toggle::marker {
+  content: "";
+  display: none;
+}
+
+.bac-btn-split-menu {
+  position: absolute;
+  right: 0;
+  top: calc(100% + 0.25rem);
+  z-index: 100;
+  min-width: 12rem;
+  border: 1px solid var(--bac-border);
+  border-radius: var(--bac-radius);
+  background: var(--bac-surface);
+  padding: 0.25rem;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+}
+
+.bac-btn-split-menu-item {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 0.5rem;
+  border: 0;
+  border-radius: calc(var(--bac-radius) - 2px);
+  background: transparent;
+  padding: 0.375rem 0.625rem;
+  text-align: left;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--bac-text-muted);
+  cursor: pointer;
+}
+
+.bac-btn-split-menu-item:hover:not(:disabled) {
+  background: var(--bac-surface-hover);
+  color: var(--bac-text);
+}
+
+.bac-btn-split-menu-item:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
 .bac-icon {
   display: inline-flex;
   align-items: center;

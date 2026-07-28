@@ -69,7 +69,26 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
     do: if(value, do: "true", else: "false")
 
   def format_edit_value(value, _object, _prop) when is_atom(value), do: Atom.to_string(value)
-  def format_edit_value(value, _object, _prop) when is_binary(value), do: value
+
+  def format_edit_value(value, _object, prop) when is_binary(value) do
+    cond do
+      Text.printable_text?(value) ->
+        value
+
+      # Opaque octets (incl. MAC addresses): hex is form-safe and round-trips with encoding=hex.
+      octet_string_prop?(prop) ->
+        format_binary_hex(value)
+
+      character_string_prop?(prop) ->
+        Text.sanitize_utf8(value) || ""
+
+      Text.opaque_binary?(value) ->
+        format_binary_hex(value)
+
+      true ->
+        Text.sanitize_utf8(value) || ""
+    end
+  end
 
   def format_edit_value(value, _object, _prop) when is_integer(value),
     do: Integer.to_string(value)
@@ -306,6 +325,19 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   """
   @spec format_binary_hex(binary()) :: String.t()
   def format_binary_hex(binary) when is_binary(binary), do: format_hex_address(binary)
+
+  @doc """
+  True when the default formatted view differs from colon-hex of the same bytes.
+
+  Used to hide the "Als Hex" / "Als Text" toggle when both modes would show the
+  same string (e.g. opaque octets that already default to hex).
+  """
+  @spec hex_display_differs?(String.t() | nil, binary() | nil) :: boolean()
+  def hex_display_differs?(formatted, binary)
+      when is_binary(formatted) and is_binary(binary),
+      do: formatted != format_binary_hex(binary)
+
+  def hex_display_differs?(_formatted, _binary), do: false
 
   @spec format_mac_address(binary() | :broadcast) :: String.t()
   def format_mac_address(:broadcast), do: "broadcast"
@@ -711,6 +743,16 @@ defmodule BacView.BACnet.Protocol.PropertyFormatter do
   defp real_present_value_prop?(%{bac_type: :real}), do: true
   defp real_present_value_prop?(%{type: "REAL"}), do: true
   defp real_present_value_prop?(_real_present_value_prop), do: false
+
+  defp octet_string_prop?(%{bac_type: :octet_string}), do: true
+  defp octet_string_prop?(%{type: "OCTET STRING"}), do: true
+  defp octet_string_prop?(_prop), do: false
+
+  defp character_string_prop?(%{bac_type: type}) when type in [:string, :character_string],
+    do: true
+
+  defp character_string_prop?(%{type: "CHARACTER STRING"}), do: true
+  defp character_string_prop?(_prop), do: false
 
   defp format_real_present_value(value, units, _object) when is_integer(value) do
     with_units(Integer.to_string(value), units)

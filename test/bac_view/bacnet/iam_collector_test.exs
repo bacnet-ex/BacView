@@ -136,4 +136,22 @@ defmodule BacView.BACnet.IAmCollectorTest do
     origin = {{192, 168, 100, 111}, 47_808}
     assert Task.await(task) == {origin, 42, origin}
   end
+
+  test "collect_while returns stack_not_started when client process is absent" do
+    client = BacView.BACnet.Client.stack_client()
+
+    # Default test app config keeps the stack off; if a suite starts it, skip.
+    if Process.whereis(client) do
+      :ok
+    else
+      log =
+        capture_log(fn ->
+          assert {:error, :stack_not_started} =
+                   IAmCollector.collect_while(fn -> flunk("send_fun must not run") end, 100)
+        end)
+
+      refute log =~ "[error]"
+      refute log =~ "noproc"
+    end
+  end
 end
