@@ -37,6 +37,7 @@ defmodule BacViewWeb.ObjectLive do
   alias BacViewWeb.ActiveCovSubscriptionsPopup
   alias BacViewWeb.CovNotificationChartLive
   alias BacViewWeb.CovNotificationChartModal
+  alias BacViewWeb.DeviceScanRecovery
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.LiveFlash
   alias BacViewWeb.LogViewerLive
@@ -81,6 +82,9 @@ defmodule BacViewWeb.ObjectLive do
            |> assign(:loading, true)
            |> assign(:properties_loading, true)
            |> assign(:properties_progress, nil)
+           |> assign(:property_load_recovery, nil)
+           |> assign(:pending_recovery_mode, nil)
+           |> assign(:recovery_applied, nil)
            |> assign(:subscribed_keys, MapSet.new())
            |> assign(:subscriptions, [])
            |> assign(:cov_count, 0)
@@ -269,10 +273,12 @@ defmodule BacViewWeb.ObjectLive do
     socket =
       case props_result do
         {:error, reason} ->
-          LiveFlash.put_error(socket, :load_properties, reason)
+          socket
+          |> assign(:property_load_recovery, DeviceSession.property_read_recovery(reason))
+          |> LiveFlash.put_error(:load_properties, reason)
 
         _load_object ->
-          socket
+          assign(socket, :property_load_recovery, nil)
       end
 
     {:noreply, socket}
@@ -511,6 +517,8 @@ defmodule BacViewWeb.ObjectLive do
 
   @impl true
   def handle_info({:properties_refreshed, result}, socket) do
+    recovery_mode = Map.get(socket.assigns, :pending_recovery_mode)
+
     socket =
       case result do
         {:ok, %{properties: properties, unknown_properties: unknown}} ->
@@ -519,25 +527,43 @@ defmodule BacViewWeb.ObjectLive do
 
           enriched = PropertyWriter.enrich_properties(properties, object)
 
-          socket
-          |> assign(:object, Text.sanitize_object(object))
-          |> assign(:properties, enriched)
-          |> assign(:unknown_properties, unknown)
-          |> assign(:unknown_property_hex_keys, MapSet.new())
-          |> assign(:property_hex_keys, MapSet.new())
-          |> assign(:property_enum_free_keys, MapSet.new())
-          |> assign(:properties_loading, false)
-          |> assign(:properties_progress, nil)
-          |> assign(:writing_property, nil)
-          |> assign_object_nav_targets(object, enriched, socket.assigns.device_objects)
-          |> maybe_refresh_object_summary(enriched, object)
-          |> maybe_refresh_file_metadata(object, enriched)
+          socket =
+            socket
+            |> assign(:object, Text.sanitize_object(object))
+            |> assign(:properties, enriched)
+            |> assign(:unknown_properties, unknown)
+            |> assign(:unknown_property_hex_keys, MapSet.new())
+            |> assign(:property_hex_keys, MapSet.new())
+            |> assign(:property_enum_free_keys, MapSet.new())
+            |> assign(:properties_loading, false)
+            |> assign(:properties_progress, nil)
+            |> assign(:writing_property, nil)
+            |> assign(:property_load_recovery, nil)
+            |> assign(:pending_recovery_mode, nil)
+            |> assign_object_nav_targets(object, enriched, socket.assigns.device_objects)
+            |> maybe_refresh_object_summary(enriched, object)
+            |> maybe_refresh_file_metadata(object, enriched)
+
+          if recovery_mode do
+            socket
+            |> assign(:recovery_applied, recovery_mode)
+            |> put_flash(
+              :info,
+              gt("Eigenschaften erfolgreich nachgelesen (%{mode}).",
+                mode: recovery_mode_label(recovery_mode)
+              )
+            )
+          else
+            assign(socket, :recovery_applied, nil)
+          end
 
         {:error, reason} ->
           socket
           |> assign(:properties_loading, false)
           |> assign(:properties_progress, nil)
           |> assign(:writing_property, nil)
+          |> assign(:pending_recovery_mode, nil)
+          |> assign(:property_load_recovery, DeviceSession.property_read_recovery(reason))
           |> LiveFlash.put_error(:refresh_properties, reason)
       end
 
@@ -547,6 +573,35 @@ defmodule BacViewWeb.ObjectLive do
   @impl true
   def handle_event("refresh_properties", _params, socket) do
     {:noreply, start_properties_refresh(socket)}
+  end
+
+  @impl true
+  def handle_event("retry_property_load", params, socket) do
+    if socket.assigns.properties_loading do
+      {:noreply, socket}
+    else
+      case DeviceSession.parse_recovery_mode(params["skip-mode"]) do
+        {:ok, recovery_mode} ->
+          parent = self()
+          device_id = socket.assigns.device_id
+          object_id = socket.assigns.object_id
+
+          Task.start(fn ->
+            result = DeviceSession.read_properties(device_id, object_id, skip_mode: recovery_mode)
+            send(parent, {:properties_refreshed, result})
+          end)
+
+          {:noreply,
+           socket
+           |> assign(:properties_loading, true)
+           |> assign(:properties_progress, nil)
+           |> assign(:property_load_recovery, nil)
+           |> assign(:pending_recovery_mode, recovery_mode)}
+
+        :error ->
+          {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+      end
+    end
   end
 
   @impl true
@@ -740,20 +795,23 @@ defmodule BacViewWeb.ObjectLive do
           |> Map.merge(ComplexPropertyEditor.normalize_field_params(fields))
           |> clear_tag_number_for_primitive_encoding()
 
-        {draft_value, field_error} =
+        modal =
           case ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, draft_value) do
-            {:ok, updated} -> {updated, nil}
-            {:error, reason} -> {draft_value, format_editor_error(reason)}
+            {:ok, updated} ->
+              # CHOICE / structural edits change which paths exist; rebuild the field list.
+              # Same-path edits keep the submitted draft_fields map (typing UX).
+              apply_write_property_field_change(modal, updated, fields)
+
+            {:error, reason} ->
+              %{
+                modal
+                | draft_fields: fields,
+                  field_error: format_editor_error(reason),
+                  submit_error: nil
+              }
           end
 
-        {:noreply,
-         assign(socket, :write_property_modal, %{
-           modal
-           | draft_fields: fields,
-             draft_value: draft_value,
-             field_error: field_error,
-             submit_error: nil
-         })}
+        {:noreply, assign(socket, :write_property_modal, modal)}
 
       _handle_event ->
         {:noreply, socket}
@@ -793,7 +851,10 @@ defmodule BacViewWeb.ObjectLive do
         with {:ok, current} <-
                ComplexPropertyEditor.apply_form_fields(%{"field" => draft_fields}, draft_value),
              {:ok, updated} <-
-               ComplexPropertyEditor.add_item(current, property: prop.property) do
+               ComplexPropertyEditor.add_item(current,
+                 property: prop.property,
+                 object_type: object_type_for_editor(socket)
+               ) do
           {:noreply,
            assign(
              socket,
@@ -1886,8 +1947,19 @@ defmodule BacViewWeb.ObjectLive do
       socket
       |> assign(:properties_loading, true)
       |> assign(:properties_progress, nil)
+      |> assign(:property_load_recovery, nil)
+      |> assign(:pending_recovery_mode, nil)
     end
   end
+
+  defp recovery_mode_label(:value), do: gt("Wertvalidierung übersprungen")
+  defp recovery_mode_label(:ignore_invalid), do: gt("Ungültige Eigenschaften ausgelassen")
+  defp recovery_mode_label(true), do: gt("Alle Validierung übersprungen")
+
+  defp recovery_mode_label(:skip_all_and_ignore_invalid),
+    do: gt("Maximale Lockerung angewendet")
+
+  defp recovery_mode_label(_mode), do: gt("reduzierte Validierung")
 
   defp object_id_match?(%ObjectIdentifier{type: type, instance: instance}, %ObjectIdentifier{
          type: type,
@@ -1946,6 +2018,13 @@ defmodule BacViewWeb.ObjectLive do
 
   defp decode_write_property_modal(%{editor_mode: :json, property: prop, draft_json: json}) do
     ComplexPropertyEditor.decode_json(json, prop.value)
+  end
+
+  defp object_type_for_editor(socket) do
+    case socket.assigns[:object] do
+      %{type: type} when is_atom(type) -> type
+      _object -> nil
+    end
   end
 
   defp clear_tag_number_for_primitive_encoding(fields) do
@@ -2107,6 +2186,34 @@ defmodule BacViewWeb.ObjectLive do
         submit_error: nil
     }
   end
+
+  # After a successful field apply: if the editable path set changed (CHOICE branch,
+  # encoding shape, etc.), rebuild form_fields/draft_fields from draft_value so the
+  # modal shows the new branch. Otherwise keep the submitted draft_fields for typing.
+  defp apply_write_property_field_change(modal, updated_value, submitted_fields) do
+    new_form_fields = ComplexPropertyEditor.form_fields(updated_value)
+
+    if form_field_paths(modal.form_fields) == form_field_paths(new_form_fields) do
+      %{
+        modal
+        | draft_fields: submitted_fields,
+          draft_value: updated_value,
+          form_fields: new_form_fields,
+          field_error: nil,
+          submit_error: nil
+      }
+    else
+      refresh_write_property_fields(modal, updated_value)
+    end
+  end
+
+  defp form_field_paths(fields) when is_list(fields) do
+    fields
+    |> Enum.map(& &1.path)
+    |> Enum.sort()
+  end
+
+  defp form_field_paths(_fields), do: []
 
   defp update_weekly_schedule_day(socket, modal, entries) do
     %{draft: draft, active_day: active_day, value_kind: value_kind} = modal
@@ -2379,7 +2486,33 @@ defmodule BacViewWeb.ObjectLive do
         <% end %>
       </:topbar_end>
 
-      <%= for _ <- [{@locale_version, @loading, @properties_loading, @properties_progress}] do %>
+      <%= for _ <- [
+            {@locale_version, @loading, @properties_loading, @properties_progress,
+             @property_load_recovery, @recovery_applied}
+          ] do %>
+        <div
+          :if={!@properties_loading && @recovery_applied}
+          id="property-recovery-applied-banner"
+          class="mx-5 mt-3 rounded-lg border border-[var(--bac-accent)]/25 bg-[var(--bac-accent)]/8 px-4 py-2 text-xs text-[var(--bac-text)]"
+          role="status"
+        >
+          {t(
+            @locale,
+            @locale_version,
+            "Eigenschaften wurden mit reduzierter Validierung gelesen (%{mode}).",
+            mode: recovery_mode_label(@recovery_applied)
+          )}
+        </div>
+
+        <div :if={!@properties_loading && @property_load_recovery} class="px-5">
+          <DeviceScanRecovery.property_load_recovery_panel
+            recovery={@property_load_recovery}
+            retrying?={@properties_loading}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
+        </div>
+
         <ObjectDetail.object_detail
           device={@device}
           object={@object}

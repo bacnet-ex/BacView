@@ -20,9 +20,14 @@ defmodule BacView.BACnet.ValidationSkipStoreTest do
       assert ValidationSkipStore.get(device_id, object) == :value
       assert ValidationSkipStore.get(device_id, other) == true
 
+      ignore_object = %ObjectIdentifier{type: :multi_state_value, instance: 9}
+      assert ValidationSkipStore.put(device_id, ignore_object, :ignore_invalid) == :ok
+      assert ValidationSkipStore.get(device_id, ignore_object) == :ignore_invalid
+
       assert ValidationSkipStore.clear_device(device_id) == :ok
       assert ValidationSkipStore.get(device_id, object) == nil
       assert ValidationSkipStore.get(device_id, other) == nil
+      assert ValidationSkipStore.get(device_id, ignore_object) == nil
     end)
   end
 

@@ -22,8 +22,16 @@ defmodule BacView.BACnet.PropertyLoad do
     object_opts: [allow_numeric_constants: true]
   ]
 
+  @type recovery_mode :: :value | true | :ignore_invalid | :skip_all_and_ignore_invalid
+
+  @recovery_modes [:value, true, :ignore_invalid, :skip_all_and_ignore_invalid]
+
   @doc false
-  @spec property_read_opts(:value | true | nil, ObjectIdentifier.t() | nil) :: keyword()
+  @spec recovery_mode?(term()) :: boolean()
+  def recovery_mode?(mode), do: mode in @recovery_modes
+
+  @doc false
+  @spec property_read_opts(recovery_mode() | nil, ObjectIdentifier.t() | nil) :: keyword()
   def property_read_opts(skip_mode \\ nil, device_obj \\ nil) do
     base =
       case device_obj do
@@ -40,12 +48,23 @@ defmodule BacView.BACnet.PropertyLoad do
 
     base
     |> Keyword.merge(@numeric_constant_opts)
-    |> put_skip_mode_object_opts(skip_mode)
+    |> put_recovery_mode_opts(skip_mode)
   end
 
-  defp put_skip_mode_object_opts(opts, nil), do: opts
+  # User-chosen recovery only. Never applied automatically on first failure.
+  defp put_recovery_mode_opts(opts, nil), do: opts
 
-  defp put_skip_mode_object_opts(opts, mode) when mode in [:value, true] do
+  defp put_recovery_mode_opts(opts, :ignore_invalid) do
+    Keyword.put(opts, :ignore_invalid_properties, true)
+  end
+
+  defp put_recovery_mode_opts(opts, :skip_all_and_ignore_invalid) do
+    opts
+    |> put_recovery_mode_opts(true)
+    |> put_recovery_mode_opts(:ignore_invalid)
+  end
+
+  defp put_recovery_mode_opts(opts, mode) when mode in [:value, true] do
     object_opts =
       opts
       |> Keyword.get(:object_opts, [])
@@ -55,13 +74,13 @@ defmodule BacView.BACnet.PropertyLoad do
   end
 
   @doc false
-  @spec scan_read_opts(ObjectIdentifier.t(), :value | true | nil) :: keyword()
+  @spec scan_read_opts(ObjectIdentifier.t(), recovery_mode() | nil) :: keyword()
   def scan_read_opts(%ObjectIdentifier{} = device_obj, skip_mode \\ nil) do
     property_read_opts(skip_mode, device_obj)
   end
 
   @doc false
-  @spec device_scan_opts(integer(), ObjectIdentifier.t(), :value | true | nil, keyword()) ::
+  @spec device_scan_opts(integer(), ObjectIdentifier.t(), recovery_mode() | nil, keyword()) ::
           keyword()
   def device_scan_opts(device_id, %ObjectIdentifier{} = device_obj, skip_mode \\ nil, extra \\ []) do
     device_id
@@ -74,10 +93,11 @@ defmodule BacView.BACnet.PropertyLoad do
   end
 
   @doc """
-  Reads all properties for `object` with optional skip_mode and device context.
+  Reads all properties for `object` with optional recovery mode and device context.
 
-  Skip mode is applied via `object_opts` on the normal RPM/individual path; it
-  does **not** force the scan fallback path up front.
+  Recovery mode is applied on the normal RPM/individual path only when the user
+  previously chose it (or the caller passes it); it does **not** force the scan
+  fallback path up front and is never auto-selected on first failure.
 
   Optional `opts`:
   - `:on_property_progress` - `fun.(%{stage: :reading_properties, done: n, total: m})`
@@ -86,7 +106,7 @@ defmodule BacView.BACnet.PropertyLoad do
   @spec read(
           term(),
           ObjectIdentifier.t(),
-          :value | true | nil,
+          recovery_mode() | nil,
           ObjectIdentifier.t() | nil,
           keyword()
         ) ::

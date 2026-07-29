@@ -8,9 +8,12 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     BACnetDate,
     BACnetDateTime,
     BACnetTime,
+    CalendarEntry,
     DailySchedule,
+    Destination,
     DeviceObjectPropertyRef,
     EventMessageTexts,
+    NameValue,
     ObjectIdentifier,
     ObjectPropertyRef,
     Recipient,
@@ -20,7 +23,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
 
   alias BACnet.Protocol.ApplicationTags.Encoding
 
-  alias BacView.BACnet.Protocol.{ComplexPropertyEditor, PropertyFormatter}
+  alias BacView.BACnet.Protocol.{CollectionItemTemplate, ComplexPropertyEditor, PropertyFormatter}
 
   test "plug keeps dotted field names as flat keys" do
     assert %{"field" => %{"date.day" => "27", "time.hour" => "8"}} =
@@ -276,11 +279,359 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
 
   test "adds Destination entries to empty recipient_list" do
     assert {:ok, list} = ComplexPropertyEditor.add_item([], property: :recipient_list)
-    assert [%BACnet.Protocol.Destination{} = dest] = list
+    assert [%Destination{} = dest] = list
     assert dest.recipient.type == :address
 
     assert {:ok, two} = ComplexPropertyEditor.add_item(list, property: :recipient_list)
     assert length(two) == 2
+  end
+
+  test "adds blank NameValue to empty tags BACnetArray via schema" do
+    array = BACnetArray.new()
+
+    assert ComplexPropertyEditor.can_add_item?(array,
+             property: :tags,
+             object_type: :analog_input
+           )
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.add_item(array,
+               property: :tags,
+               object_type: :analog_input
+             )
+
+    assert BACnetArray.size(updated) == 1
+    assert {:ok, %NameValue{name: "", value: nil}} = BACnetArray.get_item(updated, 1)
+
+    fields = ComplexPropertyEditor.form_fields(updated)
+    assert Enum.any?(fields, &(&1.path == "0.name"))
+    assert Enum.any?(fields, &(&1.path == "0.value_kind"))
+    refute Enum.any?(fields, &String.starts_with?(&1.path, "0.value."))
+  end
+
+  test "adds blank string items to empty bit_text array via schema" do
+    array = BACnetArray.new()
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.add_item(array,
+               property: :bit_text,
+               object_type: :bitstring_value
+             )
+
+    assert BACnetArray.size(updated) == 1
+    assert {:ok, ""} = BACnetArray.get_item(updated, 1)
+  end
+
+  test "Recipient type change rebuilds active branch fields" do
+    dest = CollectionItemTemplate.blank_destination()
+    assert dest.recipient.type == :address
+
+    fields = ComplexPropertyEditor.form_fields(dest)
+    type_field = Enum.find(fields, &(&1.path == "recipient.type"))
+    assert type_field.enum_options != nil
+    assert Enum.any?(fields, &String.starts_with?(&1.path, "recipient.address"))
+    refute Enum.any?(fields, &String.starts_with?(&1.path, "recipient.device"))
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"recipient.type" => "device"}},
+               dest
+             )
+
+    assert updated.recipient.type == :device
+    assert %ObjectIdentifier{type: :device, instance: 0} = updated.recipient.device
+    assert updated.recipient.address == nil
+
+    updated_fields = ComplexPropertyEditor.form_fields(updated)
+    assert Enum.any?(updated_fields, &String.starts_with?(&1.path, "recipient.device"))
+    refute Enum.any?(updated_fields, &String.starts_with?(&1.path, "recipient.address"))
+  end
+
+  test "Recipient type change wins over stale previous-branch fields in same submit" do
+    dest = CollectionItemTemplate.blank_destination()
+
+    # Browser still has address fields in the form when type is changed.
+    params = %{
+      "field" => %{
+        "recipient.address.network" => "99",
+        "recipient.address.address" => "broadcast",
+        "recipient.type" => "device"
+      }
+    }
+
+    assert {:ok, updated} = ComplexPropertyEditor.apply_form_fields(params, dest)
+    assert updated.recipient.type == :device
+    assert updated.recipient.address == nil
+    assert %ObjectIdentifier{type: :device} = updated.recipient.device
+  end
+
+  test "CalendarEntry type change swaps date / range / week_n_day fields" do
+    entry = CollectionItemTemplate.blank_calendar_entry(:date)
+    fields = ComplexPropertyEditor.form_fields(entry)
+    assert Enum.any?(fields, &String.starts_with?(&1.path, "date."))
+    refute Enum.any?(fields, &String.starts_with?(&1.path, "date_range."))
+
+    assert {:ok, range_entry} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"type" => "date_range"}},
+               entry
+             )
+
+    assert %CalendarEntry{type: :date_range, date: nil, week_n_day: nil} = range_entry
+    assert range_entry.date_range != nil
+
+    range_fields = ComplexPropertyEditor.form_fields(range_entry)
+    assert Enum.any?(range_fields, &String.starts_with?(&1.path, "date_range."))
+    refute Enum.any?(range_fields, &(&1.path == "date" or String.starts_with?(&1.path, "date.")))
+  end
+
+  test "NameValue value_kind picker switches none / encoding only" do
+    nv = %NameValue{name: "exhaust", value: nil}
+    fields = ComplexPropertyEditor.form_fields(nv)
+    kind_field = Enum.find(fields, &(&1.path == "value_kind"))
+    assert kind_field.value == "none"
+    assert kind_field.enum_options != nil
+    refute Enum.any?(kind_field.enum_options, &(&1.value == "date_time"))
+
+    assert {:ok, with_encoding} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"value_kind" => "encoding"}},
+               nv
+             )
+
+    assert %Encoding{encoding: :primitive, type: :character_string, value: ""} =
+             with_encoding.value
+
+    encoding_fields = ComplexPropertyEditor.form_fields(with_encoding)
+    assert Enum.any?(encoding_fields, &(&1.path == "value.encoding"))
+
+    # BACnetDateTime is no longer a valid NameValue value in bacstack.
+    assert {:error, _reason} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"value_kind" => "date_time"}},
+               with_encoding
+             )
+  end
+
+  test "NameValue encoding fields survive resubmitted unchanged value_kind" do
+    # LiveView always resubmits value_kind with every field change. Applying it last
+    # must not rebuild a blank Encoding and wipe typed values.
+    nv = %NameValue{name: "", value: nil}
+
+    assert {:ok, with_kind} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"value_kind" => "encoding"}},
+               nv
+             )
+
+    array = BACnetArray.from_list([with_kind], false)
+
+    params = %{
+      "field" => %{
+        "0.name" => "Test",
+        "0.value.encoding" => "primitive",
+        "0.value.type" => "unsigned_integer",
+        "0.value.value" => "42",
+        "0.value_kind" => "encoding"
+      }
+    }
+
+    assert {:ok, updated} = ComplexPropertyEditor.apply_form_fields(params, array)
+    assert {:ok, item} = BACnetArray.get_item(updated, 1)
+    assert item.name == "Test"
+    assert %Encoding{encoding: :primitive, type: :unsigned_integer, value: 42} = item.value
+    assert {:ok, _tags} = NameValue.encode(item)
+  end
+
+  test "date/time component 0 stays integer 0 and is not coerced to unspecified" do
+    time = %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0}
+
+    assert {:ok, updated} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{
+                 "field" => %{
+                   "hour" => "0",
+                   "minute" => "0",
+                   "second" => "0",
+                   "hundredth" => "0"
+                 }
+               },
+               time
+             )
+
+    assert updated == %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0}
+
+    # Starting from :unspecified (blank date pattern / after kind switch), typing 0
+    # must parse as integer — not stay on the atom path.
+    date = %BACnetDate{
+      year: :unspecified,
+      month: :unspecified,
+      day: :unspecified,
+      weekday: :unspecified
+    }
+
+    assert {:ok, date_updated} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{
+                 "field" => %{
+                   "year" => "2026",
+                   "month" => "1",
+                   "day" => "2",
+                   "weekday" => "0"
+                 }
+               },
+               date
+             )
+
+    assert date_updated.year == 2026
+    assert date_updated.month == 1
+    assert date_updated.day == 2
+    # weekday 0 is invalid in BACnet (1..7) but must remain the integer 0, not :unspecified
+    assert date_updated.weekday == 0
+
+    assert {:ok, from_unspecified_time} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"hour" => "0", "minute" => "15"}},
+               %BACnetTime{
+                 hour: :unspecified,
+                 minute: :unspecified,
+                 second: :unspecified,
+                 hundredth: :unspecified
+               }
+             )
+
+    assert from_unspecified_time.hour == 0
+    assert from_unspecified_time.minute == 15
+    assert from_unspecified_time.second == :unspecified
+
+    fields = ComplexPropertyEditor.form_fields(from_unspecified_time)
+    hour_field = Enum.find(fields, &(&1.path == "hour"))
+    assert hour_field.value == "0"
+    refute hour_field.value == "unspecified"
+  end
+
+  test "NameValue field order is name, value_kind, then value payload" do
+    nv = %NameValue{
+      name: "exhaust",
+      value: CollectionItemTemplate.blank_encoding()
+    }
+
+    paths =
+      nv
+      |> ComplexPropertyEditor.form_fields()
+      |> Enum.map(& &1.path)
+
+    assert paths == [
+             "name",
+             "value_kind",
+             "value.encoding",
+             "value.type",
+             "value.extras.tag_number",
+             "value.value"
+           ]
+
+    array = BACnetArray.from_list([nv], false)
+    form_fields = ComplexPropertyEditor.form_fields(array)
+
+    assert {:items, [%{index: 0, fields: item_fields}]} =
+             ComplexPropertyEditor.form_field_groups(form_fields)
+
+    item_paths = Enum.map(item_fields, & &1.path)
+    assert List.first(item_paths) == "0.name"
+    assert Enum.at(item_paths, 1) == "0.value_kind"
+    # value payload must stay after value_kind (alphabetical sort used to break this)
+    kind_idx = Enum.find_index(item_paths, &(&1 == "0.value_kind"))
+    value_idx = Enum.find_index(item_paths, &(&1 == "0.value.encoding"))
+    assert kind_idx < value_idx
+  end
+
+  test "Recipient type appears above address/device payload fields" do
+    dest = CollectionItemTemplate.blank_destination()
+    paths = dest |> ComplexPropertyEditor.form_fields() |> Enum.map(& &1.path)
+
+    type_idx = Enum.find_index(paths, &(&1 == "recipient.type"))
+    assert type_idx != nil
+
+    address_paths =
+      Enum.with_index(paths)
+      |> Enum.filter(fn {p, _} -> String.starts_with?(p, "recipient.address") end)
+
+    assert address_paths != []
+    assert Enum.all?(address_paths, fn {_p, idx} -> type_idx < idx end)
+  end
+
+  test "blank NameValue kind change still applies and exposes encoding fields" do
+    # Fresh add-entry blank: empty name / other fields must not be validated on kind switch.
+    nv = %NameValue{name: "", value: nil}
+
+    params = %{
+      "field" => %{
+        "name" => "",
+        "value_kind" => "encoding"
+      }
+    }
+
+    assert {:ok, updated} = ComplexPropertyEditor.apply_form_fields(params, nv)
+    assert updated.name == ""
+    assert %Encoding{type: :character_string, value: ""} = updated.value
+
+    fields = ComplexPropertyEditor.form_fields(updated)
+    paths = Enum.map(fields, & &1.path)
+    assert "value_kind" in paths
+    assert "value.encoding" in paths
+    assert "value.type" in paths
+    assert "value.value" in paths
+  end
+
+  test "kind change ignores failing sibling fields from previous branch" do
+    # Previous branch still submits invalid/empty sibling values that would always fail.
+    nv = %NameValue{name: "tag", value: nil}
+
+    params = %{
+      "field" => %{
+        "name" => "",
+        "value_kind" => "encoding",
+        # Stale / would-be-invalid noise that must not block the kind switch
+        "value.value" => "",
+        "value.type" => "not_a_type"
+      }
+    }
+
+    assert {:ok, updated} = ComplexPropertyEditor.apply_form_fields(params, nv)
+    assert updated.name == "tag"
+    assert %Encoding{encoding: :primitive, type: :character_string} = updated.value
+  end
+
+  test "blank NameValue kind change works inside tags collection paths" do
+    array = BACnetArray.from_list([%NameValue{name: "", value: nil}], false)
+
+    params = %{
+      "field" => %{
+        "0.name" => "",
+        "0.value_kind" => "encoding"
+      }
+    }
+
+    assert {:ok, updated} = ComplexPropertyEditor.apply_form_fields(params, array)
+
+    assert {:ok, %NameValue{name: "", value: %Encoding{encoding: :primitive}}} =
+             BACnetArray.get_item(updated, 1)
+
+    fields = ComplexPropertyEditor.form_fields(updated)
+    assert Enum.any?(fields, &(&1.path == "0.value_kind"))
+    assert Enum.any?(fields, &(&1.path == "0.value.encoding"))
+    assert Enum.any?(fields, &(&1.path == "0.value.type"))
+  end
+
+  test "CollectionItemTemplate resolves tags item type from object schema" do
+    assert {:ok, {:struct, NameValue}} =
+             CollectionItemTemplate.collection_item_type(:tags, :analog_value)
+
+    assert {:ok, %NameValue{name: "", value: nil}} =
+             CollectionItemTemplate.default_item(
+               property: :tags,
+               object_type: :analog_value
+             )
   end
 
   test "rejects misspelled multistate_value object type in JSON" do

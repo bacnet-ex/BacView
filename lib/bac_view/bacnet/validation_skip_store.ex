@@ -1,10 +1,13 @@
 defmodule BacView.BACnet.ValidationSkipStore do
   @moduledoc """
-  Owns property-validation skip modes chosen during scan recovery.
+  Owns read-recovery modes chosen during scan recovery (user-initiated only).
 
-  Modes match the bacstack `skip_property_validation_remote_object` option:
-  - `:value` - skip value validation only
-  - `true` - skip type and value validation
+  Modes:
+  - `:value` - `skip_property_validation_remote_object: :value` (value checks only)
+  - `true` - `skip_property_validation_remote_object: true` (type and value checks)
+  - `:ignore_invalid` - `ignore_invalid_properties: true` (drop properties that
+    fail cast/decode; rest of the object still loads)
+  - `:skip_all_and_ignore_invalid` - both full skip validation and ignore invalid
 
   Resolution order for a read:
   1. Tagged object summaries on the live session (`state.objects`)
@@ -19,9 +22,9 @@ defmodule BacView.BACnet.ValidationSkipStore do
   alias BACnet.Protocol.ObjectIdentifier
 
   @table :bacview_validation_skip_modes
-  @modes [:value, true]
+  @modes [:value, true, :ignore_invalid, :skip_all_and_ignore_invalid]
 
-  @type mode :: :value | true
+  @type mode :: :value | true | :ignore_invalid | :skip_all_and_ignore_invalid
 
   @spec get(integer(), ObjectIdentifier.t()) :: mode() | nil
   def get(device_id, %ObjectIdentifier{} = object) when is_integer(device_id) do

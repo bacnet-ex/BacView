@@ -13,7 +13,9 @@ defmodule BacViewWeb.DeviceScanRecovery do
     scan_retrying = Map.get(assigns, :scan_retrying, %{})
 
     value_bulk? = bulk_retry_available?(scan_errors, :value)
+    ignore_invalid_bulk? = bulk_retry_available?(scan_errors, :ignore_invalid)
     all_bulk? = bulk_retry_available?(scan_errors, true)
+    maximal_bulk? = bulk_retry_available?(scan_errors, :skip_all_and_ignore_invalid)
 
     assigns =
       assigns
@@ -21,8 +23,13 @@ defmodule BacViewWeb.DeviceScanRecovery do
       |> assign(:scan_retrying, scan_retrying)
       |> assign(:scan_recovery_open, Map.get(assigns, :scan_recovery_open, false))
       |> assign(:value_bulk_available?, value_bulk?)
+      |> assign(:ignore_invalid_bulk_available?, ignore_invalid_bulk?)
       |> assign(:all_bulk_available?, all_bulk?)
-      |> assign(:any_retry_available?, value_bulk? or all_bulk?)
+      |> assign(:maximal_bulk_available?, maximal_bulk?)
+      |> assign(
+        :any_retry_available?,
+        value_bulk? or ignore_invalid_bulk? or all_bulk? or maximal_bulk?
+      )
       |> assign(:any_retrying?, scan_retry_in_progress?(scan_retrying))
 
     ~H"""
@@ -74,7 +81,10 @@ defmodule BacViewWeb.DeviceScanRecovery do
         </span>
       </div>
       <div
-        :if={@value_bulk_available? or @all_bulk_available?}
+        :if={
+          @value_bulk_available? or @ignore_invalid_bulk_available? or @all_bulk_available? or
+            @maximal_bulk_available?
+        }
         class="bac-collapsible-content mt-3 flex flex-wrap gap-2"
       >
         <button
@@ -98,6 +108,26 @@ defmodule BacViewWeb.DeviceScanRecovery do
           {t(@locale, @locale_version, "Alle: Wertvalidierung überspringen")}
         </button>
         <button
+          :if={@ignore_invalid_bulk_available?}
+          type="button"
+          id="device-scan-recovery-bulk-ignore-invalid"
+          phx-click="retry_all_scan_objects"
+          phx-value-skip-mode="ignore-invalid"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@any_retrying?}
+          class={[
+            "bac-btn bac-btn-sm",
+            @any_retrying? && "opacity-60 cursor-wait"
+          ]}
+        >
+          <.icon
+            :if={@any_retrying?}
+            name="hero-arrow-path"
+            class="size-3.5 animate-spin"
+          />
+          {t(@locale, @locale_version, "Alle: Ungültige Eigenschaften auslassen")}
+        </button>
+        <button
           :if={@all_bulk_available?}
           type="button"
           id="device-scan-recovery-bulk-all"
@@ -116,6 +146,26 @@ defmodule BacViewWeb.DeviceScanRecovery do
             class="size-3.5 animate-spin"
           />
           {t(@locale, @locale_version, "Alle: Validierung überspringen")}
+        </button>
+        <button
+          :if={@maximal_bulk_available?}
+          type="button"
+          id="device-scan-recovery-bulk-maximal"
+          phx-click="retry_all_scan_objects"
+          phx-value-skip-mode="skip-all-and-ignore-invalid"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@any_retrying?}
+          class={[
+            "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
+            @any_retrying? && "opacity-60 cursor-wait"
+          ]}
+        >
+          <.icon
+            :if={@any_retrying?}
+            name="hero-arrow-path"
+            class="size-3.5 animate-spin"
+          />
+          {t(@locale, @locale_version, "Alle: Maximal nachlesen")}
         </button>
       </div>
       <ul class="bac-collapsible-content mt-3 space-y-3">
@@ -154,6 +204,28 @@ defmodule BacViewWeb.DeviceScanRecovery do
               {t(@locale, @locale_version, "Wertvalidierung überspringen")}
             </button>
             <button
+              :if={:ignore_invalid in entry.retry_modes}
+              type="button"
+              id={"device-scan-recovery-ignore-invalid-#{index}"}
+              phx-click="retry_scan_object"
+              phx-value-type={entry.type}
+              phx-value-instance={entry.instance}
+              phx-value-skip-mode="ignore-invalid"
+              phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+              disabled={@any_retrying?}
+              class={[
+                "bac-btn bac-btn-sm",
+                retrying?(@scan_retrying, entry.key) && "opacity-60 cursor-wait"
+              ]}
+            >
+              <.icon
+                :if={retrying?(@scan_retrying, entry.key)}
+                name="hero-arrow-path"
+                class="size-3.5 animate-spin"
+              />
+              {t(@locale, @locale_version, "Ungültige Eigenschaften auslassen")}
+            </button>
+            <button
               :if={true in entry.retry_modes}
               type="button"
               id={"device-scan-recovery-all-#{index}"}
@@ -175,12 +247,51 @@ defmodule BacViewWeb.DeviceScanRecovery do
               />
               {t(@locale, @locale_version, "Alle Validierung überspringen")}
             </button>
+            <button
+              :if={:skip_all_and_ignore_invalid in entry.retry_modes}
+              type="button"
+              id={"device-scan-recovery-maximal-#{index}"}
+              phx-click="retry_scan_object"
+              phx-value-type={entry.type}
+              phx-value-instance={entry.instance}
+              phx-value-skip-mode="skip-all-and-ignore-invalid"
+              phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+              disabled={@any_retrying?}
+              class={[
+                "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
+                retrying?(@scan_retrying, entry.key) && "opacity-60 cursor-wait"
+              ]}
+            >
+              <.icon
+                :if={retrying?(@scan_retrying, entry.key)}
+                name="hero-arrow-path"
+                class="size-3.5 animate-spin"
+              />
+              {t(@locale, @locale_version, "Maximal nachlesen")}
+            </button>
           </div>
+          <p :if={:ignore_invalid in entry.retry_modes} class="mt-1.5 text-xs bac-text-faint">
+            {t(
+              @locale,
+              @locale_version,
+              "Ungültige Eigenschaften auslassen entfernt Eigenschaften, die nicht dekodiert werden können; die übrigen bleiben lesbar."
+            )}
+          </p>
           <p :if={true in entry.retry_modes} class="mt-1.5 text-xs bac-text-faint">
             {t(
               @locale,
               @locale_version,
               "Alle Validierung überspringen kann fehlerhafte Datentypen akzeptieren und sollte nur bei Bedarf verwendet werden."
+            )}
+          </p>
+          <p
+            :if={:skip_all_and_ignore_invalid in entry.retry_modes}
+            class="mt-1.5 text-xs bac-text-faint"
+          >
+            {t(
+              @locale,
+              @locale_version,
+              "Maximal nachlesen kombiniert das Auslassen ungültiger Eigenschaften mit dem Überspringen der Validierung."
             )}
           </p>
         </li>
@@ -235,5 +346,251 @@ defmodule BacViewWeb.DeviceScanRecovery do
       _reason ->
         Map.get(entry, :message, "")
     end
+  end
+
+  # Full device load failed on the device object — user must choose a recovery mode
+  # (or stop). Strict re-load without a mode stays available via the normal reload control.
+  attr(:recovery, :map, default: nil)
+  attr(:retrying?, :boolean, default: false)
+  attr(:locale, :string, default: "de")
+  attr(:locale_version, :integer, default: 0)
+
+  def device_load_recovery_panel(assigns) do
+    recovery = Map.get(assigns, :recovery)
+    retry_modes = if is_map(recovery), do: Map.get(recovery, :retry_modes, []), else: []
+
+    assigns =
+      assigns
+      |> assign(:recovery, recovery)
+      |> assign(:retry_modes, retry_modes)
+      |> assign(:retrying?, Map.get(assigns, :retrying?, false))
+      |> assign(:has_modes?, retry_modes != [])
+
+    ~H"""
+    <div
+      :if={@recovery && @has_modes?}
+      id="device-load-recovery-panel"
+      class="mx-5 mt-3 rounded-lg border border-[var(--bac-amber)]/30 bg-[var(--bac-amber)]/8 px-4 py-3"
+      role="region"
+      aria-label={t(@locale, @locale_version, "Geräteladen mit reduzierter Validierung")}
+    >
+      <p class="text-sm font-medium text-[var(--bac-amber)]">
+        {t(@locale, @locale_version, "Geräteobjekt konnte nicht gelesen werden")}
+      </p>
+      <p class="mt-1 text-xs bac-text-muted">
+        {error_entry_text(@recovery, @locale, @locale_version)}
+      </p>
+      <p class="mt-2 text-xs bac-text-muted">
+        {t(
+          @locale,
+          @locale_version,
+          "Sie können das Gerät mit reduzierter Validierung erneut laden oder abbrechen."
+        )}
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button
+          :if={:value in @retry_modes}
+          type="button"
+          id="device-load-recovery-value"
+          phx-click="retry_device_load"
+          phx-value-skip-mode="value"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={["bac-btn bac-btn-sm", @retrying? && "opacity-60 cursor-wait"]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Wertvalidierung überspringen")}
+        </button>
+        <button
+          :if={:ignore_invalid in @retry_modes}
+          type="button"
+          id="device-load-recovery-ignore-invalid"
+          phx-click="retry_device_load"
+          phx-value-skip-mode="ignore-invalid"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={["bac-btn bac-btn-sm", @retrying? && "opacity-60 cursor-wait"]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Ungültige Eigenschaften auslassen")}
+        </button>
+        <button
+          :if={true in @retry_modes}
+          type="button"
+          id="device-load-recovery-all"
+          phx-click="retry_device_load"
+          phx-value-skip-mode="all"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={[
+            "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
+            @retrying? && "opacity-60 cursor-wait"
+          ]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Alle Validierung überspringen")}
+        </button>
+        <button
+          :if={:skip_all_and_ignore_invalid in @retry_modes}
+          type="button"
+          id="device-load-recovery-maximal"
+          phx-click="retry_device_load"
+          phx-value-skip-mode="skip-all-and-ignore-invalid"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={[
+            "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
+            @retrying? && "opacity-60 cursor-wait"
+          ]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Maximal nachlesen")}
+        </button>
+      </div>
+      <p :if={:ignore_invalid in @retry_modes} class="mt-2 text-xs bac-text-faint">
+        {t(
+          @locale,
+          @locale_version,
+          "Ungültige Eigenschaften auslassen entfernt Eigenschaften, die nicht dekodiert werden können; die übrigen bleiben lesbar."
+        )}
+      </p>
+      <p :if={true in @retry_modes} class="mt-1.5 text-xs bac-text-faint">
+        {t(
+          @locale,
+          @locale_version,
+          "Alle Validierung überspringen kann fehlerhafte Datentypen akzeptieren und sollte nur bei Bedarf verwendet werden."
+        )}
+      </p>
+      <p :if={:skip_all_and_ignore_invalid in @retry_modes} class="mt-1.5 text-xs bac-text-faint">
+        {t(
+          @locale,
+          @locale_version,
+          "Maximal nachlesen kombiniert das Auslassen ungültiger Eigenschaften mit dem Überspringen der Validierung."
+        )}
+      </p>
+    </div>
+    """
+  end
+
+  attr(:recovery, :map, default: nil)
+  attr(:retrying?, :boolean, default: false)
+  attr(:locale, :string, default: "de")
+  attr(:locale_version, :integer, default: 0)
+
+  def property_load_recovery_panel(assigns) do
+    recovery = Map.get(assigns, :recovery)
+    retry_modes = if is_map(recovery), do: Map.get(recovery, :retry_modes, []), else: []
+
+    assigns =
+      assigns
+      |> assign(:recovery, recovery)
+      |> assign(:retry_modes, retry_modes)
+      |> assign(:retrying?, Map.get(assigns, :retrying?, false))
+      |> assign(:has_modes?, retry_modes != [])
+
+    ~H"""
+    <div
+      :if={@recovery && @has_modes?}
+      id="property-load-recovery-panel"
+      class="mx-0 mt-3 rounded-lg border border-[var(--bac-amber)]/30 bg-[var(--bac-amber)]/8 px-4 py-3"
+      role="region"
+      aria-label={t(@locale, @locale_version, "Eigenschaften mit reduzierter Validierung lesen")}
+    >
+      <p class="text-sm font-medium text-[var(--bac-amber)]">
+        {t(@locale, @locale_version, "Eigenschaften konnten nicht gelesen werden")}
+      </p>
+      <p class="mt-1 text-xs bac-text-muted">
+        {error_entry_text(@recovery, @locale, @locale_version)}
+      </p>
+      <p class="mt-2 text-xs bac-text-muted">
+        {t(
+          @locale,
+          @locale_version,
+          "Sie können die Eigenschaften mit reduzierter Validierung erneut lesen oder abbrechen."
+        )}
+      </p>
+      <div class="mt-3 flex flex-wrap gap-2">
+        <button
+          :if={:value in @retry_modes}
+          type="button"
+          id="property-load-recovery-value"
+          phx-click="retry_property_load"
+          phx-value-skip-mode="value"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={["bac-btn bac-btn-sm", @retrying? && "opacity-60 cursor-wait"]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Wertvalidierung überspringen")}
+        </button>
+        <button
+          :if={:ignore_invalid in @retry_modes}
+          type="button"
+          id="property-load-recovery-ignore-invalid"
+          phx-click="retry_property_load"
+          phx-value-skip-mode="ignore-invalid"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={["bac-btn bac-btn-sm", @retrying? && "opacity-60 cursor-wait"]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Ungültige Eigenschaften auslassen")}
+        </button>
+        <button
+          :if={true in @retry_modes}
+          type="button"
+          id="property-load-recovery-all"
+          phx-click="retry_property_load"
+          phx-value-skip-mode="all"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={[
+            "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
+            @retrying? && "opacity-60 cursor-wait"
+          ]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Alle Validierung überspringen")}
+        </button>
+        <button
+          :if={:skip_all_and_ignore_invalid in @retry_modes}
+          type="button"
+          id="property-load-recovery-maximal"
+          phx-click="retry_property_load"
+          phx-value-skip-mode="skip-all-and-ignore-invalid"
+          phx-disable-with={t(@locale, @locale_version, "Wird nachgelesen…")}
+          disabled={@retrying?}
+          class={[
+            "bac-btn bac-btn-sm border-[var(--bac-amber)]/40 text-[var(--bac-amber)] hover:bg-[var(--bac-amber)]/10",
+            @retrying? && "opacity-60 cursor-wait"
+          ]}
+        >
+          <.icon :if={@retrying?} name="hero-arrow-path" class="size-3.5 animate-spin" />
+          {t(@locale, @locale_version, "Maximal nachlesen")}
+        </button>
+      </div>
+      <p :if={:ignore_invalid in @retry_modes} class="mt-2 text-xs bac-text-faint">
+        {t(
+          @locale,
+          @locale_version,
+          "Ungültige Eigenschaften auslassen entfernt Eigenschaften, die nicht dekodiert werden können; die übrigen bleiben lesbar."
+        )}
+      </p>
+      <p :if={true in @retry_modes} class="mt-1.5 text-xs bac-text-faint">
+        {t(
+          @locale,
+          @locale_version,
+          "Alle Validierung überspringen kann fehlerhafte Datentypen akzeptieren und sollte nur bei Bedarf verwendet werden."
+        )}
+      </p>
+      <p :if={:skip_all_and_ignore_invalid in @retry_modes} class="mt-1.5 text-xs bac-text-faint">
+        {t(
+          @locale,
+          @locale_version,
+          "Maximal nachlesen kombiniert das Auslassen ungültiger Eigenschaften mit dem Überspringen der Validierung."
+        )}
+      </p>
+    </div>
+    """
   end
 end

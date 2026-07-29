@@ -139,7 +139,8 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
         :remote_device_id,
         :device_id,
         :allow_numeric_constants,
-        :allow_unknown_properties
+        :allow_unknown_properties,
+        :ignore_invalid_properties
       ])
 
     base =

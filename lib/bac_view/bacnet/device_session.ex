@@ -63,37 +63,104 @@ defmodule BacView.BACnet.DeviceSession do
     end
   end
 
-  @doc "Forces a fresh BACnet read even when the session is already loaded."
-  @spec reload(integer()) :: {:ok, map()} | {:error, term()}
-  def reload(device_id) do
-    with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-      GenServer.call(pid, :reload, @load_call_timeout)
-    end
-  end
-
   @doc """
-  Re-reads a single object from a prior scan failure using relaxed property validation.
+  Forces a fresh BACnet read even when the session is already loaded.
 
-  `skip_mode` is `:value` (skip value checks only) or `true` (skip type and value checks).
+  Options:
+  - `:recovery_mode` — user-chosen recovery for the **device object** read only
+    (`:value` | `true` | `:ignore_invalid` | `:skip_all_and_ignore_invalid`).
+    Never applied automatically.
   """
-  @spec retry_scan_object(integer(), ObjectIdentifier.t(), :value | true) ::
-          {:ok, map()} | {:error, term()}
-  def retry_scan_object(device_id, %ObjectIdentifier{} = object, skip_mode)
-      when skip_mode in [:value, true] do
-    with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-      GenServer.call(pid, {:retry_scan_object, object, skip_mode}, 60_000)
+  @spec reload(integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def reload(device_id, opts \\ []) when is_list(opts) do
+    recovery_mode = Keyword.get(opts, :recovery_mode)
+
+    if is_nil(recovery_mode) or PropertyLoad.recovery_mode?(recovery_mode) do
+      with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
+        GenServer.call(pid, {:reload, recovery_mode}, @load_call_timeout)
+      end
+    else
+      {:error, :invalid_recovery_mode}
     end
   end
 
   @doc """
-  Re-reads all recoverable scan failures using the given relaxed validation mode.
+  Builds a user-facing recovery offer when a full device load failed on the
+  device object itself. Returns `nil` when the reason is not recovery-eligible.
+  """
+  @spec device_object_load_recovery(term()) ::
+          %{reason: term(), retry_modes: [PropertyLoad.recovery_mode()]} | nil
+  def device_object_load_recovery(reason) do
+    case normalize_scan_error_reason(reason) do
+      {:device_object_read_failed, inner} ->
+        property_read_recovery(inner)
+
+      _other ->
+        nil
+    end
+  end
+
+  @doc """
+  Builds a user-facing recovery offer for a failed object property load.
+  Returns `nil` when the reason is not recovery-eligible.
+  """
+  @spec property_read_recovery(term()) ::
+          %{reason: term(), retry_modes: [PropertyLoad.recovery_mode()]} | nil
+  def property_read_recovery(reason) do
+    modes = retry_modes_for_reason(reason)
+
+    if modes == [] do
+      nil
+    else
+      %{reason: normalize_scan_error_reason(reason), retry_modes: modes}
+    end
+  end
+
+  @doc false
+  @spec parse_recovery_mode(term()) :: {:ok, PropertyLoad.recovery_mode()} | :error
+  def parse_recovery_mode("value"), do: {:ok, :value}
+  def parse_recovery_mode("ignore-invalid"), do: {:ok, :ignore_invalid}
+  def parse_recovery_mode("all"), do: {:ok, true}
+  def parse_recovery_mode("skip-all-and-ignore-invalid"), do: {:ok, :skip_all_and_ignore_invalid}
+  def parse_recovery_mode(_mode), do: :error
+
+  @doc """
+  Re-reads a single object from a prior scan failure using a user-chosen recovery mode.
+
+  Modes:
+  - `:value` — skip value validation only (`skip_property_validation_remote_object`)
+  - `true` — skip type and value validation
+  - `:ignore_invalid` — drop properties that fail cast/decode (`ignore_invalid_properties`)
+  - `:skip_all_and_ignore_invalid` — both full skip validation and ignore invalid
+
+  Never applied automatically; only after the user picks a recovery action.
+  """
+  @spec retry_scan_object(integer(), ObjectIdentifier.t(), PropertyLoad.recovery_mode()) ::
+          {:ok, map()} | {:error, term()}
+  def retry_scan_object(device_id, %ObjectIdentifier{} = object, skip_mode) do
+    if PropertyLoad.recovery_mode?(skip_mode) do
+      with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
+        GenServer.call(pid, {:retry_scan_object, object, skip_mode}, 60_000)
+      end
+    else
+      {:error, :invalid_recovery_mode}
+    end
+  end
+
+  @doc """
+  Re-reads all recoverable scan failures using the given user-chosen recovery mode.
 
   Returns `{:ok, %{succeeded: n, failed: m}}`.
   """
-  @spec retry_all_scan_objects(integer(), :value | true) :: {:ok, map()} | {:error, term()}
-  def retry_all_scan_objects(device_id, skip_mode) when skip_mode in [:value, true] do
-    with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-      GenServer.call(pid, {:retry_all_scan_objects, skip_mode}, :infinity)
+  @spec retry_all_scan_objects(integer(), PropertyLoad.recovery_mode()) ::
+          {:ok, map()} | {:error, term()}
+  def retry_all_scan_objects(device_id, skip_mode) do
+    if PropertyLoad.recovery_mode?(skip_mode) do
+      with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
+        GenServer.call(pid, {:retry_all_scan_objects, skip_mode}, :infinity)
+      end
+    else
+      {:error, :invalid_recovery_mode}
     end
   end
 
@@ -101,24 +168,36 @@ defmodule BacView.BACnet.DeviceSession do
   @spec recoverable_validation_error?(term()) :: boolean()
   def recoverable_validation_error?(reason) do
     case normalize_scan_error_reason(reason) do
-      # ObjectsMacro remote-object validation only (skip_property_validation_remote_object).
+      # ObjectsMacro remote-object validation (skip_property_validation_remote_object).
       {:value_failed_property_validation, _property} -> true
       {:invalid_property_type, _property} -> true
-      # ObjectsUtility decode/cast errors (invalid_property_value, missing_optional_property,
-      # …) are listed in scan_errors but are not skip-mode recoverable.
+      # ObjectsUtility cast/decode — user may drop bad properties (ignore_invalid_properties).
+      {:invalid_property_value, _detail} -> true
+      {:missing_parse_fun, _property} -> true
+      # Other failures (timeout, missing_optional_property, BACnet errors) stay non-recoverable.
       _other -> false
     end
   end
 
   @doc false
-  @spec retry_modes_for_reason(term()) :: [:value | true]
+  @spec retry_modes_for_reason(term()) :: [PropertyLoad.recovery_mode()]
   def retry_modes_for_reason(reason) do
     case normalize_scan_error_reason(reason) do
-      # Value validators only — type still checked; both skip modes useful.
-      {:value_failed_property_validation, _property} -> [:value, true]
-      # Type mismatches — full skip only.
-      {:invalid_property_type, _property} -> [true]
-      _other -> []
+      # Least → most aggressive.
+      {:value_failed_property_validation, _property} ->
+        [:value, :ignore_invalid, true, :skip_all_and_ignore_invalid]
+
+      {:invalid_property_type, _property} ->
+        [:ignore_invalid, true, :skip_all_and_ignore_invalid]
+
+      {:invalid_property_value, _detail} ->
+        [:ignore_invalid, :skip_all_and_ignore_invalid]
+
+      {:missing_parse_fun, _property} ->
+        [:ignore_invalid, :skip_all_and_ignore_invalid]
+
+      _other ->
+        []
     end
   end
 
@@ -245,6 +324,7 @@ defmodule BacView.BACnet.DeviceSession do
        hierarchy: %{roots: [], empty?: true, structured_view_count: 0},
        status: :idle,
        load_waiters: [],
+       load_recovery_mode: nil,
        scanned: []
      }}
   end
@@ -267,17 +347,43 @@ defmodule BacView.BACnet.DeviceSession do
   def handle_call(:load, from, state) do
     mark_device_status(state.device_id, :loading)
     send(self(), :fetch_device)
-    {:noreply, %{state | status: :loading, load_waiters: [from]}}
+
+    {:noreply, %{state | status: :loading, load_waiters: [from], load_recovery_mode: nil}}
   end
 
-  def handle_call(:reload, from, %{status: :loading, load_waiters: waiters} = state) do
-    {:noreply, %{state | load_waiters: [from | waiters]}}
+  def handle_call(
+        {:reload, recovery_mode},
+        from,
+        %{status: :loading, load_waiters: waiters} = state
+      )
+      when is_nil(recovery_mode) or
+             recovery_mode in [
+               :value,
+               true,
+               :ignore_invalid,
+               :skip_all_and_ignore_invalid
+             ] do
+    {:noreply, %{state | load_waiters: [from | waiters], load_recovery_mode: recovery_mode}}
   end
 
-  def handle_call(:reload, from, state) do
+  def handle_call({:reload, recovery_mode}, from, state)
+      when is_nil(recovery_mode) or
+             recovery_mode in [
+               :value,
+               true,
+               :ignore_invalid,
+               :skip_all_and_ignore_invalid
+             ] do
     mark_device_status(state.device_id, :loading)
     send(self(), :fetch_device)
-    {:noreply, %{state | status: :loading, load_waiters: [from]}}
+
+    {:noreply,
+     %{
+       state
+       | status: :loading,
+         load_waiters: [from],
+         load_recovery_mode: recovery_mode
+     }}
   end
 
   def handle_call(:objects, _from, %{objects: objects} = state) do
@@ -288,18 +394,24 @@ defmodule BacView.BACnet.DeviceSession do
     {:reply, scanned, state}
   end
 
-  def handle_call({:retry_scan_object, object, skip_mode}, _from, state)
-      when skip_mode in [:value, true] do
-    case retry_scan_object_impl(state, object, skip_mode) do
-      {:ok, summary, new_state} -> {:reply, {:ok, summary}, new_state}
-      {:error, _reason} = err -> {:reply, err, state}
+  def handle_call({:retry_scan_object, object, skip_mode}, _from, state) do
+    if PropertyLoad.recovery_mode?(skip_mode) do
+      case retry_scan_object_impl(state, object, skip_mode) do
+        {:ok, summary, new_state} -> {:reply, {:ok, summary}, new_state}
+        {:error, _reason} = err -> {:reply, err, state}
+      end
+    else
+      {:reply, {:error, :invalid_recovery_mode}, state}
     end
   end
 
-  def handle_call({:retry_all_scan_objects, skip_mode}, _from, state)
-      when skip_mode in [:value, true] do
-    {:ok, summary, new_state} = retry_all_scan_objects_impl(state, skip_mode)
-    {:reply, {:ok, summary}, new_state}
+  def handle_call({:retry_all_scan_objects, skip_mode}, _from, state) do
+    if PropertyLoad.recovery_mode?(skip_mode) do
+      {:ok, summary, new_state} = retry_all_scan_objects_impl(state, skip_mode)
+      {:reply, {:ok, summary}, new_state}
+    else
+      {:reply, {:error, :invalid_recovery_mode}, state}
+    end
   end
 
   @impl true
@@ -314,10 +426,14 @@ defmodule BacView.BACnet.DeviceSession do
         %{device_id: device_id, device: device} = state
       )
       when is_list(call_opts) do
+    explicit_mode = Keyword.get(call_opts, :skip_mode)
+
     skip_mode =
-      call_opts
-      |> Keyword.get(:skip_mode)
-      |> then(&(&1 || ValidationSkipStore.resolve(state, object)))
+      if PropertyLoad.recovery_mode?(explicit_mode) do
+        explicit_mode
+      else
+        ValidationSkipStore.resolve(state, object)
+      end
 
     device_obj = Map.get(device || %{}, :object)
 
@@ -343,6 +459,7 @@ defmodule BacView.BACnet.DeviceSession do
 
             state =
               state
+              |> maybe_persist_recovery_mode(device_id, object, explicit_mode)
               |> Map.update!(:objects, &sync_object_fields_from_properties(&1, object, props))
               |> sync_objects_cache()
 
@@ -456,9 +573,9 @@ defmodule BacView.BACnet.DeviceSession do
     {:noreply, new_state}
   end
 
-  defp fetch_device(%{device_id: device_id} = state) do
+  defp fetch_device(%{device_id: device_id, load_recovery_mode: recovery_mode} = state) do
     with {:ok, device} <- Discovery.get_device(device_id),
-         {:ok, loaded, scanned} <- load_device(device) do
+         {:ok, loaded, scanned} <- load_device(device, recovery_mode) do
       update_device_meta(device_id, loaded)
 
       new_state = %{
@@ -467,18 +584,19 @@ defmodule BacView.BACnet.DeviceSession do
           objects: loaded.objects,
           hierarchy: loaded.hierarchy,
           scanned: scanned,
-          status: :ready
+          status: :ready,
+          load_recovery_mode: nil
       }
 
       {:ok, loaded, new_state}
     else
       :error ->
         mark_device_load_failed(device_id)
-        {:error, :device_not_found, %{state | status: :error}}
+        {:error, :device_not_found, %{state | status: :error, load_recovery_mode: nil}}
 
       {:error, reason} ->
         mark_device_load_failed(device_id)
-        {:error, reason, %{state | status: :error}}
+        {:error, reason, %{state | status: :error, load_recovery_mode: nil}}
     end
   end
 
@@ -517,10 +635,13 @@ defmodule BacView.BACnet.DeviceSession do
   defp summary_string(value) when is_binary(value), do: Text.sanitize_utf8(value)
   defp summary_string(value), do: value
 
-  defp load_device(%{id: device_id, address: address, object: device_obj} = discovered) do
+  defp load_device(
+         %{id: device_id, address: address, object: device_obj} = discovered,
+         recovery_mode
+       ) do
     if Stack.running?() do
       report_progress(device_id, %{stage: :reading_device, done: 0, total: nil})
-      load_device_impl(discovered, device_id, address, device_obj)
+      load_device_impl(discovered, device_id, address, device_obj, recovery_mode)
     else
       {:error, :stack_not_started}
     end
@@ -533,16 +654,19 @@ defmodule BacView.BACnet.DeviceSession do
       {:error, {:load_failed, reason}}
   end
 
-  defp load_device_impl(discovered, device_id, address, device_obj) do
-    with {:ok, device} <-
-           ObjectScanRead.read_object_fallback(
-             address,
-             device_obj,
-             PropertyLoad.device_scan_opts(device_id, device_obj)
-           ),
+  defp load_device_impl(discovered, device_id, address, device_obj, recovery_mode) do
+    # recovery_mode is user-chosen and applies only to the device object read.
+    device_opts = PropertyLoad.device_scan_opts(device_id, device_obj, recovery_mode)
+
+    with {:ok, device} <- read_device_object(address, device_obj, device_opts),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
+         # The device object was already read above (possibly with recovery). Do not
+         # re-scan it strictly from object_list — that double-read re-fails the same
+         # cast/validation issue and re-surfaces recovery for an object we already have.
+         scan_ids = object_ids_for_scan(object_ids, device_obj),
          {:ok, scanned, scan_errors, skipped_objects} <-
-           scan_object_list(device_id, address, device_obj, object_ids) do
+           scan_object_list(device_id, address, device_obj, scan_ids) do
+      # Prefer the dedicated device-object read over any scan result.
       scanned = upsert_device_object_scan(scanned, device_obj, device)
       scanned_len = length(scanned)
 
@@ -557,11 +681,22 @@ defmodule BacView.BACnet.DeviceSession do
         |> Enum.map(&summarize_object/1)
         |> Enum.sort_by(fn obj -> {obj.type, obj.instance} end)
 
+      objects =
+        if PropertyLoad.recovery_mode?(recovery_mode) do
+          ValidationSkipStore.apply_to_objects(objects, device_obj, recovery_mode)
+        else
+          objects
+        end
+
       hierarchy = HierarchyBuilder.build(scanned, objects)
 
       :ets.insert(@objects_table, {discovered.id, objects})
       :ets.insert(:bacview_hierarchy, {discovered.id, hierarchy})
       ValidationSkipStore.clear_device(device_id)
+
+      if PropertyLoad.recovery_mode?(recovery_mode) do
+        ValidationSkipStore.put(device_id, device_obj, recovery_mode)
+      end
 
       loaded =
         Map.merge(discovered, %{
@@ -585,6 +720,31 @@ defmodule BacView.BACnet.DeviceSession do
       {:ok, loaded, scanned}
     end
   end
+
+  # Tag failures so the UI can offer recovery only when the device object itself
+  # failed (not object_list / scan). Recovery is never automatic.
+  defp read_device_object(address, device_obj, device_opts) do
+    case ObjectScanRead.read_object_fallback(address, device_obj, device_opts) do
+      {:ok, _device} = ok -> ok
+      {:error, reason} -> {:error, {:device_object_read_failed, reason}}
+    end
+  end
+
+  defp maybe_persist_recovery_mode(state, device_id, object, mode) do
+    if PropertyLoad.recovery_mode?(mode) do
+      ValidationSkipStore.put(device_id, object, mode)
+
+      objects = ValidationSkipStore.apply_to_objects(state.objects, object, mode)
+      device = put_device_objects(state.device, objects)
+
+      %{state | objects: objects, device: device}
+    else
+      state
+    end
+  end
+
+  defp put_device_objects(%{} = device, objects), do: Map.put(device, :objects, objects)
+  defp put_device_objects(device, _objects), do: device
 
   defp read_object_list(address, device_obj, device_id) do
     report_progress(device_id, %{stage: :reading_object_list, done: 0, total: nil})
@@ -1007,17 +1167,26 @@ defmodule BacView.BACnet.DeviceSession do
     {:ok, %{succeeded: succeeded, failed: failed}, state}
   end
 
+  @doc false
+  @spec object_ids_for_scan([ObjectIdentifier.t()], ObjectIdentifier.t()) ::
+          [ObjectIdentifier.t()]
+  def object_ids_for_scan(object_ids, %ObjectIdentifier{} = device_obj)
+      when is_list(object_ids) do
+    reject_object_id(object_ids, device_obj)
+  end
+
+  defp reject_object_id(object_ids, %ObjectIdentifier{type: type, instance: instance})
+       when is_list(object_ids) do
+    Enum.reject(object_ids, fn
+      %ObjectIdentifier{type: ^type, instance: ^instance} -> true
+      _other -> false
+    end)
+  end
+
   defp upsert_device_object_scan(scanned, %ObjectIdentifier{} = device_obj, device)
        when is_list(scanned) do
-    key = {device_obj.type, device_obj.instance}
-
-    if Enum.any?(scanned, fn {%ObjectIdentifier{type: type, instance: instance}, _obj} ->
-         {type, instance} == key
-       end) do
-      scanned
-    else
-      [{device_obj, device} | scanned]
-    end
+    # Always use the dedicated reading_device result (may include recovery opts).
+    upsert_scanned(scanned, {device_obj, device})
   end
 
   defp upsert_scanned(scanned, {object, obj}) do

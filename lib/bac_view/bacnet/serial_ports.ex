@@ -6,7 +6,7 @@ defmodule BacView.BACnet.SerialPorts do
   @spec list() :: [option()]
   def list() do
     if Code.ensure_loaded?(Circuits.UART) do
-      Circuits.UART.enumerate()
+      enumerate()
       |> port_names_from_enumerate()
       |> Enum.map(fn port -> %{value: port, label: port} end)
       |> Enum.sort_by(& &1.label, :asc)
@@ -19,4 +19,10 @@ defmodule BacView.BACnet.SerialPorts do
 
   @spec available?() :: boolean()
   def available?(), do: Code.ensure_loaded?(Circuits.UART)
+
+  if Code.ensure_loaded?(Circuits.UART) do
+    defp enumerate(), do: Circuits.UART.enumerate()
+  else
+    defp enumerate(), do: %{}
+  end
 end

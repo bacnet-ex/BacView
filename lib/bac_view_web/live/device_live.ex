@@ -95,6 +95,7 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:load_progress, %{stage: :connecting, done: 0, total: nil})
          |> assign(:scan_retrying, %{})
          |> assign(:scan_recovery_open, false)
+         |> assign(:device_load_recovery, nil)
          |> assign(:search, "")
          |> assign(:type_filter, [])
          |> assign(:type_filter_open, false)
@@ -233,11 +234,16 @@ defmodule BacViewWeb.DeviceLive do
         {:noreply, apply_loaded_device(socket, loaded)}
 
       {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:loading, false)
-         |> assign(:load_progress, nil)
-         |> LiveFlash.put_error(:load_device, reason)}
+        recovery = DeviceSession.device_object_load_recovery(reason)
+
+        socket =
+          socket
+          |> assign(:loading, false)
+          |> assign(:load_progress, nil)
+          |> assign(:device_load_recovery, recovery)
+          |> LiveFlash.put_error(:load_device, unwrap_device_load_reason(reason))
+
+        {:noreply, socket}
     end
   end
 
@@ -252,7 +258,7 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
-  def handle_info({:scan_retry_done, {:bulk, _skip_mode}, result}, socket) do
+  def handle_info({:scan_retry_done, {:bulk, skip_mode}, result}, socket) do
     socket = assign(socket, :scan_retrying, %{})
 
     case result do
@@ -262,7 +268,7 @@ defmodule BacViewWeb.DeviceLive do
             {:noreply,
              socket
              |> apply_loaded_device(loaded)
-             |> put_bulk_scan_retry_flash(succeeded, failed)}
+             |> put_bulk_scan_retry_flash(succeeded, failed, skip_mode)}
 
           {:error, reason} ->
             {:noreply, LiveFlash.put_error(socket, :load_device, reason)}
@@ -275,7 +281,7 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_info(
-        {:scan_retry_done, {:single, object_id, _skip_mode, retry_key}, result},
+        {:scan_retry_done, {:single, object_id, skip_mode, retry_key}, result},
         socket
       ) do
     socket = assign(socket, :scan_retrying, Map.delete(socket.assigns.scan_retrying, retry_key))
@@ -289,8 +295,9 @@ defmodule BacViewWeb.DeviceLive do
              |> apply_loaded_device(loaded)
              |> put_flash(
                :info,
-               gt("Objekt %{object} erfolgreich nachgelesen.",
-                 object: "#{object_id.type}:#{object_id.instance}"
+               gt("Objekt %{object} erfolgreich nachgelesen (%{mode}).",
+                 object: "#{object_id.type}:#{object_id.instance}",
+                 mode: recovery_mode_label(skip_mode)
                )
              )}
 
@@ -543,6 +550,42 @@ defmodule BacViewWeb.DeviceLive do
   @impl true
   def handle_event("toggle_scan_recovery_panel", _params, socket) do
     {:noreply, assign(socket, :scan_recovery_open, !socket.assigns.scan_recovery_open)}
+  end
+
+  @impl true
+  def handle_event("retry_device_load", params, socket) do
+    if socket.assigns.loading_in_progress do
+      {:noreply, socket}
+    else
+      case parse_skip_mode(params["skip-mode"]) do
+        {:ok, recovery_mode} ->
+          parent = self()
+          device_id = socket.assigns.device_id
+
+          Task.start(fn ->
+            result =
+              try do
+                DeviceSession.reload(device_id, recovery_mode: recovery_mode)
+              rescue
+                exception -> {:error, exception}
+              catch
+                :exit, reason -> {:error, reason}
+              end
+
+            send(parent, {:device_load_done, result})
+          end)
+
+          {:noreply,
+           socket
+           |> assign(:loading, true)
+           |> assign(:loading_in_progress, true)
+           |> assign(:device_load_recovery, nil)
+           |> assign(:load_progress, %{stage: :connecting, done: 0, total: nil})}
+
+        :error ->
+          {:noreply, put_flash(socket, :error, gt("Ungültige Objekt-ID."))}
+      end
+    end
   end
 
   @impl true
@@ -1916,9 +1959,7 @@ defmodule BacViewWeb.DeviceLive do
     ArgumentError -> :error
   end
 
-  defp parse_skip_mode("value"), do: {:ok, :value}
-  defp parse_skip_mode("all"), do: {:ok, true}
-  defp parse_skip_mode(_mode), do: :error
+  defp parse_skip_mode(mode), do: DeviceSession.parse_recovery_mode(mode)
 
   defp scan_error_retry_keys(socket, skip_mode) do
     socket.assigns.device
@@ -1962,34 +2003,48 @@ defmodule BacViewWeb.DeviceLive do
     end)
   end
 
-  defp put_bulk_scan_retry_flash(socket, succeeded, failed)
+  defp put_bulk_scan_retry_flash(socket, succeeded, failed, skip_mode)
        when is_integer(succeeded) and succeeded > 0 and failed == 0 do
     put_flash(
       socket,
       :info,
-      gt("%{count} Objekte erfolgreich nachgelesen.", count: succeeded)
-    )
-  end
-
-  defp put_bulk_scan_retry_flash(socket, succeeded, failed)
-       when is_integer(succeeded) and succeeded > 0 and is_integer(failed) and failed > 0 do
-    put_flash(
-      socket,
-      :info,
-      gt("%{succeeded} Objekte nachgelesen, %{failed} fehlgeschlagen.",
-        succeeded: succeeded,
-        failed: failed
+      gt("%{count} Objekte erfolgreich nachgelesen (%{mode}).",
+        count: succeeded,
+        mode: recovery_mode_label(skip_mode)
       )
     )
   end
 
-  defp put_bulk_scan_retry_flash(socket, 0, failed) when is_integer(failed) and failed > 0 do
+  defp put_bulk_scan_retry_flash(socket, succeeded, failed, skip_mode)
+       when is_integer(succeeded) and succeeded > 0 and is_integer(failed) and failed > 0 do
+    put_flash(
+      socket,
+      :info,
+      gt("%{succeeded} Objekte nachgelesen (%{mode}), %{failed} fehlgeschlagen.",
+        succeeded: succeeded,
+        failed: failed,
+        mode: recovery_mode_label(skip_mode)
+      )
+    )
+  end
+
+  defp put_bulk_scan_retry_flash(socket, 0, failed, _skip_mode)
+       when is_integer(failed) and failed > 0 do
     put_flash(socket, :error, gt("Keine Objekte konnten nachgelesen werden."))
   end
 
-  defp put_bulk_scan_retry_flash(socket, 0, 0) do
+  defp put_bulk_scan_retry_flash(socket, 0, 0, _skip_mode) do
     put_flash(socket, :info, gt("Keine Objekte zum Nachlesen gefunden."))
   end
+
+  defp recovery_mode_label(:value), do: gt("Wertvalidierung übersprungen")
+  defp recovery_mode_label(:ignore_invalid), do: gt("Ungültige Eigenschaften ausgelassen")
+  defp recovery_mode_label(true), do: gt("Alle Validierung übersprungen")
+
+  defp recovery_mode_label(:skip_all_and_ignore_invalid),
+    do: gt("Maximale Lockerung angewendet")
+
+  defp recovery_mode_label(_mode), do: gt("reduzierte Validierung")
 
   defp parse_status(status) when is_binary(status) do
     case ObjectTable.normalize_status_flag(status) do
@@ -2158,8 +2213,12 @@ defmodule BacViewWeb.DeviceLive do
     socket
     |> assign(:loading, true)
     |> assign(:loading_in_progress, true)
+    |> assign(:device_load_recovery, nil)
     |> assign(:load_progress, %{stage: :connecting, done: 0, total: nil})
   end
+
+  defp unwrap_device_load_reason({:device_object_read_failed, reason}), do: reason
+  defp unwrap_device_load_reason(reason), do: reason
 
   defp apply_loaded_device(socket, loaded) do
     sv_hierarchy = loaded |> Map.get(:hierarchy, empty_hierarchy()) |> normalize_hierarchy()
@@ -2180,6 +2239,7 @@ defmodule BacViewWeb.DeviceLive do
     |> assign(:hierarchy_split, hierarchy_split)
     |> assign(:loading, false)
     |> assign(:load_progress, nil)
+    |> assign(:device_load_recovery, nil)
     |> apply_active_hierarchy()
     |> refresh_cov_state()
     |> refresh_cov_notifications()
@@ -3134,6 +3194,14 @@ defmodule BacViewWeb.DeviceLive do
         <DeviceLoadProgress.status_banner
           :if={@loading}
           progress={@load_progress}
+          locale={@locale}
+          locale_version={@locale_version}
+        />
+
+        <DeviceScanRecovery.device_load_recovery_panel
+          :if={!@loading && @device_load_recovery}
+          recovery={@device_load_recovery}
+          retrying?={@loading_in_progress}
           locale={@locale}
           locale_version={@locale_version}
         />

@@ -36,7 +36,10 @@ defmodule BacViewWeb.WritePropertyModal do
       |> assign(:item_groups, item_groups)
       |> assign(
         :can_add_item?,
-        ComplexPropertyEditor.can_add_item?(draft_value, property: assigns.property.property)
+        ComplexPropertyEditor.can_add_item?(draft_value,
+          property: assigns.property.property,
+          object_type: assigns.object && assigns.object.type
+        )
       )
       |> assign(:editable_collection?, ComplexPropertyEditor.editable_collection?(draft_value))
 
@@ -140,7 +143,7 @@ defmodule BacViewWeb.WritePropertyModal do
               </div>
 
               <form
-                id="write-property-fields-form"
+                id={"write-property-fields-form-#{form_fields_signature(@form_fields)}"}
                 phx-change="change_write_property_fields"
                 class="space-y-3"
               >
@@ -293,7 +296,7 @@ defmodule BacViewWeb.WritePropertyModal do
       <label
         for={field_dom_id(@field.path)}
         class="sm:w-2/5 shrink-0 text-xs bac-mono bac-text-faint truncate"
-        title={@field.path}
+        title={field_label_tooltip(@field)}
       >
         {@field.label}
       </label>
@@ -303,7 +306,6 @@ defmodule BacViewWeb.WritePropertyModal do
         name={"field[#{@field.path}]"}
         class="flex-1 bac-input bac-input-sm text-xs min-w-0"
         disabled={field_disabled?(@draft_fields, @field, @writing)}
-        phx-debounce="300"
       >
         <option
           :for={opt <- @field.enum_options}
@@ -330,6 +332,25 @@ defmodule BacViewWeb.WritePropertyModal do
   defp field_dom_id(path) do
     "write-field-" <> String.replace(path, ".", "-")
   end
+
+  # Full label for truncated text; path stays available for field identity.
+  defp field_label_tooltip(%{label: label, path: path})
+       when is_binary(label) and is_binary(path) and label != "" and path != "" do
+    if label == path, do: label, else: label <> " (" <> path <> ")"
+  end
+
+  defp field_label_tooltip(%{label: label}) when is_binary(label) and label != "", do: label
+  defp field_label_tooltip(%{path: path}) when is_binary(path), do: path
+  defp field_label_tooltip(_field), do: ""
+
+  # Remount the fields form when the path set changes (CHOICE branch switch) so
+  # LiveView does not morph stale inputs from the previous branch.
+  defp form_fields_signature(fields) when is_list(fields) do
+    paths = fields |> Enum.map(& &1.path) |> Enum.sort()
+    :erlang.phash2(Enum.join(paths, "|"))
+  end
+
+  defp form_fields_signature(_fields), do: 0
 
   defp field_disabled?(draft_fields, %{path: "extras.tag_number"}, writing),
     do: writing or encoding_kind(draft_fields) == "primitive"

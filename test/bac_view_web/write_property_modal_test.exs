@@ -132,4 +132,37 @@ defmodule BacViewWeb.WritePropertyModalTest do
     assert html =~ ~s(id="write-property-remove-item-0")
     assert html =~ ~s(id="write-property-add-item")
   end
+
+  test "field labels expose full text via title tooltip" do
+    form_fields = [
+      %{
+        path: "0.object_identifier.type",
+        label: "[1] · Object Identifier · Type",
+        value: "analog_value",
+        readonly: false,
+        enum_options: [%{value: :analog_value, label: "analog_value"}]
+      }
+    ]
+
+    html =
+      render_component(&WritePropertyModal.modal/1, %{
+        object: %{type: :schedule, instance: 1, name: "Schedule"},
+        property: %{
+          property: :list_of_object_property_references,
+          property_name: "List Of Object Property References",
+          value: [],
+          value_display: %{kind: :list, formatted: "[]", fields: [], items: []}
+        },
+        editor_mode: :fields,
+        form_fields: form_fields,
+        draft_fields: %{"0.object_identifier.type" => "analog_value"},
+        draft_value: [],
+        draft_json: "[]",
+        locale: "de",
+        locale_version: 0
+      })
+
+    assert html =~ ~s|title="[1] · Object Identifier · Type (0.object_identifier.type)"|
+    assert html =~ ~s|class="sm:w-2/5 shrink-0 text-xs bac-mono bac-text-faint truncate"|
+  end
 end

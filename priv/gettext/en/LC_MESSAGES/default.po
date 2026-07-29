@@ -36,8 +36,8 @@ msgstr "%{count} notification classes enrolled."
 msgid "%{count} Meldungsklassen noch eingetragen."
 msgstr "%{count} notification classes still enrolled."
 
-msgid "%{count} Objekte erfolgreich nachgelesen."
-msgstr "%{count} objects re-read successfully."
+msgid "%{count} Objekte erfolgreich nachgelesen (%{mode})."
+msgstr "%{count} objects re-read successfully (%{mode})."
 
 msgid "%{count} Objekte in der Geräteliste gefunden"
 msgstr "%{count} objects found in device list"
@@ -84,8 +84,8 @@ msgstr "%{shown} of %{total} devices"
 msgid "%{size} Bytes"
 msgstr "%{size} bytes"
 
-msgid "%{succeeded} Objekte nachgelesen, %{failed} fehlgeschlagen."
-msgstr "%{succeeded} objects re-read, %{failed} failed."
+msgid "%{succeeded} Objekte nachgelesen (%{mode}), %{failed} fehlgeschlagen."
+msgstr "%{succeeded} objects re-read (%{mode}), %{failed} failed."
 
 msgid "-"
 msgstr "-"
@@ -195,6 +195,9 @@ msgstr "Skip all validation"
 msgid "Alle Validierung überspringen kann fehlerhafte Datentypen akzeptieren und sollte nur bei Bedarf verwendet werden."
 msgstr "Skipping all validation may accept incorrect data types and should only be used when necessary."
 
+msgid "Alle Validierung übersprungen"
+msgstr "all validation skipped"
+
 msgid "Alle auswählen"
 msgstr "Select all"
 
@@ -203,6 +206,12 @@ msgstr "Unsubscribe all COV"
 
 msgid "Alle sichtbaren Einträge auswählen"
 msgstr "Select all visible entries"
+
+msgid "Alle: Maximal nachlesen"
+msgstr "All: maximum recovery read"
+
+msgid "Alle: Ungültige Eigenschaften auslassen"
+msgstr "All: omit invalid properties"
 
 msgid "Alle: Validierung überspringen"
 msgstr "All: skip validation"
@@ -585,14 +594,26 @@ msgstr "Failed to refresh properties: %{detail}"
 msgid "Eigenschaften einzeln lesen: %{done} / %{total}"
 msgstr "Reading properties one-by-one: %{done} / %{total}"
 
+msgid "Eigenschaften erfolgreich nachgelesen (%{mode})."
+msgstr "Properties re-read successfully (%{mode})."
+
+msgid "Eigenschaften konnten nicht gelesen werden"
+msgstr "Properties could not be read"
+
 msgid "Eigenschaften laden fehlgeschlagen: %{detail}"
 msgstr "Failed to load properties: %{detail}"
+
+msgid "Eigenschaften mit reduzierter Validierung lesen"
+msgstr "Read properties with reduced validation"
 
 msgid "Eigenschaften werden geladen…"
 msgstr "Loading properties…"
 
 msgid "Eigenschaften werden gelesen…"
 msgstr "Reading properties…"
+
+msgid "Eigenschaften wurden mit reduzierter Validierung gelesen (%{mode})."
+msgstr "Properties were read with reduced validation (%{mode})."
 
 msgid "Eigenschaftenlesen fehlgeschlagen: %{detail}"
 msgstr "Failed to read properties: %{detail}"
@@ -792,6 +813,9 @@ msgstr "Device communication control"
 msgid "Gerätekommunikation wurde gesteuert."
 msgstr "Device communication control sent."
 
+msgid "Geräteladen mit reduzierter Validierung"
+msgstr "Device load with reduced validation"
+
 msgid "Geräteliste geleert."
 msgstr "Device list cleared."
 
@@ -800,6 +824,9 @@ msgstr "Clear device list"
 
 msgid "Geräteobjekt"
 msgstr "Device object"
+
+msgid "Geräteobjekt konnte nicht gelesen werden"
+msgstr "Device object could not be read"
 
 msgid "Geräteobjekt lesen…"
 msgstr "Reading device object…"
@@ -1056,6 +1083,15 @@ msgstr "MS/TP address"
 msgid "Max. APDU-Länge"
 msgstr "Max. APDU length"
 
+msgid "Maximal nachlesen"
+msgstr "Maximum recovery read"
+
+msgid "Maximal nachlesen kombiniert das Auslassen ungültiger Eigenschaften mit dem Überspringen der Validierung."
+msgstr "Maximum recovery combines omitting invalid properties with skipping validation."
+
+msgid "Maximale Lockerung angewendet"
+msgstr "maximum relaxation applied"
+
 msgid "Meldung"
 msgstr "Message"
 
@@ -1194,8 +1230,8 @@ msgstr "High limit"
 msgid "Objekt"
 msgstr "Object"
 
-msgid "Objekt %{object} erfolgreich nachgelesen."
-msgstr "Object %{object} re-read successfully."
+msgid "Objekt %{object} erfolgreich nachgelesen (%{mode})."
+msgstr "Object %{object} re-read successfully (%{mode})."
 
 msgid "Objekt auswählen"
 msgstr "Select object"
@@ -1410,6 +1446,12 @@ msgstr "Serial port not found."
 msgid "Sicherheitsfehler"
 msgstr "Security error"
 
+msgid "Sie können das Gerät mit reduzierter Validierung erneut laden oder abbrechen."
+msgstr "You can reload the device with reduced validation or leave it as is."
+
+msgid "Sie können die Eigenschaften mit reduzierter Validierung erneut lesen oder abbrechen."
+msgstr "You can re-read the properties with reduced validation or leave them as is."
+
 msgid "Sonderzeichen „%{char}“"
 msgstr "Special character “%{char}”"
 
@@ -1575,6 +1617,15 @@ msgstr "Invalid split rules for the object-name hierarchy."
 msgid "Ungültige BACnet-Kodierung."
 msgstr "Invalid BACnet encoding."
 
+msgid "Ungültige Eigenschaften ausgelassen"
+msgstr "invalid properties omitted"
+
+msgid "Ungültige Eigenschaften auslassen"
+msgstr "Omit invalid properties"
+
+msgid "Ungültige Eigenschaften auslassen entfernt Eigenschaften, die nicht dekodiert werden können; die übrigen bleiben lesbar."
+msgstr "Omitting invalid properties removes properties that cannot be decoded; the remaining ones stay readable."
+
 msgid "Ungültige Geräte-Instanz (0–4194303)."
 msgstr "Invalid device instance (0–4194303)."
 
@@ -1697,6 +1748,9 @@ msgstr "Value"
 
 msgid "Wertvalidierung überspringen"
 msgstr "Skip value validation"
+
+msgid "Wertvalidierung übersprungen"
+msgstr "value validation skipped"
 
 msgid "Wertänderung"
 msgstr "Value change"
@@ -1838,6 +1892,9 @@ msgstr "inactive"
 
 msgid "keine passende Funktion %{mfa}"
 msgstr "no matching function %{mfa}"
+
+msgid "reduzierte Validierung"
+msgstr "reduced validation"
 
 msgid "true oder false"
 msgstr "true or false"

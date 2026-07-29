@@ -6,11 +6,11 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   alias BACnet.Protocol.BACnetDateTime
   alias BACnet.Protocol.BACnetTime
   alias BACnet.Protocol.BACnetTimestamp
+  alias BACnet.Protocol.CalendarEntry
   alias BACnet.Protocol.DailySchedule
-  alias BACnet.Protocol.DaysOfWeek
   alias BACnet.Protocol.Destination
   alias BACnet.Protocol.DeviceObjectPropertyRef
-  alias BACnet.Protocol.EventTransitionBits
+  alias BACnet.Protocol.NameValue
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.ObjectPropertyRef
   alias BACnet.Protocol.PriorityArray
@@ -20,6 +20,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
   alias BACnet.Protocol.ApplicationTags.Encoding
 
+  alias BacView.BACnet.Protocol.CollectionItemTemplate
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.StructFieldTypes
@@ -87,7 +88,10 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
         end)
         |> Enum.sort_by(fn {index, _fields} -> index end)
         |> Enum.map(fn {index, group_fields} ->
-          %{index: index, fields: Enum.sort_by(group_fields, & &1.path)}
+          # Keep collect_form_fields order so CHOICE discriminants (type / value_kind /
+          # period_kind) stay above the fields they control. Alphabetical path sort
+          # wrongly put e.g. "0.value.*" before "0.value_kind".
+          %{index: index, fields: group_fields}
         end)
 
       {:items, groups}
@@ -233,20 +237,80 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
         {:ok, template}
 
       fields ->
-        finalize_apply_result(
-          Enum.reduce_while(sorted_field_paths(fields), {:ok, template}, fn path,
-                                                                            {:ok, current} ->
-            with {:ok, segments} <- parse_path(path),
-                 {:ok, ensured} <- ensure_path_collection_slots(current, segments),
-                 {:ok, updated} <- update_in_structure(ensured, segments, Map.get(fields, path)) do
-              {:cont, {:ok, updated}}
-            else
-              {:error, _params} = err -> {:halt, err}
-            end
-          end)
-        )
+        paths = sorted_field_paths(fields, template)
+        choice_paths = choice_discriminant_paths(paths, template)
+
+        # Kind/type switches must ignore all other field validation. The previous
+        # branch's fields are still in the form payload and will always fail or
+        # fight the rebuild (empty drafts, wrong shape, stale legs).
+        apply_paths =
+          if choice_discriminant_changed?(choice_paths, fields, template) do
+            choice_paths
+          else
+            paths
+          end
+
+        finalize_apply_result(apply_field_paths(apply_paths, template, fields))
     end
   end
+
+  defp apply_field_paths(paths, template, fields) do
+    Enum.reduce_while(paths, {:ok, template}, fn path, {:ok, current} ->
+      with {:ok, segments} <- parse_path(path),
+           {:ok, ensured} <- ensure_path_collection_slots(current, segments),
+           {:ok, updated} <- update_in_structure(ensured, segments, Map.get(fields, path)) do
+        {:cont, {:ok, updated}}
+      else
+        {:error, _reason} = err -> {:halt, err}
+      end
+    end)
+  end
+
+  defp choice_discriminant_paths(paths, template) do
+    Enum.filter(paths, fn path ->
+      case parse_path(path) do
+        {:ok, segments} -> choice_discriminant_path?(template, segments)
+        {:error, _reason} -> false
+      end
+    end)
+  end
+
+  defp choice_discriminant_changed?(choice_paths, fields, template) do
+    Enum.any?(choice_paths, fn path ->
+      with {:ok, segments} <- parse_path(path),
+           {:ok, current} <- current_choice_value(template, segments) do
+        submitted =
+          fields
+          |> Map.get(path, "")
+          |> to_string()
+          |> String.trim()
+
+        value_to_string(current) != submitted
+      else
+        _no_change -> false
+      end
+    end)
+  end
+
+  # Synthetic discriminants are not real struct keys; resolve from payload shape.
+  defp current_choice_value(%NameValue{} = name_value, [:value_kind]),
+    do: {:ok, name_value_kind(name_value.value)}
+
+  defp current_choice_value(%SpecialEvent{} = event, [:period_kind]),
+    do: {:ok, special_event_period_kind(event.period)}
+
+  defp current_choice_value(%Recipient{} = recipient, [:type]), do: {:ok, recipient.type}
+  defp current_choice_value(%CalendarEntry{} = entry, [:type]), do: {:ok, entry.type}
+  defp current_choice_value(%BACnetTimestamp{} = timestamp, [:type]), do: {:ok, timestamp.type}
+
+  defp current_choice_value(data, [key | rest]) do
+    case get_child(data, key) do
+      {:ok, child} -> current_choice_value(child, rest)
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp current_choice_value(_data, _segments), do: {:error, :invalid_path}
 
   @spec encode_json(term()) :: {:ok, String.t()} | {:error, term()}
   def encode_json(value) do
@@ -333,6 +397,136 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     ]
   end
 
+  defp collect_form_fields(%Recipient{} = recipient, path_rev, acc, _parent, _field_key) do
+    acc = [
+      build_choice_field(
+        recipient.type,
+        [:type | path_rev],
+        recipient_type_options(),
+        field_label_at(path_rev, "Type")
+      )
+      | acc
+    ]
+
+    case recipient.type do
+      :device ->
+        collect_form_fields(recipient.device, [:device | path_rev], acc, recipient, :device)
+
+      :address ->
+        collect_form_fields(recipient.address, [:address | path_rev], acc, recipient, :address)
+
+      _type ->
+        acc
+    end
+  end
+
+  defp collect_form_fields(%CalendarEntry{} = entry, path_rev, acc, _parent, _field_key) do
+    acc = [
+      build_choice_field(
+        entry.type,
+        [:type | path_rev],
+        calendar_entry_type_options(),
+        field_label_at(path_rev, "Type")
+      )
+      | acc
+    ]
+
+    case entry.type do
+      :date ->
+        collect_form_fields(entry.date, [:date | path_rev], acc, entry, :date)
+
+      :date_range ->
+        collect_form_fields(entry.date_range, [:date_range | path_rev], acc, entry, :date_range)
+
+      :week_n_day ->
+        collect_form_fields(entry.week_n_day, [:week_n_day | path_rev], acc, entry, :week_n_day)
+
+      _type ->
+        acc
+    end
+  end
+
+  defp collect_form_fields(%BACnetTimestamp{} = timestamp, path_rev, acc, _parent, _field_key) do
+    acc = [
+      build_choice_field(
+        timestamp.type,
+        [:type | path_rev],
+        timestamp_type_options(),
+        field_label_at(path_rev, "Type")
+      )
+      | acc
+    ]
+
+    case timestamp.type do
+      :time ->
+        collect_form_fields(timestamp.time, [:time | path_rev], acc, timestamp, :time)
+
+      :sequence_number ->
+        collect_form_fields(
+          timestamp.sequence_number,
+          [:sequence_number | path_rev],
+          acc,
+          timestamp,
+          :sequence_number
+        )
+
+      :datetime ->
+        collect_form_fields(timestamp.datetime, [:datetime | path_rev], acc, timestamp, :datetime)
+
+      _type ->
+        acc
+    end
+  end
+
+  defp collect_form_fields(%NameValue{} = name_value, path_rev, acc, _parent, _field_key) do
+    # Name is independent of value kind. value_kind only sits above the value payload.
+    acc = [
+      build_form_field(
+        name_value.name,
+        [:name | path_rev],
+        name_value,
+        :name,
+        field_label_at(path_rev, "Name")
+      )
+      | acc
+    ]
+
+    acc = [
+      build_choice_field(
+        name_value_kind(name_value.value),
+        [:value_kind | path_rev],
+        name_value_kind_options(),
+        field_label_at(path_rev, "Value Kind")
+      )
+      | acc
+    ]
+
+    case name_value.value do
+      nil ->
+        acc
+
+      value ->
+        collect_form_fields(value, [:value | path_rev], acc, name_value, :value)
+    end
+  end
+
+  defp collect_form_fields(%SpecialEvent{} = event, path_rev, acc, _parent, _field_key) do
+    # period_kind above period payload it switches
+    acc = [
+      build_choice_field(
+        special_event_period_kind(event.period),
+        [:period_kind | path_rev],
+        special_event_period_kind_options(),
+        field_label_at(path_rev, "Period Kind")
+      )
+      | acc
+    ]
+
+    acc = collect_form_fields(event.period, [:period | path_rev], acc, event, :period)
+    acc = collect_form_fields(event.list, [:list | path_rev], acc, event, :list)
+    collect_form_fields(event.priority, [:priority | path_rev], acc, event, :priority)
+  end
+
   defp collect_form_fields(%_value{} = struct, path_rev, acc, _path, _acc) do
     Enum.reduce(Map.from_struct(struct), acc, fn {key, value}, acc ->
       collect_form_fields(value, [key | path_rev], acc, struct, key)
@@ -411,6 +605,121 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end)
   end
 
+  defp build_choice_field(value, path_rev, options, label) do
+    %{
+      path: path_string(path_rev),
+      label: label,
+      value: value_to_string(value),
+      readonly: false,
+      enum_options: options
+    }
+  end
+
+  defp recipient_type_options() do
+    [
+      %{value: :device, label: "Device"},
+      %{value: :address, label: "Address"}
+    ]
+  end
+
+  defp calendar_entry_type_options() do
+    [
+      %{value: :date, label: "Date"},
+      %{value: :date_range, label: "Date Range"},
+      %{value: :week_n_day, label: "Week N Day"}
+    ]
+  end
+
+  defp timestamp_type_options() do
+    [
+      %{value: :time, label: "Time"},
+      %{value: :sequence_number, label: "Sequence Number"},
+      %{value: :datetime, label: "Date Time"}
+    ]
+  end
+
+  defp name_value_kind_options() do
+    [
+      %{value: :none, label: "None"},
+      %{value: :encoding, label: "Encoding"}
+    ]
+  end
+
+  defp special_event_period_kind_options() do
+    [
+      %{value: :calendar_entry, label: "Calendar Entry"},
+      %{value: :calendar_reference, label: "Calendar Reference"}
+    ]
+  end
+
+  defp name_value_kind(nil), do: :none
+  defp name_value_kind(%Encoding{}), do: :encoding
+  defp name_value_kind(_value), do: :encoding
+
+  defp special_event_period_kind(%CalendarEntry{}), do: :calendar_entry
+  defp special_event_period_kind(%ObjectIdentifier{}), do: :calendar_reference
+  defp special_event_period_kind(_period), do: :calendar_entry
+
+  defp apply_name_value_kind(%NameValue{} = name_value, :none) do
+    %{name_value | value: nil}
+  end
+
+  defp apply_name_value_kind(%NameValue{} = name_value, :encoding) do
+    %{name_value | value: CollectionItemTemplate.blank_encoding()}
+  end
+
+  defp apply_special_event_period_kind(%SpecialEvent{} = event, :calendar_entry) do
+    %{event | period: CollectionItemTemplate.blank_calendar_entry(:date)}
+  end
+
+  defp apply_special_event_period_kind(%SpecialEvent{} = event, :calendar_reference) do
+    %{event | period: %ObjectIdentifier{type: :calendar, instance: 0}}
+  end
+
+  defp blank_timestamp(:time) do
+    %BACnetTimestamp{
+      type: :time,
+      time: %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0},
+      sequence_number: nil,
+      datetime: nil
+    }
+  end
+
+  defp blank_timestamp(:sequence_number) do
+    %BACnetTimestamp{
+      type: :sequence_number,
+      time: nil,
+      sequence_number: 0,
+      datetime: nil
+    }
+  end
+
+  defp blank_timestamp(:datetime) do
+    {:ok, datetime} = CollectionItemTemplate.blank_struct(BACnetDateTime)
+
+    %BACnetTimestamp{
+      type: :datetime,
+      time: nil,
+      sequence_number: nil,
+      datetime: datetime
+    }
+  end
+
+  defp parse_choice_atom(string_value, allowed) when is_list(allowed) do
+    trimmed = string_value |> to_string() |> String.trim()
+
+    cond do
+      trimmed == "" ->
+        {:error, :empty_value}
+
+      Enum.any?(allowed, &(Atom.to_string(&1) == trimmed)) ->
+        {:ok, String.to_existing_atom(trimmed)}
+
+      true ->
+        {:error, :invalid_enum}
+    end
+  end
+
   defp enum_options_for(_value, enum_type, _parent, _field_key) when is_atom(enum_type) do
     case PropertyEnumeration.options(enum_type) do
       [] -> nil
@@ -440,6 +749,60 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp update_in_structure(%Encoding{} = data, [:value], string_value) do
     with {:ok, parsed} <- parse_encoding_value(data.type, data.value, string_value) do
       {:ok, %{data | value: parsed}}
+    end
+  end
+
+  defp update_in_structure(%Recipient{} = recipient, [:type], string_value) do
+    with {:ok, type} <- parse_choice_atom(string_value, [:device, :address]) do
+      # Only rebuild on real type change. Form submits always include type; rebuilding
+      # would wipe address/device fields applied earlier in the same submit.
+      if recipient.type == type do
+        {:ok, recipient}
+      else
+        {:ok, CollectionItemTemplate.blank_recipient(type)}
+      end
+    end
+  end
+
+  defp update_in_structure(%CalendarEntry{} = entry, [:type], string_value) do
+    with {:ok, type} <- parse_choice_atom(string_value, [:date, :date_range, :week_n_day]) do
+      if entry.type == type do
+        {:ok, entry}
+      else
+        {:ok, CollectionItemTemplate.blank_calendar_entry(type)}
+      end
+    end
+  end
+
+  defp update_in_structure(%BACnetTimestamp{} = timestamp, [:type], string_value) do
+    with {:ok, type} <- parse_choice_atom(string_value, [:time, :sequence_number, :datetime]) do
+      if timestamp.type == type do
+        {:ok, timestamp}
+      else
+        {:ok, blank_timestamp(type)}
+      end
+    end
+  end
+
+  defp update_in_structure(%NameValue{} = name_value, [:value_kind], string_value) do
+    with {:ok, kind} <- parse_choice_atom(string_value, [:none, :encoding]) do
+      # Form always resubmits value_kind. Rebuilding when kind is unchanged wiped
+      # encoding fields applied earlier in the same change event.
+      if name_value_kind(name_value.value) == kind do
+        {:ok, name_value}
+      else
+        {:ok, apply_name_value_kind(name_value, kind)}
+      end
+    end
+  end
+
+  defp update_in_structure(%SpecialEvent{} = event, [:period_kind], string_value) do
+    with {:ok, kind} <- parse_choice_atom(string_value, [:calendar_entry, :calendar_reference]) do
+      if special_event_period_kind(event.period) == kind do
+        {:ok, event}
+      else
+        {:ok, apply_special_event_period_kind(event, kind)}
+      end
     end
   end
 
@@ -514,20 +877,52 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp map_child(_list, _key, _value), do: {:error, :invalid_path}
 
   # Sort numeric collection indices in path order so slots are filled 0..n before nested fields.
-  defp sorted_field_paths(fields) when is_map(fields) do
-    Enum.sort_by(Map.keys(fields), &path_sort_key/1)
+  # CHOICE discriminants (Recipient/CalendarEntry/Timestamp type, value_kind, period_kind)
+  # run last so branch rebuild wins over stale inactive-leg fields from the previous branch.
+  # Encoding/ObjectIdentifier `:type` is not a CHOICE discriminant and stays normal order.
+  defp sorted_field_paths(fields, template) when is_map(fields) do
+    Enum.sort_by(Map.keys(fields), &path_sort_key(&1, template))
   end
 
-  defp path_sort_key(path) when is_binary(path) do
-    path
-    |> String.split(".")
-    |> Enum.map(fn segment ->
-      case Integer.parse(segment) do
-        {index, ""} -> {0, index}
-        _segment -> {1, segment}
+  defp path_sort_key(path, template) when is_binary(path) do
+    segments = String.split(path, ".")
+
+    segment_keys =
+      Enum.map(segments, fn segment ->
+        case Integer.parse(segment) do
+          {index, ""} -> {0, index}
+          _segment -> {1, segment}
+        end
+      end)
+
+    discriminant_rank =
+      case parse_path(path) do
+        {:ok, path_segments} ->
+          if choice_discriminant_path?(template, path_segments), do: 1, else: 0
+
+        {:error, _reason} ->
+          0
       end
-    end)
+
+    {discriminant_rank, segment_keys}
   end
+
+  defp choice_discriminant_path?(_data, [:value_kind]), do: true
+  defp choice_discriminant_path?(_data, [:period_kind]), do: true
+  defp choice_discriminant_path?(%Recipient{}, [:type]), do: true
+  defp choice_discriminant_path?(%CalendarEntry{}, [:type]), do: true
+  defp choice_discriminant_path?(%BACnetTimestamp{}, [:type]), do: true
+  defp choice_discriminant_path?(%NameValue{}, [:value_kind]), do: true
+  defp choice_discriminant_path?(%SpecialEvent{}, [:period_kind]), do: true
+
+  defp choice_discriminant_path?(data, [key | rest]) do
+    case get_child(data, key) do
+      {:ok, child} -> choice_discriminant_path?(child, rest)
+      {:error, _reason} -> false
+    end
+  end
+
+  defp choice_discriminant_path?(_data, _segments), do: false
 
   defp collection_index_from_path(path) when is_binary(path) do
     case String.split(path, ".", parts: 2) do
@@ -603,33 +998,41 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
   defp ensure_collection_index(data, _key), do: {:ok, data}
 
-  defp blank_collection_item(%DeviceObjectPropertyRef{} = _item),
-    do: default_device_object_property_ref()
+  defp blank_collection_item(%DeviceObjectPropertyRef{} = item) do
+    case CollectionItemTemplate.blank_struct(DeviceObjectPropertyRef) do
+      {:ok, blank} -> blank
+      {:error, _reason} -> item
+    end
+  end
 
-  defp blank_collection_item(%ObjectPropertyRef{} = _item), do: default_object_property_ref()
+  defp blank_collection_item(%ObjectPropertyRef{} = item) do
+    case CollectionItemTemplate.blank_struct(ObjectPropertyRef) do
+      {:ok, blank} -> blank
+      {:error, _reason} -> item
+    end
+  end
 
   defp blank_collection_item(%ObjectIdentifier{} = _item) do
     %ObjectIdentifier{type: :analog_input, instance: 0}
   end
 
-  defp blank_collection_item(%Destination{} = _item), do: default_destination()
+  defp blank_collection_item(%Destination{} = _item),
+    do: CollectionItemTemplate.blank_destination()
 
   defp blank_collection_item(%Recipient{} = item) do
-    case item.type do
-      :device ->
-        %Recipient{
-          type: :device,
-          address: nil,
-          device: %ObjectIdentifier{type: :device, instance: 0}
-        }
+    type = if item.type in [:device, :address], do: item.type, else: :address
+    CollectionItemTemplate.blank_recipient(type)
+  end
 
-      _address ->
-        %Recipient{
-          type: :address,
-          device: nil,
-          address: %RecipientAddress{network: 0, address: :broadcast}
-        }
-    end
+  defp blank_collection_item(%CalendarEntry{} = item) do
+    type =
+      if item.type in [:date, :date_range, :week_n_day], do: item.type, else: :date
+
+    CollectionItemTemplate.blank_calendar_entry(type)
+  end
+
+  defp blank_collection_item(%NameValue{} = _item) do
+    %NameValue{name: "", value: nil}
   end
 
   defp blank_collection_item(%DailySchedule{} = _item), do: %DailySchedule{schedule: []}
@@ -639,10 +1042,16 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   end
 
   defp blank_collection_item(%_mod{} = struct) do
-    struct
-    |> Map.from_struct()
-    |> Enum.map(fn {key, value} -> {key, blank_collection_item(value)} end)
-    |> then(&struct(struct.__struct__, &1))
+    case CollectionItemTemplate.blank_struct(struct.__struct__) do
+      {:ok, blank} ->
+        blank
+
+      {:error, _reason} ->
+        struct
+        |> Map.from_struct()
+        |> Enum.map(fn {key, value} -> {key, blank_collection_item(value)} end)
+        |> then(&struct(struct.__struct__, &1))
+    end
   end
 
   defp blank_collection_item(list) when is_list(list), do: []
@@ -666,73 +1075,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp blank_encoding_value(_type, value), do: blank_collection_item(value)
 
   defp default_item_from_property(opts) when is_list(opts) do
-    case Keyword.get(opts, :property) do
-      :list_of_object_property_references ->
-        {:ok, default_device_object_property_ref()}
-
-      :log_device_object_property ->
-        {:ok, default_device_object_property_ref()}
-
-      property
-      when property in [
-             :object_property_reference,
-             :setpoint_reference,
-             :controlled_variable_reference,
-             :feedback_reference
-           ] ->
-        {:ok, default_object_property_ref()}
-
-      :recipient_list ->
-        {:ok, default_destination()}
-
-      _property ->
-        {:error, :unknown_collection_item_type}
-    end
-  end
-
-  defp default_device_object_property_ref() do
-    %DeviceObjectPropertyRef{
-      object_identifier: %ObjectIdentifier{type: :analog_input, instance: 0},
-      property_identifier: :present_value,
-      property_array_index: nil,
-      device_identifier: nil
-    }
-  end
-
-  defp default_object_property_ref() do
-    %ObjectPropertyRef{
-      object_identifier: %ObjectIdentifier{type: :analog_input, instance: 0},
-      property_identifier: :present_value,
-      property_array_index: nil
-    }
-  end
-
-  defp default_destination() do
-    %Destination{
-      recipient: %Recipient{
-        type: :address,
-        device: nil,
-        address: %RecipientAddress{network: 0, address: :broadcast}
-      },
-      process_identifier: 0,
-      issue_confirmed_notifications: false,
-      transitions: %EventTransitionBits{
-        to_offnormal: true,
-        to_fault: true,
-        to_normal: true
-      },
-      valid_days: %DaysOfWeek{
-        monday: true,
-        tuesday: true,
-        wednesday: true,
-        thursday: true,
-        friday: true,
-        saturday: true,
-        sunday: true
-      },
-      from_time: %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0},
-      to_time: %BACnetTime{hour: 23, minute: 59, second: 59, hundredth: 99}
-    }
+    CollectionItemTemplate.default_item(opts)
   end
 
   defp parse_field_value(current, string_value, enum_type \\ nil)
@@ -776,13 +1119,9 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     if mac_octet_string?(current) do
       parse_mac_address_string(string_value)
     else
-      trimmed = String.trim(string_value)
-
-      if trimmed == "" do
-        {:error, :empty_value}
-      else
-        {:ok, trimmed}
-      end
+      # Allow empty character strings while drafting (e.g. blank NameValue name).
+      # Wire validation still happens on write via bacstack encode/valid?.
+      {:ok, String.trim(string_value)}
     end
   end
 
@@ -797,14 +1136,59 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     trimmed = String.trim(string_value)
 
     cond do
-      trimmed == "" and is_nil(current) -> {:ok, nil}
-      trimmed == "" -> {:error, :empty_value}
-      trimmed == "unspecified" -> {:ok, :unspecified}
-      is_boolean(current) -> parse_boolean(trimmed)
-      is_integer(current) -> parse_integer(trimmed)
-      is_float(current) -> parse_float(trimmed)
-      is_atom(current) and not is_nil(current) -> decode_atom_field(trimmed)
-      true -> {:ok, trimmed}
+      trimmed == "" and is_nil(current) ->
+        {:ok, nil}
+
+      trimmed == "" ->
+        {:error, :empty_value}
+
+      # BACnetDate/Time components are integer | pattern atoms. When the current
+      # value is `:unspecified` (or another pattern atom), numeric input like "0"
+      # must become integer 0 — not an atom path (hour 0 is midnight, not unspecified).
+      date_time_component_value?(current) ->
+        parse_date_time_component(trimmed)
+
+      is_boolean(current) ->
+        parse_boolean(trimmed)
+
+      is_integer(current) ->
+        parse_integer(trimmed)
+
+      is_float(current) ->
+        parse_float(trimmed)
+
+      is_atom(current) and not is_nil(current) ->
+        decode_atom_field(trimmed)
+
+      true ->
+        {:ok, trimmed}
+    end
+  end
+
+  # Integers and BACnet date/time pattern atoms used by BACnetDate / BACnetTime.
+  defp date_time_component_value?(value) when is_integer(value), do: true
+
+  defp date_time_component_value?(value) when value in [:unspecified, :even, :odd, :last],
+    do: true
+
+  defp date_time_component_value?(_value), do: false
+
+  defp parse_date_time_component(trimmed) when is_binary(trimmed) do
+    case Integer.parse(trimmed) do
+      {int, ""} ->
+        {:ok, int}
+
+      _not_integer ->
+        case decode_existing_atom(trimmed) do
+          {:ok, atom} when atom in [:unspecified, :even, :odd, :last] ->
+            {:ok, atom}
+
+          {:ok, _atom} ->
+            {:error, :invalid_atom}
+
+          {:error, _reason} ->
+            {:error, :invalid_number}
+        end
     end
   end
 
