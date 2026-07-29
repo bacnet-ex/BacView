@@ -447,6 +447,7 @@ TRANSLATIONS: dict[str, str] = {
     "Noch keine COV-Meldungen empfangen.": "No COV notifications received yet.",
     "Noch keine Ereignismeldungen empfangen.": "No event notifications received yet.",
     "Noch keine Geräte gefunden": "No devices found yet",
+    "NPCI-Quelle: %{target}": "NPCI source: %{target}",
     "Normal": "Normal",
     "Null": "Null",
     "Null (Priorität zurücksetzen)": "Null (reset priority)",

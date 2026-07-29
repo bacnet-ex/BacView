@@ -827,7 +827,8 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
     properties
     |> Enum.map(fn property ->
-      value = Map.get(results, property)
+      # log_buffer is only useful via ReadRange (trend chart); never dump the list.
+      value = display_value_for_property(property, results)
       bac_type = Map.get(type_map, property)
       binary_meta = binary_presentation(value, bac_type, property)
       display = property_display(value, binary_meta)
@@ -851,6 +852,10 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     end)
     |> Enum.sort_by(& &1.property_name)
   end
+
+  # log_buffer list is empty/useless in the property table; chart uses ReadRange.
+  defp display_value_for_property(:log_buffer, _results), do: nil
+  defp display_value_for_property(property, results), do: Map.get(results, property)
 
   defp property_display(_value, %{string_value?: true, formatted: formatted}) do
     %{kind: :scalar, formatted: formatted, fields: [], items: []}

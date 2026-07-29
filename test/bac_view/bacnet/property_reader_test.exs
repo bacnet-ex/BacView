@@ -1109,6 +1109,21 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       assert Enum.find(rows, &(&1.property == :description)).value_formatted == "-"
     end
 
+    test "always blanks log_buffer (use chart / ReadRange instead)" do
+      [row] =
+        PropertyReader.format_property_rows(
+          [:log_buffer],
+          %{log_buffer: [%{timestamp: "now", value: 21.5}, %{timestamp: "later", value: 22.0}]}
+        )
+
+      assert row.property == :log_buffer
+      assert row.value == nil
+      assert row.value_formatted == "-"
+      assert row.value_display.kind == :scalar
+      assert row.value_display.formatted == "-"
+      assert row.value_display.items == []
+    end
+
     test "labels unknown numeric property ids" do
       # Avoid ids registered via :additional_property_identifiers (e.g. 512 = message_text).
       unknown_id = 9999

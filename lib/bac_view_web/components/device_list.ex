@@ -3,11 +3,13 @@ defmodule BacViewWeb.DeviceList do
   use BacViewWeb, :html
   use BacViewWeb.LocaleAttrs
 
+  alias BACnet.Protocol.NpciTarget
   alias BacView.BACnet.Address
   alias BacView.BACnet.VendorNames
   alias BacView.NaturalSort
   alias BacViewWeb.DeviceBadgeCounts
   alias BacViewWeb.DeviceServicesMenu
+  alias BacViewWeb.NpciSourceIndicator
   alias BacViewWeb.SearchQuery
 
   @sort_columns ~w(name vendor address instance status objects)
@@ -189,7 +191,15 @@ defmodule BacViewWeb.DeviceList do
           {VendorNames.label(@vendor_names, @device.vendor_id)}
         </p>
 
-        <p class="bac-mono text-xs bac-text-faint">{device_address_label(@device)}</p>
+        <div class="flex items-center gap-1.5 min-w-0">
+          <p class="bac-mono text-xs bac-text-faint truncate">{device_address_label(@device)}</p>
+          <NpciSourceIndicator.npci_source_indicator
+            npci_source={Map.get(@device, :npci_source)}
+            id={"device-npci-source-#{@device.id}"}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
+        </div>
 
         <div class="bac-device-card-meta">
           <span class="bac-badge bac-badge-sm bac-badge-accent">
@@ -273,7 +283,17 @@ defmodule BacViewWeb.DeviceList do
             <td class="text-[var(--bac-text-muted)]">
               {VendorNames.label(@vendor_names, device.vendor_id)}
             </td>
-            <td class="bac-mono text-xs">{device_address_label(device)}</td>
+            <td class="bac-mono text-xs">
+              <span class="inline-flex items-center gap-1.5">
+                {device_address_label(device)}
+                <NpciSourceIndicator.npci_source_indicator
+                  npci_source={Map.get(device, :npci_source)}
+                  id={"device-npci-source-row-#{device.id}"}
+                  locale={@locale}
+                  locale_version={@locale_version}
+                />
+              </span>
+            </td>
             <td class="bac-mono text-xs">{device.instance}</td>
             <td>
               <span class={status_badge_class(device.status)}>
@@ -445,6 +465,7 @@ defmodule BacViewWeb.DeviceList do
       device_name(device, locale, locale_version),
       VendorNames.label(vendor_names, device.vendor_id),
       device_address_label(device),
+      npci_source_search_term(device),
       to_string(device.instance),
       status_label(device.status, locale, locale_version),
       object_count_label(device.object_count)
@@ -452,6 +473,11 @@ defmodule BacViewWeb.DeviceList do
     |> Enum.join(" ")
     |> String.downcase()
   end
+
+  defp npci_source_search_term(%{npci_source: %NpciTarget{} = source}),
+    do: Address.format_npci_target(source)
+
+  defp npci_source_search_term(_device), do: ""
 
   defp sort_key(device, "name", _vendor_names, locale, locale_version),
     do: nullable_string_key(device_name(device, locale, locale_version))

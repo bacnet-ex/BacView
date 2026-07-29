@@ -1110,6 +1110,9 @@ msgstr "Minimum %{min} ms"
 msgid "Mit den gewählten Aufteilungsregeln konnte keine Hierarchie erstellt werden."
 msgstr "No hierarchy could be built with the selected split rules."
 
+msgid "NPCI-Quelle: %{target}"
+msgstr "NPCI source: %{target}"
+
 msgid "NULL an Present Value schreiben und Prioritäts-Slot freigeben für %{count} commandable Objekt(e)."
 msgstr "Write NULL to present value and release the priority slot for %{count} commandable object(s)."
 

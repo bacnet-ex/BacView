@@ -2288,7 +2288,21 @@ defmodule BacViewWeb.ObjectLive do
     )
   end
 
-  defp refresh_property_value(prop, value, object, at \\ nil) do
+  defp refresh_property_value(prop, value, object, at \\ nil)
+
+  # log_buffer is only useful via ReadRange (trend chart); never dump the list.
+  defp refresh_property_value(%{property: :log_buffer} = prop, _value, _object, at) do
+    display = PropertyDisplay.build(nil)
+
+    Map.merge(prop, %{
+      value: nil,
+      value_display: display,
+      value_formatted: display.formatted,
+      updated_at: at || DateTime.utc_now()
+    })
+  end
+
+  defp refresh_property_value(prop, value, object, at) do
     value =
       if prop.property == :present_value do
         PropertyFormatter.coerce_present_value(value, object, prop)

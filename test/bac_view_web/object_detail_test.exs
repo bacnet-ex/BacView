@@ -1076,6 +1076,9 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "trend-chart-open"
     assert html =~ ~s(id="trend-chart-open-header")
     assert html =~ "Diagramm"
+    assert html =~ ~s(id="prop-log_buffer")
+    # Value column is always blank ("-"); chart uses ReadRange, not this cell.
+    assert html =~ ~r/id="prop-log_buffer"[\s\S]*?>\s*-\s*</
     refute html =~ "write-form-log_buffer"
     refute html =~ "phx-value-property=\"log_buffer\""
     refute html =~ "trend-log-chart-modal"

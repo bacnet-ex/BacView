@@ -41,6 +41,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacViewWeb.LiveFlash
   alias BacViewWeb.LogViewerLive
   alias BacViewWeb.LogViewerModal
+  alias BacViewWeb.NpciSourceIndicator
   alias BacViewWeb.ObjectSelectionBar
   alias BacViewWeb.ObjectTable
   alias BacViewWeb.ObjectTypeIcon
@@ -3053,11 +3054,28 @@ defmodule BacViewWeb.DeviceLive do
             <.icon name="hero-arrow-left" class="size-4" />
           </.link>
           <div class="flex-1 min-w-0 flex items-center gap-3">
-            <div class="min-w-0">
-              <h1 class="font-semibold text-base truncate">
+            <div class="min-w-0 flex flex-col gap-0.5">
+              <span
+                id="device-id-badge"
+                class="bac-badge bac-badge-sm bac-badge-accent w-fit shrink-0"
+                title={t(@locale, @locale_version, "Geräte-ID")}
+              >
+                ID {@device.instance}
+              </span>
+              <h1 class="font-semibold text-base truncate leading-snug">
                 {@device.name || t(@locale, @locale_version, "Gerät %{id}", id: @device.instance)}
               </h1>
-              <p class="bac-mono text-xs bac-text-faint">{Address.format_device_address(@device)}</p>
+              <div class="flex items-center gap-1.5 min-w-0">
+                <p class="bac-mono text-xs bac-text-faint truncate">
+                  {Address.format_device_address(@device)}
+                </p>
+                <NpciSourceIndicator.npci_source_indicator
+                  npci_source={Map.get(@device, :npci_source)}
+                  id="device-npci-source"
+                  locale={@locale}
+                  locale_version={@locale_version}
+                />
+              </div>
             </div>
             <.link
               navigate={DeviceUrl.device_object_path(@device_id, @device, device_tab_opts(assigns))}
