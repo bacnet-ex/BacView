@@ -1,8 +1,13 @@
 defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
-  @moduledoc false
+  @moduledoc """
+  Blank collection items and protocol struct defaults for add-entry / CHOICE UX.
 
-  # Builds blank collection item templates from bacstack property type maps
-  # (`get_properties_type_map/0`) and BeamTypes typechecker shapes.
+  Element types come from bacstack property type maps (`get_properties_type_map/0`).
+  Struct field shapes use `BacView.BACnet.Protocol.BeamTypesCache`. CHOICE kind
+  switches call `blank_from_bac_type/1` via `BacView.BACnet.Protocol.ChoiceSchema`.
+
+  See `docs/choice_schema.md`.
+  """
 
   alias BACnet.Protocol.ApplicationTags.Encoding
   alias BACnet.Protocol.BACnetArray
@@ -26,14 +31,8 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
   alias BACnet.Protocol.RecipientAddress
   alias BACnet.Protocol.WeekNDay
 
+  alias BacView.BACnet.Protocol.BeamTypesCache
   alias BacView.BACnet.Protocol.PropertyEnumeration
-
-  @beam_env %Macro.Env{
-    module: __MODULE__,
-    function: {:struct_field_types, 1},
-    file: __ENV__.file,
-    line: 1
-  }
 
   @item_type_cache_key {__MODULE__, :item_type_by_property}
 
@@ -426,23 +425,7 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
   end
 
   defp struct_field_types(module) when is_atom(module) do
-    cache_key = {__MODULE__, :struct_fields, module}
-
-    case :persistent_term.get(cache_key, :missing) do
-      :missing ->
-        types =
-          try do
-            BACnet.BeamTypes.resolve_struct_type(module, :t, @beam_env)
-          rescue
-            _module -> %{}
-          end
-
-        :persistent_term.put(cache_key, types)
-        types
-
-      types ->
-        types
-    end
+    BeamTypesCache.resolve_struct_fields(module)
   end
 
   @doc false

@@ -100,6 +100,7 @@ Important keys (see `config/config.exs`, `config/runtime.exs`, `README.md`):
 | Subscriptions / COV | `SubscriptionManager` | COV subscribe, notification log, pruning |
 | Alarms | `AlarmEvent`, `ActiveAlarms` | Event state, active-alarm lists/counts |
 | Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `HierarchySplit` | Structured View + name-split trees |
+| Complex property forms | `ComplexPropertyEditor`, `ChoiceSchema`, `CollectionItemTemplate` | Write-modal fields; CHOICE kinds from BeamTypes |
 | Web | `BacViewWeb.Live.*`, components | LiveViews, tables, popups, charts |
 
 ### ETS tables (`BacView.BACnet.Cache`)
@@ -132,6 +133,17 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
   `{:object_properties_progress, object_id, progress}`.
 - `ObjectLive` subscribes and drives `@properties_progress` in `ObjectDetail` (banner + bar). Clear progress when load finishes.
 - **Do not** send progress callbacks into bacstack client opts; strip via `client_opts/1` (never pass `:on_property_progress` to bacstack).
+
+### Complex property CHOICE forms
+
+Write-modal kind pickers (Recipient/CalendarEntry/Timestamp `type`, NameValue
+`value_kind`, SpecialEvent `period_kind`) come from
+`BacView.BACnet.Protocol.ChoiceSchema` + `BeamTypesCache`, not hand-maintained
+option lists in the editor.
+
+- Arm **existence** tracks bacstack typespecs; only labels / arm ids / blanks may be overridden in `ChoiceSchema`.
+- Do **not** re-add dedicated `*_type_options` tables for shapes ChoiceSchema already covers.
+- Full rules, overrides, and onboarding: **`docs/choice_schema.md`**.
 
 ### Validation skip store
 

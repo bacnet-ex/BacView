@@ -9,6 +9,9 @@ concurrency:
   group: nightly-deploy-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   build:
     name: ${{ matrix.platform }}-${{ matrix.arch }}
@@ -115,3 +118,84 @@ jobs:
             src-tauri/target/release/bundle/**/*
           if-no-files-found: error
           retention-days: 30
+
+  # Create/update the mutable "nightly" GitHub Release with all matrix installers.
+  release:
+    name: Nightly Release
+    needs: build
+    # Publish when any matrix leg succeeded (fail-fast is false).
+    if: ${{ always() && !cancelled() && contains(fromJSON('["success", "failure"]'), needs.build.result) }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: bacview-*
+          merge-multiple: false
+
+      - name: Collect release assets
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          count=0
+
+          while IFS= read -r -d '' f; do
+            base="$(basename "$f")"
+            # Artifact root is the upload name, e.g. bacview-linux-amd64
+            artifact_root="$(printf '%s\n' "$f" | cut -d/ -f2)"
+            dest="release-assets/${base}"
+            if [ -e "$dest" ]; then
+              dest="release-assets/${artifact_root}-${base}"
+            fi
+            cp -v "$f" "$dest"
+            count=$((count + 1))
+          done < <(find artifacts -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \
+               -o -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \
+               -o -name '*.app.tar.gz' \) -print0)
+
+          echo "Collected ${count} installer asset(s)"
+          ls -la release-assets/ || true
+          if [ "$count" -eq 0 ]; then
+            echo "No installer assets found under artifacts/" >&2
+            find artifacts -type f | head -n 100 || true
+            exit 1
+          fi
+
+      - name: Create or update nightly release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="nightly"
+          TITLE="Nightly Build"
+          BUILT_AT="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          NOTES="$(cat <<EOF
+          Automated nightly desktop build (unstable pre-release).
+
+          | | |
+          |---|---|
+          | **Commit** | \`${GITHUB_SHA}\` |
+          | **Branch** | \`${GITHUB_REF_NAME}\` |
+          | **Workflow run** | [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) |
+          | **Built at** | ${BUILT_AT} |
+
+          Assets are replaced on each successful nightly run.
+          EOF
+          )"
+
+          # Replace the previous nightly release and tag so assets stay current.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release delete "$TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag
+          fi
+
+          gh release create "$TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --title "$TITLE" \
+            --notes "$NOTES" \
+            --prerelease \
+            --target "$GITHUB_SHA" \
+            release-assets/*

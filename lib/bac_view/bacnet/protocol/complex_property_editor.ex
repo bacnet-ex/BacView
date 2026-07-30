@@ -1,5 +1,13 @@
 defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
-  @moduledoc false
+  @moduledoc """
+  Builds and applies complex BACnet property form fields for the write modal.
+
+  Scalar walks, collections, JSON encode/decode, and Encoding-specific fields live
+  here. **CHOICE / optional-union kind pickers** are derived via
+  `BacView.BACnet.Protocol.ChoiceSchema` (BeamTypes), not hard-coded option tables.
+
+  See `docs/choice_schema.md`.
+  """
 
   alias BACnet.Protocol.BACnetArray
   alias BACnet.Protocol.BACnetDate
@@ -20,6 +28,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
   alias BACnet.Protocol.ApplicationTags.Encoding
 
+  alias BacView.BACnet.Protocol.ChoiceSchema
   alias BacView.BACnet.Protocol.CollectionItemTemplate
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
@@ -292,16 +301,15 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end)
   end
 
-  # Synthetic discriminants are not real struct keys; resolve from payload shape.
-  defp current_choice_value(%NameValue{} = name_value, [:value_kind]),
-    do: {:ok, name_value_kind(name_value.value)}
-
-  defp current_choice_value(%SpecialEvent{} = event, [:period_kind]),
-    do: {:ok, special_event_period_kind(event.period)}
-
-  defp current_choice_value(%Recipient{} = recipient, [:type]), do: {:ok, recipient.type}
-  defp current_choice_value(%CalendarEntry{} = entry, [:type]), do: {:ok, entry.type}
-  defp current_choice_value(%BACnetTimestamp{} = timestamp, [:type]), do: {:ok, timestamp.type}
+  # Synthetic discriminants (value_kind / period_kind) resolve via ChoiceSchema arms.
+  defp current_choice_value(%mod{} = data, [key]) when is_atom(mod) do
+    with {:ok, schema} <- ChoiceSchema.fetch(mod),
+         {:ok, choice} <- ChoiceSchema.choice_for_discriminant(schema, key) do
+      {:ok, ChoiceSchema.active_arm_id(data, choice)}
+    else
+      :error -> {:error, :invalid_path}
+    end
+  end
 
   defp current_choice_value(data, [key | rest]) do
     case get_child(data, key) do
@@ -397,140 +405,17 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     ]
   end
 
-  defp collect_form_fields(%Recipient{} = recipient, path_rev, acc, _parent, _field_key) do
-    acc = [
-      build_choice_field(
-        recipient.type,
-        [:type | path_rev],
-        recipient_type_options(),
-        field_label_at(path_rev, "Type")
-      )
-      | acc
-    ]
+  defp collect_form_fields(%mod{} = struct, path_rev, acc, _parent, _field_key)
+       when is_atom(mod) do
+    case ChoiceSchema.analyze(mod) do
+      %{choices: choices} = schema when choices != [] ->
+        collect_choice_struct(struct, schema, path_rev, acc)
 
-    case recipient.type do
-      :device ->
-        collect_form_fields(recipient.device, [:device | path_rev], acc, recipient, :device)
-
-      :address ->
-        collect_form_fields(recipient.address, [:address | path_rev], acc, recipient, :address)
-
-      _type ->
-        acc
+      _no_choice ->
+        Enum.reduce(Map.from_struct(struct), acc, fn {key, value}, acc ->
+          collect_form_fields(value, [key | path_rev], acc, struct, key)
+        end)
     end
-  end
-
-  defp collect_form_fields(%CalendarEntry{} = entry, path_rev, acc, _parent, _field_key) do
-    acc = [
-      build_choice_field(
-        entry.type,
-        [:type | path_rev],
-        calendar_entry_type_options(),
-        field_label_at(path_rev, "Type")
-      )
-      | acc
-    ]
-
-    case entry.type do
-      :date ->
-        collect_form_fields(entry.date, [:date | path_rev], acc, entry, :date)
-
-      :date_range ->
-        collect_form_fields(entry.date_range, [:date_range | path_rev], acc, entry, :date_range)
-
-      :week_n_day ->
-        collect_form_fields(entry.week_n_day, [:week_n_day | path_rev], acc, entry, :week_n_day)
-
-      _type ->
-        acc
-    end
-  end
-
-  defp collect_form_fields(%BACnetTimestamp{} = timestamp, path_rev, acc, _parent, _field_key) do
-    acc = [
-      build_choice_field(
-        timestamp.type,
-        [:type | path_rev],
-        timestamp_type_options(),
-        field_label_at(path_rev, "Type")
-      )
-      | acc
-    ]
-
-    case timestamp.type do
-      :time ->
-        collect_form_fields(timestamp.time, [:time | path_rev], acc, timestamp, :time)
-
-      :sequence_number ->
-        collect_form_fields(
-          timestamp.sequence_number,
-          [:sequence_number | path_rev],
-          acc,
-          timestamp,
-          :sequence_number
-        )
-
-      :datetime ->
-        collect_form_fields(timestamp.datetime, [:datetime | path_rev], acc, timestamp, :datetime)
-
-      _type ->
-        acc
-    end
-  end
-
-  defp collect_form_fields(%NameValue{} = name_value, path_rev, acc, _parent, _field_key) do
-    # Name is independent of value kind. value_kind only sits above the value payload.
-    acc = [
-      build_form_field(
-        name_value.name,
-        [:name | path_rev],
-        name_value,
-        :name,
-        field_label_at(path_rev, "Name")
-      )
-      | acc
-    ]
-
-    acc = [
-      build_choice_field(
-        name_value_kind(name_value.value),
-        [:value_kind | path_rev],
-        name_value_kind_options(),
-        field_label_at(path_rev, "Value Kind")
-      )
-      | acc
-    ]
-
-    case name_value.value do
-      nil ->
-        acc
-
-      value ->
-        collect_form_fields(value, [:value | path_rev], acc, name_value, :value)
-    end
-  end
-
-  defp collect_form_fields(%SpecialEvent{} = event, path_rev, acc, _parent, _field_key) do
-    # period_kind above period payload it switches
-    acc = [
-      build_choice_field(
-        special_event_period_kind(event.period),
-        [:period_kind | path_rev],
-        special_event_period_kind_options(),
-        field_label_at(path_rev, "Period Kind")
-      )
-      | acc
-    ]
-
-    acc = collect_form_fields(event.period, [:period | path_rev], acc, event, :period)
-    acc = collect_form_fields(event.list, [:list | path_rev], acc, event, :list)
-    collect_form_fields(event.priority, [:priority | path_rev], acc, event, :priority)
-  end
-
-  defp collect_form_fields(%_value{} = struct, path_rev, acc, _path, _acc) do
-    Enum.reduce(Map.from_struct(struct), acc, fn {key, value}, acc ->
-      collect_form_fields(value, [key | path_rev], acc, struct, key)
-    end)
   end
 
   defp collect_form_fields(list, path_rev, acc, parent, field_key) when is_list(list) do
@@ -615,108 +500,88 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     }
   end
 
-  defp recipient_type_options() do
-    [
-      %{value: :device, label: "Device"},
-      %{value: :address, label: "Address"}
+  # Walk BeamTypes field order; inject synthetic discriminants before inline payloads.
+  defp collect_choice_struct(struct, schema, path_rev, acc) do
+    tagged_arm_fields = tagged_arm_field_set(schema.choices)
+
+    Enum.reduce(Map.keys(schema.fields), acc, fn key, acc ->
+      cond do
+        tagged_discriminant_key?(schema.choices, key) ->
+          collect_tagged_choice_fields(struct, schema, key, path_rev, acc)
+
+        MapSet.member?(tagged_arm_fields, key) ->
+          # Active arm already emitted with its discriminant.
+          acc
+
+        inline_source_field?(schema.choices, key) ->
+          collect_inline_choice_fields(struct, schema, key, path_rev, acc)
+
+        true ->
+          collect_form_fields(Map.get(struct, key), [key | path_rev], acc, struct, key)
+      end
+    end)
+  end
+
+  defp tagged_arm_field_set(choices) do
+    choices
+    |> Enum.filter(&(&1.kind == :tagged))
+    |> Enum.flat_map(fn choice -> Enum.map(choice.arms, & &1.field) end)
+    |> Enum.reject(&is_nil/1)
+    |> MapSet.new()
+  end
+
+  defp tagged_discriminant_key?(choices, key) do
+    Enum.any?(choices, &(&1.kind == :tagged and &1.discriminant_key == key))
+  end
+
+  defp inline_source_field?(choices, key) do
+    Enum.any?(choices, &(&1.kind == :inline and &1.source_field == key))
+  end
+
+  defp collect_tagged_choice_fields(struct, schema, disc_key, path_rev, acc) do
+    {:ok, choice} = ChoiceSchema.choice_for_discriminant(schema, disc_key)
+    active = ChoiceSchema.active_arm_id(struct, choice)
+
+    acc = [
+      build_choice_field(
+        active,
+        [disc_key | path_rev],
+        ChoiceSchema.options(choice),
+        field_label_at(path_rev, "Type")
+      )
+      | acc
     ]
+
+    case Enum.find(choice.arms, &(&1.id == active)) do
+      %{field: field} when is_atom(field) ->
+        case Map.get(struct, field) do
+          nil -> acc
+          value -> collect_form_fields(value, [field | path_rev], acc, struct, field)
+        end
+
+      _no_arm ->
+        acc
+    end
   end
 
-  defp calendar_entry_type_options() do
-    [
-      %{value: :date, label: "Date"},
-      %{value: :date_range, label: "Date Range"},
-      %{value: :week_n_day, label: "Week N Day"}
+  defp collect_inline_choice_fields(struct, schema, source_key, path_rev, acc) do
+    choice = Enum.find(schema.choices, &(&1.kind == :inline and &1.source_field == source_key))
+    active = ChoiceSchema.active_arm_id(struct, choice)
+    disc_key = choice.discriminant_key
+
+    acc = [
+      build_choice_field(
+        active,
+        [disc_key | path_rev],
+        ChoiceSchema.options(choice),
+        field_label_at(path_rev, ChoiceSchema.field_label(disc_key))
+      )
+      | acc
     ]
-  end
 
-  defp timestamp_type_options() do
-    [
-      %{value: :time, label: "Time"},
-      %{value: :sequence_number, label: "Sequence Number"},
-      %{value: :datetime, label: "Date Time"}
-    ]
-  end
-
-  defp name_value_kind_options() do
-    [
-      %{value: :none, label: "None"},
-      %{value: :encoding, label: "Encoding"}
-    ]
-  end
-
-  defp special_event_period_kind_options() do
-    [
-      %{value: :calendar_entry, label: "Calendar Entry"},
-      %{value: :calendar_reference, label: "Calendar Reference"}
-    ]
-  end
-
-  defp name_value_kind(nil), do: :none
-  defp name_value_kind(%Encoding{}), do: :encoding
-  defp name_value_kind(_value), do: :encoding
-
-  defp special_event_period_kind(%CalendarEntry{}), do: :calendar_entry
-  defp special_event_period_kind(%ObjectIdentifier{}), do: :calendar_reference
-  defp special_event_period_kind(_period), do: :calendar_entry
-
-  defp apply_name_value_kind(%NameValue{} = name_value, :none) do
-    %{name_value | value: nil}
-  end
-
-  defp apply_name_value_kind(%NameValue{} = name_value, :encoding) do
-    %{name_value | value: CollectionItemTemplate.blank_encoding()}
-  end
-
-  defp apply_special_event_period_kind(%SpecialEvent{} = event, :calendar_entry) do
-    %{event | period: CollectionItemTemplate.blank_calendar_entry(:date)}
-  end
-
-  defp apply_special_event_period_kind(%SpecialEvent{} = event, :calendar_reference) do
-    %{event | period: %ObjectIdentifier{type: :calendar, instance: 0}}
-  end
-
-  defp blank_timestamp(:time) do
-    %BACnetTimestamp{
-      type: :time,
-      time: %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0},
-      sequence_number: nil,
-      datetime: nil
-    }
-  end
-
-  defp blank_timestamp(:sequence_number) do
-    %BACnetTimestamp{
-      type: :sequence_number,
-      time: nil,
-      sequence_number: 0,
-      datetime: nil
-    }
-  end
-
-  defp blank_timestamp(:datetime) do
-    {:ok, datetime} = CollectionItemTemplate.blank_struct(BACnetDateTime)
-
-    %BACnetTimestamp{
-      type: :datetime,
-      time: nil,
-      sequence_number: nil,
-      datetime: datetime
-    }
-  end
-
-  defp parse_choice_atom(string_value, allowed) when is_list(allowed) do
-    trimmed = string_value |> to_string() |> String.trim()
-
-    cond do
-      trimmed == "" ->
-        {:error, :empty_value}
-
-      Enum.any?(allowed, &(Atom.to_string(&1) == trimmed)) ->
-        {:ok, String.to_existing_atom(trimmed)}
-
-      true ->
-        {:error, :invalid_enum}
+    case Map.get(struct, source_key) do
+      nil -> acc
+      value -> collect_form_fields(value, [source_key | path_rev], acc, struct, source_key)
     end
   end
 
@@ -752,60 +617,6 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
-  defp update_in_structure(%Recipient{} = recipient, [:type], string_value) do
-    with {:ok, type} <- parse_choice_atom(string_value, [:device, :address]) do
-      # Only rebuild on real type change. Form submits always include type; rebuilding
-      # would wipe address/device fields applied earlier in the same submit.
-      if recipient.type == type do
-        {:ok, recipient}
-      else
-        {:ok, CollectionItemTemplate.blank_recipient(type)}
-      end
-    end
-  end
-
-  defp update_in_structure(%CalendarEntry{} = entry, [:type], string_value) do
-    with {:ok, type} <- parse_choice_atom(string_value, [:date, :date_range, :week_n_day]) do
-      if entry.type == type do
-        {:ok, entry}
-      else
-        {:ok, CollectionItemTemplate.blank_calendar_entry(type)}
-      end
-    end
-  end
-
-  defp update_in_structure(%BACnetTimestamp{} = timestamp, [:type], string_value) do
-    with {:ok, type} <- parse_choice_atom(string_value, [:time, :sequence_number, :datetime]) do
-      if timestamp.type == type do
-        {:ok, timestamp}
-      else
-        {:ok, blank_timestamp(type)}
-      end
-    end
-  end
-
-  defp update_in_structure(%NameValue{} = name_value, [:value_kind], string_value) do
-    with {:ok, kind} <- parse_choice_atom(string_value, [:none, :encoding]) do
-      # Form always resubmits value_kind. Rebuilding when kind is unchanged wiped
-      # encoding fields applied earlier in the same change event.
-      if name_value_kind(name_value.value) == kind do
-        {:ok, name_value}
-      else
-        {:ok, apply_name_value_kind(name_value, kind)}
-      end
-    end
-  end
-
-  defp update_in_structure(%SpecialEvent{} = event, [:period_kind], string_value) do
-    with {:ok, kind} <- parse_choice_atom(string_value, [:calendar_entry, :calendar_reference]) do
-      if special_event_period_kind(event.period) == kind do
-        {:ok, event}
-      else
-        {:ok, apply_special_event_period_kind(event, kind)}
-      end
-    end
-  end
-
   defp update_in_structure({tag, current}, [], string_value) when is_atom(tag) do
     case parse_field_value(current, string_value) do
       {:ok, parsed} -> {:ok, {tag, parsed}}
@@ -817,12 +628,23 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     parse_field_value(data, string_value)
   end
 
-  defp update_in_structure(data, [key], string_value) do
-    with {:ok, child} <- get_child(data, key),
-         {:ok, parsed} <-
-           parse_field_value(child, string_value, StructFieldTypes.enum_type_for_field(data, key)) do
-      map_child(data, key, parsed)
+  # CHOICE discriminants (tagged type / synthetic value_kind / period_kind).
+  # Unchanged kind preserves sibling field edits applied earlier in the same submit.
+  defp update_in_structure(%mod{} = data, [key], string_value) when is_atom(mod) do
+    case try_apply_choice_discriminant(data, key, string_value) do
+      {:ok, _updated} = ok ->
+        ok
+
+      :not_choice ->
+        update_struct_leaf(data, key, string_value)
+
+      {:error, _reason} = err ->
+        err
     end
+  end
+
+  defp update_in_structure(data, [key], string_value) do
+    update_struct_leaf(data, key, string_value)
   end
 
   defp update_in_structure(data, [key | rest], string_value) do
@@ -834,6 +656,33 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
       {:error, _data} = err ->
         err
+    end
+  end
+
+  defp try_apply_choice_discriminant(%mod{} = data, key, string_value) when is_atom(mod) do
+    with {:ok, schema} <- ChoiceSchema.fetch(mod),
+         {:ok, choice} <- ChoiceSchema.choice_for_discriminant(schema, key),
+         {:ok, arm_id} <- ChoiceSchema.parse_arm_id(string_value, choice) do
+      if ChoiceSchema.active_arm_id(data, choice) == arm_id do
+        {:ok, data}
+      else
+        {:ok, ChoiceSchema.apply_arm(data, choice, arm_id)}
+      end
+    else
+      :error -> :not_choice
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp update_struct_leaf(data, key, string_value) do
+    enum_type =
+      if is_struct(data) and is_atom(key) do
+        StructFieldTypes.enum_type_for_field(data, key)
+      end
+
+    with {:ok, child} <- get_child(data, key),
+         {:ok, parsed} <- parse_field_value(child, string_value, enum_type) do
+      map_child(data, key, parsed)
     end
   end
 
@@ -907,13 +756,12 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     {discriminant_rank, segment_keys}
   end
 
-  defp choice_discriminant_path?(_data, [:value_kind]), do: true
-  defp choice_discriminant_path?(_data, [:period_kind]), do: true
-  defp choice_discriminant_path?(%Recipient{}, [:type]), do: true
-  defp choice_discriminant_path?(%CalendarEntry{}, [:type]), do: true
-  defp choice_discriminant_path?(%BACnetTimestamp{}, [:type]), do: true
-  defp choice_discriminant_path?(%NameValue{}, [:value_kind]), do: true
-  defp choice_discriminant_path?(%SpecialEvent{}, [:period_kind]), do: true
+  defp choice_discriminant_path?(%mod{}, [key]) when is_atom(mod) do
+    case ChoiceSchema.fetch(mod) do
+      {:ok, schema} -> ChoiceSchema.discriminant_key?(schema, key)
+      :error -> false
+    end
+  end
 
   defp choice_discriminant_path?(data, [key | rest]) do
     case get_child(data, key) do
