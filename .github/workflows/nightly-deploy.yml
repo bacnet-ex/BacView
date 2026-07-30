@@ -101,8 +101,11 @@ jobs:
           mix local.hex --force
           mix local.rebar --force
 
+      # We'll build the nightly with fresh dependencies,
+      # not the ones we've locked for development
       - name: Build Elixir mix release
         run: |
+          rm mix.lock || true
           mix setup
           mix desktop.setup
           mix desktop.prepare_release
