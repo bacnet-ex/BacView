@@ -215,7 +215,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-48">
                 <SortHeader.sort_header
                   event="sort_alarm_events"
                   id_prefix="alarm-event-sort"
@@ -225,7 +225,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-48">
                 <SortHeader.sort_header
                   event="sort_alarm_events"
                   id_prefix="alarm-event-sort"
@@ -235,7 +235,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-40">
                 <SortHeader.sort_header
                   event="sort_alarm_events"
                   id_prefix="alarm-event-sort"
@@ -245,7 +245,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_alarm_events"
                   id_prefix="alarm-event-sort"
@@ -288,7 +288,7 @@ defmodule BacViewWeb.AlarmsPanel do
                 </span>
               </td>
               <td>{EventFormatter.ack_status_label(event)}</td>
-              <td class="bac-text-faint">{format_time(event.updated_at)}</td>
+              <td class="bac-text-faint whitespace-nowrap">{format_time(event.updated_at)}</td>
             </tr>
           </tbody>
         </table>
@@ -368,7 +368,7 @@ defmodule BacViewWeb.AlarmsPanel do
         <table class="bac-table" id="active-alarms-table">
           <thead>
             <tr>
-              <th>
+              <th class="w-52">
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
@@ -378,7 +378,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-40">
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
@@ -388,7 +388,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-80">
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
@@ -408,7 +408,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-28">
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
@@ -418,7 +418,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-40">
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
@@ -428,7 +428,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_active_alarms"
                   id_prefix="active-alarm-sort"
@@ -467,7 +467,9 @@ defmodule BacViewWeb.AlarmsPanel do
               <td class="bac-text-faint whitespace-nowrap">
                 {Map.get(obj, :alarm_since_label, "-")}
               </td>
-              <td class="bac-text-faint">{format_time(Map.get(obj, :updated_at))}</td>
+              <td class="bac-text-faint whitespace-nowrap">
+                {format_time(Map.get(obj, :updated_at))}
+              </td>
             </tr>
           </tbody>
         </table>
@@ -507,7 +509,7 @@ defmodule BacViewWeb.AlarmsPanel do
         <table class="bac-table" id="notifications-table">
           <thead>
             <tr>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_alarm_notifications"
                   id_prefix="alarm-notification-sort"
@@ -527,7 +529,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-48">
                 <SortHeader.sort_header
                   event="sort_alarm_notifications"
                   id_prefix="alarm-notification-sort"
@@ -537,7 +539,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-48">
                 <SortHeader.sort_header
                   event="sort_alarm_notifications"
                   id_prefix="alarm-notification-sort"
@@ -547,7 +549,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_alarm_notifications"
                   id_prefix="alarm-notification-sort"
@@ -557,7 +559,7 @@ defmodule BacViewWeb.AlarmsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-80">
                 <SortHeader.sort_header
                   event="sort_alarm_notifications"
                   id_prefix="alarm-notification-sort"
@@ -606,7 +608,7 @@ defmodule BacViewWeb.AlarmsPanel do
                 </span>
               </td>
               <td class="bac-mono">{EventFormatter.priority_label(notif.priority)}</td>
-              <td class="max-w-sm truncate">{notif.message_text || "-"}</td>
+              <td>{notif.message_text || "-"}</td>
             </tr>
           </tbody>
         </table>

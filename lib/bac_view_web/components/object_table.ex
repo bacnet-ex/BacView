@@ -183,7 +183,7 @@ defmodule BacViewWeb.ObjectTable do
                   aria-label={t(@locale, @locale_version, "Alle Objekte auswählen")}
                 />
               </th>
-              <th>
+              <th class="w-56">
                 <.sort_header
                   column="object_id"
                   label={t(@locale, @locale_version, "Objekt-ID")}
@@ -191,7 +191,7 @@ defmodule BacViewWeb.ObjectTable do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-80">
                 <.sort_header
                   column="name"
                   label={t(@locale, @locale_version, "Name")}
@@ -207,7 +207,7 @@ defmodule BacViewWeb.ObjectTable do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-48">
                 <div class="inline-flex items-center gap-1.5">
                   <.sort_header
                     column="type"
@@ -261,7 +261,7 @@ defmodule BacViewWeb.ObjectTable do
                   </button>
                 </div>
               </th>
-              <th>
+              <th class="w-44">
                 <.sort_header
                   column="present_value"
                   label={t(@locale, @locale_version, "Present Value")}
@@ -269,7 +269,7 @@ defmodule BacViewWeb.ObjectTable do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <.sort_header
                   column="updated_at"
                   label={t(@locale, @locale_version, "Aktualisiert")}
@@ -305,12 +305,15 @@ defmodule BacViewWeb.ObjectTable do
                 class="bac-mono bac-row-clickable"
                 phx-click={JS.navigate(object_path(@device_id, obj, @list_opts))}
               >
-                <span class="flex items-center gap-2">
-                  {obj.type}:{obj.instance}
-                  <span :if={live?(@subscribed_keys, obj)} class="bac-badge bac-badge-sm bac-badge-success">
+                <span class="flex items-center gap-2 min-w-0">
+                  <span class="min-w-0 break-words">{obj.type}:{obj.instance}</span>
+                  <span
+                    :if={live?(@subscribed_keys, obj)}
+                    class="bac-badge bac-badge-sm bac-badge-success shrink-0 whitespace-nowrap"
+                  >
                     {t(@locale, @locale_version, "Live")}
                   </span>
-                  <.icon name="hero-chevron-right" class="size-3.5 bac-text-faint ml-auto" />
+                  <.icon name="hero-chevron-right" class="size-3.5 bac-text-faint ml-auto shrink-0" />
                 </span>
               </td>
               <td
@@ -357,7 +360,7 @@ defmodule BacViewWeb.ObjectTable do
                 {present_value_label(obj)}
               </td>
               <td
-                class="bac-text-faint bac-row-clickable"
+                class="bac-text-faint bac-row-clickable whitespace-nowrap"
                 phx-click={JS.navigate(object_path(@device_id, obj, @list_opts))}
               >
                 {format_time(obj.updated_at)}

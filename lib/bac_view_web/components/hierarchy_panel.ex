@@ -224,7 +224,7 @@ defmodule BacViewWeb.HierarchyPanel do
             <col class="w-10" />
             <col />
             <col class="w-36" />
-            <col class="w-32" />
+            <col class="w-52" />
           </colgroup>
           <thead>
             <tr>
@@ -240,7 +240,7 @@ defmodule BacViewWeb.HierarchyPanel do
               </th>
               <th>{t(@locale, @locale_version, "Name")}</th>
               <th class="w-36">{t(@locale, @locale_version, "Status")}</th>
-              <th class="text-right">{t(@locale, @locale_version, "Present Value")}</th>
+              <th class="w-52 text-right">{t(@locale, @locale_version, "Present Value")}</th>
             </tr>
           </thead>
           <tbody>
@@ -337,7 +337,7 @@ defmodule BacViewWeb.HierarchyPanel do
                     <span class="truncate">{entry.name}</span>
                     <span
                       :if={live?(@subscribed_keys, entry)}
-                      class="bac-badge bac-badge-sm bac-badge-success shrink-0"
+                      class="bac-badge bac-badge-sm bac-badge-success shrink-0 whitespace-nowrap"
                     >
                       {t(@locale, @locale_version, "Live")}
                     </span>
@@ -359,7 +359,7 @@ defmodule BacViewWeb.HierarchyPanel do
               <td
                 :if={entry.kind == :object}
                 class={[
-                  "align-top bac-mono text-right max-w-[12rem] truncate",
+                  "align-top bac-mono text-right max-w-[13rem] truncate",
                   entry.writable && "cursor-pointer"
                 ]}
                 phx-click={if entry.writable, do: "open_write_modal"}

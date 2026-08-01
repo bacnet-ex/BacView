@@ -148,19 +148,9 @@ defmodule BacViewWeb.SubscriptionsPanel do
 
       <div :if={@sorted_subscriptions != []} class="bac-table-wrap">
         <table class="bac-table" id="cov-subscriptions-table">
-          <colgroup>
-            <col class="w-8" />
-            <col class="w-[12%]" />
-            <col class="w-[16%]" />
-            <col class="w-[10%]" />
-            <col class="w-[12%]" />
-            <col class="w-[18%]" />
-            <col class="w-[10%]" />
-            <col class="w-[10%]" />
-          </colgroup>
           <thead>
             <tr>
-              <th class="w-8 px-2">
+              <th class="w-10">
                 <input
                   id="subscription-select-all"
                   type="checkbox"
@@ -170,7 +160,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   aria-label={t(@locale, @locale_version, "Alle Abonnements auswählen")}
                 />
               </th>
-              <th>
+              <th class="w-80">
                 <SortHeader.sort_header
                   event="sort_subscriptions"
                   id_prefix="subscription-sort"
@@ -190,7 +180,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-40">
                 <SortHeader.sort_header
                   event="sort_subscriptions"
                   id_prefix="subscription-sort"
@@ -200,7 +190,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_subscriptions"
                   id_prefix="subscription-sort"
@@ -210,7 +200,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-44">
                 <SortHeader.sort_header
                   event="sort_subscriptions"
                   id_prefix="subscription-sort"
@@ -220,7 +210,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_subscriptions"
                   id_prefix="subscription-sort"
@@ -230,7 +220,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th></th>
+              <th class="w-36"></th>
             </tr>
           </thead>
           <tbody>
@@ -244,7 +234,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                 phx-value-type={sub.object_id.type}
                 phx-value-instance={sub.object_id.instance}
                 phx-value-property={sub.property}
-                class="w-8 px-2 cursor-pointer"
+                class="w-10 cursor-pointer"
               >
                 <input
                   type="checkbox"
@@ -340,17 +330,9 @@ defmodule BacViewWeb.SubscriptionsPanel do
 
       <div :if={@notifications != []} class="bac-table-wrap">
         <table class="bac-table" id="cov-notifications-table">
-          <colgroup>
-            <col class="w-[16%]" />
-            <col class="w-[18%]" />
-            <col class="w-[14%]" />
-            <col class="w-[28%]" />
-            <col class="w-[12%]" />
-            <col class="w-[12%]" />
-          </colgroup>
           <thead>
             <tr>
-              <th>
+              <th class="w-44">
                 <SortHeader.sort_header
                   event="sort_cov_notifications"
                   id_prefix="cov-notification-sort"
@@ -360,7 +342,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-64">
                 <SortHeader.sort_header
                   event="sort_cov_notifications"
                   id_prefix="cov-notification-sort"
@@ -370,7 +352,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-80">
                 <SortHeader.sort_header
                   event="sort_cov_notifications"
                   id_prefix="cov-notification-sort"
@@ -390,7 +372,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-28">
                 <SortHeader.sort_header
                   event="sort_cov_notifications"
                   id_prefix="cov-notification-sort"
@@ -400,7 +382,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
                   sort_dir={@sort_dir}
                 />
               </th>
-              <th>
+              <th class="w-32">
                 <SortHeader.sort_header
                   event="sort_cov_notifications"
                   id_prefix="cov-notification-sort"
