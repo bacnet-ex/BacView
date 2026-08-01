@@ -12,11 +12,12 @@ hand-maintained option lists in the editor.
 | UI consumer | `BacView.BACnet.Protocol.ComplexPropertyEditor` | Collect fields, apply form paths, kind-switch ordering |
 
 LiveView entry points: `ObjectLive` + `WritePropertyModal` call
-`ComplexPropertyEditor.form_fields/1` and `apply_form_fields/2`.
+`ComplexPropertyEditor.form_fields/2` and `apply_form_fields/3` with
+`property:` / `object_type:` opts so value-level multi-struct unions get a kind picker.
 
 ---
 
-## Two CHOICE shapes
+## Three CHOICE shapes
 
 ### Tagged (discriminant field + exclusive payload fields)
 
@@ -75,18 +76,48 @@ Form path for the picker is a **synthetic** discriminant:
 
 Covered today: **NameValue** (`value`), **SpecialEvent** (`period`).
 
+### Union (property- or item-level multi-struct type_list)
+
+The **value itself** is one of several structs — not a field inside a parent CHOICE.
+
+BeamTypes example (`EventEnrollment.event_parameters`):
+
+```elixir
+{:type_list, [
+  struct: EventParameters.ChangeOfBitstring,
+  struct: EventParameters.ChangeOfState,
+  struct: EventParameters.ChangeOfValue,
+  # …
+  struct: EventParameters.None
+]}
+```
+
+Built via `ChoiceSchema.union_choice/1` when `ComplexPropertyEditor` is given
+`property:` / `object_type:` (resolved through `CollectionItemTemplate.property_bac_type/2`).
+
+Detection: `type_list` of **two or more** `{:struct, _}` members (optional `nil` alone is not enough).
+
+Form path for the picker is synthetic **`kind`** (label `"Type"`). Applying an arm
+**replaces the whole value** with a blank of the selected struct.
+
+Covered today: **`event_parameters`**, **`fault_parameters`** (EventEnrollment).
+
+Also applies to collection **elements** when the element type is a multi-struct
+`type_list` (path `N.kind`).
+
 ---
 
 ## Runtime behaviour
 
 ### Collect fields
 
-For any `%mod{}` with non-empty `ChoiceSchema.analyze(mod).choices`:
-
-1. Walk BeamTypes field order.
-2. On a tagged discriminant: emit kind picker, then recurse into the **active** arm only.
-3. On an inline source field: emit synthetic kind picker, then recurse into the payload if present.
-4. Plain fields (and nested structs without choices) use the generic walk.
+1. If opts resolve a **value-level** multi-struct union → emit `kind` picker, then walk the current value’s fields (tagged/inline CHOICE inside the arm still apply).
+2. For any `%mod{}` with non-empty `ChoiceSchema.analyze(mod).choices`:
+   - Walk BeamTypes field order.
+   - On a tagged discriminant: emit kind picker, then recurse into the **active** arm only.
+   - On an inline source field: emit synthetic kind picker, then recurse into the payload if present.
+   - Plain fields (and nested structs without choices) use the generic walk.
+3. For list/array items with an **element-level** multi-struct union → same as (1) under index prefix.
 
 `Encoding` keeps a dedicated collector (internal encoding/type/value UI is not ChoiceSchema v1).
 
@@ -96,9 +127,11 @@ When a form path’s last segment is a CHOICE discriminant:
 
 - Parse arm id against schema options (unknown → `{:error, :invalid_enum}`).
 - If kind **unchanged**, leave the struct alone so sibling field edits in the same submit survive.
-- If kind **changed**, `ChoiceSchema.apply_arm/3` blanks the new arm and nils inactive tagged legs.
+- If kind **changed**:
+  - tagged/inline → `ChoiceSchema.apply_arm/3` blanks the new arm and nils inactive tagged legs
+  - union → `apply_arm` returns a blank of the selected struct (whole-value replace)
 
-If any discriminant on the submit **changed**, `apply_form_fields/2` applies **only** discriminant paths (stale previous-branch fields are ignored). Discriminants are also sorted last among paths so branch rebuild wins when both appear.
+If any discriminant on the submit **changed**, `apply_form_fields/3` applies **only** discriminant paths (stale previous-branch fields are ignored). Discriminants are also sorted last among paths so branch rebuild wins when both appear.
 
 ### Blanks
 
@@ -181,6 +214,7 @@ stale UI assumptions when BeamTypes change.
 - `Encoding`’s own encoding/type/value controls.
 - Perfect labels for every arm without overrides.
 - Changing bacstack typespecs from BacView.
+- Subsetting union arms per object (all EventParameters variants are listed even if a given device only uses one algorithm).
 
 ---
 
@@ -188,8 +222,13 @@ stale UI assumptions when BeamTypes change.
 
 ```elixir
 alias BacView.BACnet.Protocol.ChoiceSchema
+alias BACnet.Protocol.ObjectTypes.EventEnrollment
 
 ChoiceSchema.analyze(BACnet.Protocol.CalendarEntry)
 ChoiceSchema.analyze(BACnet.Protocol.NameValue)
 ChoiceSchema.options(hd(ChoiceSchema.analyze(BACnet.Protocol.SpecialEvent).choices))
+
+bac = EventEnrollment.get_properties_type_map()[:event_parameters]
+{:ok, choice} = ChoiceSchema.union_choice(bac)
+ChoiceSchema.options(choice)
 ```

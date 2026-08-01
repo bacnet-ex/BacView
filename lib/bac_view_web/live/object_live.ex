@@ -790,17 +790,23 @@ defmodule BacViewWeb.ObjectLive do
   def handle_event("change_write_property_fields", %{"field" => fields}, socket) do
     case socket.assigns.write_property_modal do
       %{draft_value: draft_value} = modal ->
+        editor_opts = write_property_editor_opts(modal, socket)
+
         fields =
           modal.draft_fields
           |> Map.merge(ComplexPropertyEditor.normalize_field_params(fields))
           |> clear_tag_number_for_primitive_encoding()
 
         modal =
-          case ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, draft_value) do
+          case ComplexPropertyEditor.apply_form_fields(
+                 %{"field" => fields},
+                 draft_value,
+                 editor_opts
+               ) do
             {:ok, updated} ->
               # CHOICE / structural edits change which paths exist; rebuild the field list.
               # Same-path edits keep the submitted draft_fields map (typing UX).
-              apply_write_property_field_change(modal, updated, fields)
+              apply_write_property_field_change(modal, updated, fields, editor_opts)
 
             {:error, reason} ->
               %{
@@ -848,8 +854,14 @@ defmodule BacViewWeb.ObjectLive do
     case socket.assigns.write_property_modal do
       %{editor: :generic, property: prop, draft_value: draft_value, draft_fields: draft_fields} =
           modal ->
+        editor_opts = write_property_editor_opts(modal, socket)
+
         with {:ok, current} <-
-               ComplexPropertyEditor.apply_form_fields(%{"field" => draft_fields}, draft_value),
+               ComplexPropertyEditor.apply_form_fields(
+                 %{"field" => draft_fields},
+                 draft_value,
+                 editor_opts
+               ),
              {:ok, updated} <-
                ComplexPropertyEditor.add_item(current,
                  property: prop.property,
@@ -859,7 +871,7 @@ defmodule BacViewWeb.ObjectLive do
            assign(
              socket,
              :write_property_modal,
-             refresh_write_property_fields(modal, updated)
+             refresh_write_property_fields(modal, updated, editor_opts)
            )}
         else
           {:error, reason} ->
@@ -880,15 +892,21 @@ defmodule BacViewWeb.ObjectLive do
   def handle_event("write_property_remove_item", %{"index" => index_str}, socket) do
     case socket.assigns.write_property_modal do
       %{editor: :generic, draft_value: draft_value, draft_fields: draft_fields} = modal ->
+        editor_opts = write_property_editor_opts(modal, socket)
+
         with {index, ""} <- Integer.parse(to_string(index_str)),
              {:ok, current} <-
-               ComplexPropertyEditor.apply_form_fields(%{"field" => draft_fields}, draft_value),
+               ComplexPropertyEditor.apply_form_fields(
+                 %{"field" => draft_fields},
+                 draft_value,
+                 editor_opts
+               ),
              {:ok, updated} <- ComplexPropertyEditor.remove_item(current, index) do
           {:noreply,
            assign(
              socket,
              :write_property_modal,
-             refresh_write_property_fields(modal, updated)
+             refresh_write_property_fields(modal, updated, editor_opts)
            )}
         else
           :error ->
@@ -914,12 +932,15 @@ defmodule BacViewWeb.ObjectLive do
 
     case socket.assigns.write_property_modal do
       %{property: prop, draft_value: draft_value} = modal ->
+        editor_opts = write_property_editor_opts(modal, socket)
+
         modal =
           case editor_mode do
             :json ->
               case ComplexPropertyEditor.apply_form_fields(
                      %{"field" => modal.draft_fields},
-                     draft_value
+                     draft_value,
+                     editor_opts
                    ) do
                 {:ok, value} ->
                   case ComplexPropertyEditor.encode_json(value) do
@@ -945,12 +966,13 @@ defmodule BacViewWeb.ObjectLive do
                 {:ok, value} ->
                   refresh_write_property_fields(
                     %{modal | json_error: nil, field_error: nil},
-                    value
+                    value,
+                    editor_opts
                   )
 
                 {:error, reason} ->
                   # Keep last good draft_value for fields if JSON is invalid
-                  form_fields = ComplexPropertyEditor.form_fields(draft_value)
+                  form_fields = ComplexPropertyEditor.form_fields(draft_value, editor_opts)
 
                   %{
                     modal
@@ -2008,12 +2030,18 @@ defmodule BacViewWeb.ObjectLive do
     WeeklyScheduleEditor.decode_json(json, prop.value)
   end
 
-  defp decode_write_property_modal(%{
-         editor_mode: :fields,
-         draft_value: draft_value,
-         draft_fields: fields
-       }) do
-    ComplexPropertyEditor.apply_form_fields(%{"field" => fields}, draft_value)
+  defp decode_write_property_modal(
+         %{
+           editor_mode: :fields,
+           draft_value: draft_value,
+           draft_fields: fields
+         } = modal
+       ) do
+    ComplexPropertyEditor.apply_form_fields(
+      %{"field" => fields},
+      draft_value,
+      write_property_editor_opts(modal)
+    )
   end
 
   defp decode_write_property_modal(%{editor_mode: :json, property: prop, draft_json: json}) do
@@ -2026,6 +2054,17 @@ defmodule BacViewWeb.ObjectLive do
       _object -> nil
     end
   end
+
+  # Property identity for multi-struct unions (event_parameters, …) and collection add.
+  defp write_property_editor_opts(%{property: prop}, socket) when is_map(prop) do
+    [property: prop.property, object_type: object_type_for_editor(socket)]
+  end
+
+  defp write_property_editor_opts(%{property: prop}) when is_map(prop) do
+    [property: prop.property, object_type: Map.get(prop, :object_type)]
+  end
+
+  defp write_property_editor_opts(_modal), do: []
 
   defp clear_tag_number_for_primitive_encoding(fields) do
     if Map.get(fields, "encoding") == "primitive" do
@@ -2128,12 +2167,13 @@ defmodule BacViewWeb.ObjectLive do
           }
       end
     else
-      build_generic_write_property_modal(prop)
+      build_generic_write_property_modal(socket, prop)
     end
   end
 
-  defp build_generic_write_property_modal(prop) do
-    form_fields = ComplexPropertyEditor.form_fields(prop.value)
+  defp build_generic_write_property_modal(socket, prop) do
+    editor_opts = write_property_editor_opts(%{property: prop}, socket)
+    form_fields = ComplexPropertyEditor.form_fields(prop.value, editor_opts)
 
     case ComplexPropertyEditor.encode_json(prop.value) do
       {:ok, draft_json} ->
@@ -2166,8 +2206,8 @@ defmodule BacViewWeb.ObjectLive do
     end
   end
 
-  defp refresh_write_property_fields(modal, draft_value) do
-    form_fields = ComplexPropertyEditor.form_fields(draft_value)
+  defp refresh_write_property_fields(modal, draft_value, editor_opts) do
+    form_fields = ComplexPropertyEditor.form_fields(draft_value, editor_opts)
 
     draft_json =
       case ComplexPropertyEditor.encode_json(draft_value) do
@@ -2190,8 +2230,8 @@ defmodule BacViewWeb.ObjectLive do
   # After a successful field apply: if the editable path set changed (CHOICE branch,
   # encoding shape, etc.), rebuild form_fields/draft_fields from draft_value so the
   # modal shows the new branch. Otherwise keep the submitted draft_fields for typing.
-  defp apply_write_property_field_change(modal, updated_value, submitted_fields) do
-    new_form_fields = ComplexPropertyEditor.form_fields(updated_value)
+  defp apply_write_property_field_change(modal, updated_value, submitted_fields, editor_opts) do
+    new_form_fields = ComplexPropertyEditor.form_fields(updated_value, editor_opts)
 
     if form_field_paths(modal.form_fields) == form_field_paths(new_form_fields) do
       %{
@@ -2203,7 +2243,7 @@ defmodule BacViewWeb.ObjectLive do
           submit_error: nil
       }
     else
-      refresh_write_property_fields(modal, updated_value)
+      refresh_write_property_fields(modal, updated_value, editor_opts)
     end
   end
 

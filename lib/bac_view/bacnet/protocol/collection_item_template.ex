@@ -35,6 +35,7 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
   alias BacView.BACnet.Protocol.PropertyEnumeration
 
   @item_type_cache_key {__MODULE__, :item_type_by_property}
+  @property_type_cache_key {__MODULE__, :property_type_by_property}
 
   @doc """
   Resolves the element type of a list/array property and builds a blank item.
@@ -70,6 +71,31 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
   def collection_item_type(_property, _object_type), do: {:error, :unknown_collection_item_type}
 
   @doc """
+  Resolves the full bacstack type of a property (not unwrapped for collections).
+
+  Used by the complex property editor for value-level multi-struct unions
+  (`event_parameters`, `fault_parameters`, …).
+  """
+  @spec property_bac_type(term(), term()) :: {:ok, term()} | {:error, term()}
+  def property_bac_type(property, object_type \\ nil)
+
+  def property_bac_type(property, object_type)
+      when is_atom(property) and property != nil do
+    case property_type_from_object(property, object_type) do
+      {:ok, _bac_type} = ok ->
+        ok
+
+      :error ->
+        case Map.fetch(property_type_cache(), property) do
+          {:ok, bac_type} -> {:ok, bac_type}
+          :error -> {:error, :unknown_property_type}
+        end
+    end
+  end
+
+  def property_bac_type(_property, _object_type), do: {:error, :unknown_property_type}
+
+  @doc """
   Builds a blank value for a BeamTypes typechecker shape.
   """
   @spec blank_from_bac_type(term()) :: {:ok, term()} | {:error, term()}
@@ -84,7 +110,8 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
   def blank_from_bac_type(:unsigned_integer), do: {:ok, 0}
   def blank_from_bac_type(:real), do: {:ok, 0.0}
   def blank_from_bac_type(:double), do: {:ok, 0.0}
-  def blank_from_bac_type(:bitstring), do: {:error, :unknown_collection_item_type}
+  # Empty bitstring draft; form size grows when the user edits bits / JSON.
+  def blank_from_bac_type(:bitstring), do: {:ok, {}}
 
   def blank_from_bac_type({:literal, value}), do: {:ok, value}
 
@@ -154,28 +181,37 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
 
   # Returns the *element* type of a collection property (already unwrapped).
   defp property_collection_element_type(property, object_type) when is_atom(object_type) do
-    case ObjectsUtility.get_object_type_mappings()[object_type] do
-      mod when is_atom(mod) ->
-        type_map = type_map_from_module(mod)
-
-        case Map.fetch(type_map, property) do
-          {:ok, bac_type} ->
-            case unwrap_collection_element(bac_type) do
-              {:ok, element_type} -> {:ok, element_type}
-              {:error, _reason} -> element_type_from_cache(property)
-            end
-
-          :error ->
-            element_type_from_cache(property)
+    case property_type_from_object(property, object_type) do
+      {:ok, bac_type} ->
+        case unwrap_collection_element(bac_type) do
+          {:ok, element_type} -> {:ok, element_type}
+          {:error, _reason} -> element_type_from_cache(property)
         end
 
-      _unknown ->
+      :error ->
         element_type_from_cache(property)
     end
   end
 
   defp property_collection_element_type(property, _object_type),
     do: element_type_from_cache(property)
+
+  defp property_type_from_object(property, object_type) when is_atom(object_type) do
+    case ObjectsUtility.get_object_type_mappings()[object_type] do
+      mod when is_atom(mod) ->
+        type_map = type_map_from_module(mod)
+
+        case Map.fetch(type_map, property) do
+          {:ok, bac_type} -> {:ok, bac_type}
+          :error -> :error
+        end
+
+      _unknown ->
+        :error
+    end
+  end
+
+  defp property_type_from_object(_property, _object_type), do: :error
 
   defp element_type_from_cache(property) when is_atom(property) do
     case Map.fetch(item_type_cache(), property) do
@@ -189,6 +225,18 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
       :missing ->
         cache = build_item_type_cache()
         :persistent_term.put(@item_type_cache_key, cache)
+        cache
+
+      cache ->
+        cache
+    end
+  end
+
+  defp property_type_cache() do
+    case :persistent_term.get(@property_type_cache_key, :missing) do
+      :missing ->
+        cache = build_property_type_cache()
+        :persistent_term.put(@property_type_cache_key, cache)
         cache
 
       cache ->
@@ -216,6 +264,20 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
     end)
   end
 
+  defp build_property_type_cache() do
+    mappings = ObjectsUtility.get_object_type_mappings()
+
+    Enum.reduce(mappings, %{}, fn {_object_type, mod}, acc ->
+      type_map = type_map_from_module(mod)
+
+      Enum.reduce(type_map, acc, fn {property, bac_type}, acc ->
+        Map.update(acc, property, bac_type, fn existing ->
+          prefer_property_type(existing, bac_type)
+        end)
+      end)
+    end)
+  end
+
   # Prefer struct element types over primitives when the same property name
   # appears with different shapes on different object types.
   defp prefer_item_type(existing, new) do
@@ -225,6 +287,28 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
       true -> existing
     end
   end
+
+  # Prefer multi-struct unions (and structs) when the same property name appears
+  # with different shapes on different object types.
+  defp prefer_property_type(existing, new) do
+    cond do
+      multi_struct_type_list?(existing) -> existing
+      multi_struct_type_list?(new) -> new
+      match?({:struct, _mod}, existing) -> existing
+      match?({:struct, _mod}, new) -> new
+      true -> existing
+    end
+  end
+
+  defp multi_struct_type_list?({:type_list, members}) when is_list(members) do
+    structs = Enum.filter(members, &match?({:struct, _mod}, &1))
+    length(structs) >= 2
+  end
+
+  defp multi_struct_type_list?({:with_validator, type, _validator}),
+    do: multi_struct_type_list?(type)
+
+  defp multi_struct_type_list?(_type), do: false
 
   defp type_map_from_module(mod) when is_atom(mod) do
     Code.ensure_loaded(mod)
@@ -400,27 +484,33 @@ defmodule BacView.BACnet.Protocol.CollectionItemTemplate do
 
     field_types = struct_field_types(module)
 
-    if map_size(field_types) == 0 do
-      {:error, :unknown_collection_item_type}
-    else
-      field_types
-      |> Enum.reduce_while({:ok, %{}}, fn {key, field_type}, {:ok, acc} ->
-        case blank_from_bac_type(field_type) do
-          {:ok, value} -> {:cont, {:ok, Map.put(acc, key, value)}}
-          {:error, _reason} = err -> {:halt, err}
-        end
-      end)
-      |> case do
-        {:ok, attrs} ->
-          try do
-            {:ok, struct!(module, attrs)}
-          rescue
-            _attrs -> {:error, :unknown_collection_item_type}
-          end
+    cond do
+      # Empty structs (EventParameters.None, FaultParameters.None, …).
+      map_size(field_types) == 0 and function_exported?(module, :__struct__, 0) ->
+        {:ok, struct(module)}
 
-        {:error, _reason} = err ->
-          err
-      end
+      map_size(field_types) == 0 ->
+        {:error, :unknown_collection_item_type}
+
+      true ->
+        field_types
+        |> Enum.reduce_while({:ok, %{}}, fn {key, field_type}, {:ok, acc} ->
+          case blank_from_bac_type(field_type) do
+            {:ok, value} -> {:cont, {:ok, Map.put(acc, key, value)}}
+            {:error, _reason} = err -> {:halt, err}
+          end
+        end)
+        |> case do
+          {:ok, attrs} ->
+            try do
+              {:ok, struct!(module, attrs)}
+            rescue
+              _attrs -> {:error, :unknown_collection_item_type}
+            end
+
+          {:error, _reason} = err ->
+            err
+        end
     end
   end
 

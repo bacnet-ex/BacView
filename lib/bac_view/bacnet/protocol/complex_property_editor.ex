@@ -63,10 +63,23 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   def editor_type(_editor_type_arg1), do: :generic
 
   @spec form_fields(term()) :: [form_field()]
-  def form_fields(value) do
-    value
-    |> collect_form_fields([], [])
-    |> Enum.reverse()
+  @spec form_fields(term(), keyword()) :: [form_field()]
+  def form_fields(value, opts \\ [])
+
+  def form_fields(value, opts) when is_list(opts) do
+    ctx = editor_ctx(opts)
+
+    case Map.get(ctx, :value_union) do
+      nil ->
+        value
+        |> collect_form_fields([], [], nil, nil, ctx)
+        |> Enum.reverse()
+
+      choice ->
+        value
+        |> collect_union_value_fields(choice, [], [])
+        |> Enum.reverse()
+    end
   end
 
   @spec initial_field_params([form_field()]) :: %{String.t() => String.t()}
@@ -240,34 +253,40 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   def normalize_field_params(fields) when is_list(fields), do: %{}
 
   @spec apply_form_fields(map(), term()) :: {:ok, term()} | {:error, term()}
-  def apply_form_fields(params, template) do
+  @spec apply_form_fields(map(), term(), keyword()) :: {:ok, term()} | {:error, term()}
+  def apply_form_fields(params, template, opts \\ [])
+
+  def apply_form_fields(params, template, opts) when is_list(opts) do
+    ctx = editor_ctx(opts)
+
     case normalize_field_params(Map.get(params, "field", %{})) do
       fields when map_size(fields) == 0 ->
         {:ok, template}
 
       fields ->
-        paths = sorted_field_paths(fields, template)
-        choice_paths = choice_discriminant_paths(paths, template)
+        paths = sorted_field_paths(fields, template, ctx)
+        choice_paths = choice_discriminant_paths(paths, template, ctx)
 
         # Kind/type switches must ignore all other field validation. The previous
         # branch's fields are still in the form payload and will always fail or
         # fight the rebuild (empty drafts, wrong shape, stale legs).
         apply_paths =
-          if choice_discriminant_changed?(choice_paths, fields, template) do
+          if choice_discriminant_changed?(choice_paths, fields, template, ctx) do
             choice_paths
           else
             paths
           end
 
-        finalize_apply_result(apply_field_paths(apply_paths, template, fields))
+        finalize_apply_result(apply_field_paths(apply_paths, template, fields, ctx))
     end
   end
 
-  defp apply_field_paths(paths, template, fields) do
+  defp apply_field_paths(paths, template, fields, ctx) do
     Enum.reduce_while(paths, {:ok, template}, fn path, {:ok, current} ->
       with {:ok, segments} <- parse_path(path),
            {:ok, ensured} <- ensure_path_collection_slots(current, segments),
-           {:ok, updated} <- update_in_structure(ensured, segments, Map.get(fields, path)) do
+           {:ok, updated} <-
+             update_in_structure(ensured, segments, Map.get(fields, path), ctx) do
         {:cont, {:ok, updated}}
       else
         {:error, _reason} = err -> {:halt, err}
@@ -275,19 +294,19 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end)
   end
 
-  defp choice_discriminant_paths(paths, template) do
+  defp choice_discriminant_paths(paths, template, ctx) do
     Enum.filter(paths, fn path ->
       case parse_path(path) do
-        {:ok, segments} -> choice_discriminant_path?(template, segments)
+        {:ok, segments} -> choice_discriminant_path?(template, segments, ctx)
         {:error, _reason} -> false
       end
     end)
   end
 
-  defp choice_discriminant_changed?(choice_paths, fields, template) do
+  defp choice_discriminant_changed?(choice_paths, fields, template, ctx) do
     Enum.any?(choice_paths, fn path ->
       with {:ok, segments} <- parse_path(path),
-           {:ok, current} <- current_choice_value(template, segments) do
+           {:ok, current} <- current_choice_value(template, segments, ctx) do
         submitted =
           fields
           |> Map.get(path, "")
@@ -301,8 +320,13 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end)
   end
 
+  # Value-level multi-struct union (event_parameters, …) — path is just "kind".
+  defp current_choice_value(data, [key], %{value_union: %{discriminant_key: key} = choice}) do
+    {:ok, ChoiceSchema.active_arm_id(data, choice)}
+  end
+
   # Synthetic discriminants (value_kind / period_kind) resolve via ChoiceSchema arms.
-  defp current_choice_value(%mod{} = data, [key]) when is_atom(mod) do
+  defp current_choice_value(%mod{} = data, [key], _ctx) when is_atom(mod) do
     with {:ok, schema} <- ChoiceSchema.fetch(mod),
          {:ok, choice} <- ChoiceSchema.choice_for_discriminant(schema, key) do
       {:ok, ChoiceSchema.active_arm_id(data, choice)}
@@ -311,14 +335,69 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
-  defp current_choice_value(data, [key | rest]) do
+  defp current_choice_value(data, [key | rest], ctx) when is_integer(key) do
     case get_child(data, key) do
-      {:ok, child} -> current_choice_value(child, rest)
+      {:ok, child} ->
+        item_ctx = collection_item_ctx(ctx)
+        current_choice_value(child, rest, item_ctx)
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  defp current_choice_value(data, [key | rest], ctx) do
+    case get_child(data, key) do
+      {:ok, child} -> current_choice_value(child, rest, ctx)
       {:error, _reason} = err -> err
     end
   end
 
-  defp current_choice_value(_data, _segments), do: {:error, :invalid_path}
+  defp current_choice_value(_data, _segments, _ctx), do: {:error, :invalid_path}
+
+  # --- editor context (property / collection multi-struct unions) -------------
+
+  defp editor_ctx(opts) when is_list(opts) do
+    property = Keyword.get(opts, :property)
+    object_type = Keyword.get(opts, :object_type)
+
+    case CollectionItemTemplate.property_bac_type(property, object_type) do
+      {:ok, bac_type} ->
+        case ChoiceSchema.union_choice(bac_type) do
+          {:ok, choice} ->
+            %{value_union: choice}
+
+          :error ->
+            case unwrap_collection_element_type(bac_type) do
+              {:ok, element_type} ->
+                case ChoiceSchema.union_choice(element_type) do
+                  {:ok, choice} -> %{element_union: choice}
+                  :error -> %{}
+                end
+
+              :error ->
+                %{}
+            end
+        end
+
+      {:error, _reason} ->
+        %{}
+    end
+  end
+
+  defp unwrap_collection_element_type({:list, element_type}), do: {:ok, element_type}
+  defp unwrap_collection_element_type({:array, element_type}), do: {:ok, element_type}
+
+  defp unwrap_collection_element_type({:array, element_type, _fixed_size}),
+    do: {:ok, element_type}
+
+  defp unwrap_collection_element_type({:with_validator, type, _validator}),
+    do: unwrap_collection_element_type(type)
+
+  defp unwrap_collection_element_type(_type), do: :error
+
+  defp collection_item_ctx(%{element_union: choice}), do: %{value_union: choice}
+  defp collection_item_ctx(_ctx), do: %{}
 
   @spec encode_json(term()) :: {:ok, String.t()} | {:error, term()}
   def encode_json(value) do
@@ -338,9 +417,9 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
-  defp collect_form_fields(value, path_rev, acc, parent \\ nil, field_key \\ nil)
+  defp collect_form_fields(value, path_rev, acc, parent, field_key, ctx)
 
-  defp collect_form_fields(%Encoding{} = encoding, path_rev, acc, _parent, _field_key) do
+  defp collect_form_fields(%Encoding{} = encoding, path_rev, acc, _parent, _field_key, _ctx) do
     acc =
       [
         build_encoding_kind_field(encoding.encoding, [:encoding | path_rev])
@@ -367,15 +446,15 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
         | acc
       ]
 
-    collect_form_fields(encoding.value, [:value | path_rev], acc, encoding, :value)
+    collect_form_fields(encoding.value, [:value | path_rev], acc, encoding, :value, %{})
   end
 
-  defp collect_form_fields(%BACnetArray{} = array, path_rev, acc, _parent, field_key) do
+  defp collect_form_fields(%BACnetArray{} = array, path_rev, acc, _parent, field_key, ctx) do
     array
     |> bacnet_array_elements()
     |> Enum.with_index()
     |> Enum.reduce(acc, fn {item, index}, acc ->
-      collect_form_fields(item, [index | path_rev], acc, array, field_key)
+      collect_collection_item(item, [index | path_rev], acc, array, field_key, ctx)
     end)
   end
 
@@ -384,7 +463,8 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
          path_rev,
          acc,
          _value,
-         _path
+         _path,
+         _ctx
        ) do
     [
       build_form_field(
@@ -405,7 +485,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     ]
   end
 
-  defp collect_form_fields(%mod{} = struct, path_rev, acc, _parent, _field_key)
+  defp collect_form_fields(%mod{} = struct, path_rev, acc, _parent, _field_key, _ctx)
        when is_atom(mod) do
     case ChoiceSchema.analyze(mod) do
       %{choices: choices} = schema when choices != [] ->
@@ -413,20 +493,21 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
       _no_choice ->
         Enum.reduce(Map.from_struct(struct), acc, fn {key, value}, acc ->
-          collect_form_fields(value, [key | path_rev], acc, struct, key)
+          collect_form_fields(value, [key | path_rev], acc, struct, key, %{})
         end)
     end
   end
 
-  defp collect_form_fields(list, path_rev, acc, parent, field_key) when is_list(list) do
+  defp collect_form_fields(list, path_rev, acc, parent, field_key, ctx) when is_list(list) do
     list
     |> Enum.with_index()
     |> Enum.reduce(acc, fn {item, index}, acc ->
-      collect_form_fields(item, [index | path_rev], acc, parent, field_key)
+      collect_collection_item(item, [index | path_rev], acc, parent, field_key, ctx)
     end)
   end
 
-  defp collect_form_fields({tag, value}, path_rev, acc, parent, field_key) when is_atom(tag) do
+  defp collect_form_fields({tag, value}, path_rev, acc, parent, field_key, _ctx)
+       when is_atom(tag) do
     [
       build_form_field(
         value,
@@ -439,8 +520,36 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     ]
   end
 
-  defp collect_form_fields(value, path_rev, acc, parent, field_key) do
+  defp collect_form_fields(value, path_rev, acc, parent, field_key, _ctx) do
     [build_form_field(value, path_rev, parent, field_key, nil) | acc]
+  end
+
+  defp collect_collection_item(item, path_rev, acc, parent, field_key, ctx) do
+    case Map.get(ctx, :element_union) do
+      nil ->
+        collect_form_fields(item, path_rev, acc, parent, field_key, %{})
+
+      choice ->
+        collect_union_value_fields(item, choice, path_rev, acc)
+    end
+  end
+
+  # Property- / item-level multi-struct union: kind picker + active arm fields.
+  defp collect_union_value_fields(value, choice, path_rev, acc) do
+    active = ChoiceSchema.active_arm_id(value, choice)
+    disc_key = choice.discriminant_key
+
+    acc = [
+      build_choice_field(
+        active,
+        [disc_key | path_rev],
+        ChoiceSchema.options(choice),
+        field_label_at(path_rev, ChoiceSchema.field_label(disc_key))
+      )
+      | acc
+    ]
+
+    collect_form_fields(value, path_rev, acc, nil, nil, %{})
   end
 
   defp build_form_field(value, path_rev, parent, field_key, label_override) do
@@ -517,7 +626,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
           collect_inline_choice_fields(struct, schema, key, path_rev, acc)
 
         true ->
-          collect_form_fields(Map.get(struct, key), [key | path_rev], acc, struct, key)
+          collect_form_fields(Map.get(struct, key), [key | path_rev], acc, struct, key, %{})
       end
     end)
   end
@@ -556,7 +665,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
       %{field: field} when is_atom(field) ->
         case Map.get(struct, field) do
           nil -> acc
-          value -> collect_form_fields(value, [field | path_rev], acc, struct, field)
+          value -> collect_form_fields(value, [field | path_rev], acc, struct, field, %{})
         end
 
       _no_arm ->
@@ -581,7 +690,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
     case Map.get(struct, source_key) do
       nil -> acc
-      value -> collect_form_fields(value, [source_key | path_rev], acc, struct, source_key)
+      value -> collect_form_fields(value, [source_key | path_rev], acc, struct, source_key, %{})
     end
   end
 
@@ -592,45 +701,60 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
-  defp update_in_structure(%Encoding{} = data, [:encoding], string_value) do
+  defp update_in_structure(data, segments, string_value, ctx)
+
+  defp update_in_structure(%Encoding{} = data, [:encoding], string_value, _ctx) do
     with {:ok, encoding} <- decode_encoding_kind(string_value) do
       extras = strip_tag_number_for_primitive(encoding, data.extras)
       {:ok, %{data | encoding: encoding, extras: extras}}
     end
   end
 
-  defp update_in_structure(%Encoding{} = data, [:type], string_value) do
+  defp update_in_structure(%Encoding{} = data, [:type], string_value, _ctx) do
     with {:ok, type} <- decode_encoding_type_field(string_value, data.type) do
       {:ok, %{data | type: type}}
     end
   end
 
-  defp update_in_structure(%Encoding{} = data, [:extras, :tag_number], string_value) do
+  defp update_in_structure(%Encoding{} = data, [:extras, :tag_number], string_value, _ctx) do
     with {:ok, extras} <- apply_tag_number_change(data.extras, string_value) do
       {:ok, %{data | extras: extras}}
     end
   end
 
-  defp update_in_structure(%Encoding{} = data, [:value], string_value) do
+  defp update_in_structure(%Encoding{} = data, [:value], string_value, _ctx) do
     with {:ok, parsed} <- parse_encoding_value(data.type, data.value, string_value) do
       {:ok, %{data | value: parsed}}
     end
   end
 
-  defp update_in_structure({tag, current}, [], string_value) when is_atom(tag) do
+  defp update_in_structure({tag, current}, [], string_value, _ctx) when is_atom(tag) do
     case parse_field_value(current, string_value) do
       {:ok, parsed} -> {:ok, {tag, parsed}}
       other -> other
     end
   end
 
-  defp update_in_structure(data, [], string_value) do
+  defp update_in_structure(data, [], string_value, _ctx) do
     parse_field_value(data, string_value)
+  end
+
+  # Value-level multi-struct union kind switch (replaces whole value).
+  defp update_in_structure(data, [key], string_value, %{
+         value_union: %{discriminant_key: key} = choice
+       }) do
+    with {:ok, arm_id} <- ChoiceSchema.parse_arm_id(string_value, choice) do
+      if ChoiceSchema.active_arm_id(data, choice) == arm_id do
+        {:ok, data}
+      else
+        {:ok, ChoiceSchema.apply_arm(data, choice, arm_id)}
+      end
+    end
   end
 
   # CHOICE discriminants (tagged type / synthetic value_kind / period_kind).
   # Unchanged kind preserves sibling field edits applied earlier in the same submit.
-  defp update_in_structure(%mod{} = data, [key], string_value) when is_atom(mod) do
+  defp update_in_structure(%mod{} = data, [key], string_value, _ctx) when is_atom(mod) do
     case try_apply_choice_discriminant(data, key, string_value) do
       {:ok, _updated} = ok ->
         ok
@@ -643,14 +767,28 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end
   end
 
-  defp update_in_structure(data, [key], string_value) do
+  defp update_in_structure(data, [key], string_value, _ctx) do
     update_struct_leaf(data, key, string_value)
   end
 
-  defp update_in_structure(data, [key | rest], string_value) do
+  defp update_in_structure(data, [key | rest], string_value, ctx) when is_integer(key) do
     case get_child(data, key) do
       {:ok, child} ->
-        with {:ok, updated_child} <- update_in_structure(child, rest, string_value) do
+        item_ctx = collection_item_ctx(ctx)
+
+        with {:ok, updated_child} <- update_in_structure(child, rest, string_value, item_ctx) do
+          map_child(data, key, updated_child)
+        end
+
+      {:error, _data} = err ->
+        err
+    end
+  end
+
+  defp update_in_structure(data, [key | rest], string_value, ctx) do
+    case get_child(data, key) do
+      {:ok, child} ->
+        with {:ok, updated_child} <- update_in_structure(child, rest, string_value, ctx) do
           map_child(data, key, updated_child)
         end
 
@@ -726,14 +864,14 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   defp map_child(_list, _key, _value), do: {:error, :invalid_path}
 
   # Sort numeric collection indices in path order so slots are filled 0..n before nested fields.
-  # CHOICE discriminants (Recipient/CalendarEntry/Timestamp type, value_kind, period_kind)
-  # run last so branch rebuild wins over stale inactive-leg fields from the previous branch.
+  # CHOICE discriminants (Recipient/CalendarEntry/Timestamp type, value_kind, period_kind,
+  # property-level `kind`) run last so branch rebuild wins over stale previous-branch fields.
   # Encoding/ObjectIdentifier `:type` is not a CHOICE discriminant and stays normal order.
-  defp sorted_field_paths(fields, template) when is_map(fields) do
-    Enum.sort_by(Map.keys(fields), &path_sort_key(&1, template))
+  defp sorted_field_paths(fields, template, ctx) when is_map(fields) do
+    Enum.sort_by(Map.keys(fields), &path_sort_key(&1, template, ctx))
   end
 
-  defp path_sort_key(path, template) when is_binary(path) do
+  defp path_sort_key(path, template, ctx) when is_binary(path) do
     segments = String.split(path, ".")
 
     segment_keys =
@@ -747,7 +885,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     discriminant_rank =
       case parse_path(path) do
         {:ok, path_segments} ->
-          if choice_discriminant_path?(template, path_segments), do: 1, else: 0
+          if choice_discriminant_path?(template, path_segments, ctx), do: 1, else: 0
 
         {:error, _reason} ->
           0
@@ -756,21 +894,32 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     {discriminant_rank, segment_keys}
   end
 
-  defp choice_discriminant_path?(%mod{}, [key]) when is_atom(mod) do
+  defp choice_discriminant_path?(_data, [key], %{value_union: %{discriminant_key: key}}) do
+    true
+  end
+
+  defp choice_discriminant_path?(%mod{}, [key], _ctx) when is_atom(mod) do
     case ChoiceSchema.fetch(mod) do
       {:ok, schema} -> ChoiceSchema.discriminant_key?(schema, key)
       :error -> false
     end
   end
 
-  defp choice_discriminant_path?(data, [key | rest]) do
+  defp choice_discriminant_path?(data, [key | rest], ctx) when is_integer(key) do
     case get_child(data, key) do
-      {:ok, child} -> choice_discriminant_path?(child, rest)
+      {:ok, child} -> choice_discriminant_path?(child, rest, collection_item_ctx(ctx))
       {:error, _reason} -> false
     end
   end
 
-  defp choice_discriminant_path?(_data, _segments), do: false
+  defp choice_discriminant_path?(data, [key | rest], ctx) do
+    case get_child(data, key) do
+      {:ok, child} -> choice_discriminant_path?(child, rest, ctx)
+      {:error, _reason} -> false
+    end
+  end
+
+  defp choice_discriminant_path?(_data, _segments, _ctx), do: false
 
   defp collection_index_from_path(path) when is_binary(path) do
     case String.split(path, ".", parts: 2) do

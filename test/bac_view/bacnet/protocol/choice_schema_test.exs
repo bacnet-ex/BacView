@@ -4,8 +4,10 @@ defmodule BacView.BACnet.Protocol.ChoiceSchemaTest do
   alias BACnet.Protocol.ApplicationTags.Encoding
   alias BACnet.Protocol.BACnetTimestamp
   alias BACnet.Protocol.CalendarEntry
+  alias BACnet.Protocol.EventParameters
   alias BACnet.Protocol.NameValue
   alias BACnet.Protocol.ObjectIdentifier
+  alias BACnet.Protocol.ObjectTypes.EventEnrollment
   alias BACnet.Protocol.Recipient
   alias BACnet.Protocol.RecipientAddress
   alias BACnet.Protocol.SpecialEvent
@@ -124,6 +126,49 @@ defmodule BacView.BACnet.Protocol.ChoiceSchemaTest do
       ref = ChoiceSchema.apply_arm(event, choice, :calendar_reference)
       assert %ObjectIdentifier{type: :calendar, instance: 0} = ref.period
       assert ChoiceSchema.active_arm_id(ref, choice) == :calendar_reference
+    end
+  end
+
+  describe "union_choice/1 (property-level multi-struct)" do
+    test "event_parameters exposes ChangeOfValue and ChangeOfBitstring arms" do
+      bac_type = EventEnrollment.get_properties_type_map()[:event_parameters]
+      assert {:ok, choice} = ChoiceSchema.union_choice(bac_type)
+      assert choice.kind == :union
+      assert choice.discriminant_key == :kind
+
+      arm_ids = Enum.map(choice.arms, & &1.id)
+      assert :change_of_value in arm_ids
+      assert :change_of_bitstring in arm_ids
+      assert :none in arm_ids
+      assert :out_of_range in arm_ids
+    end
+
+    test "active_arm_id and apply_arm switch whole EventParameters value" do
+      bac_type = EventEnrollment.get_properties_type_map()[:event_parameters]
+      assert {:ok, choice} = ChoiceSchema.union_choice(bac_type)
+
+      cov = %EventParameters.ChangeOfValue{
+        time_delay: 5,
+        increment: 1.0,
+        bitmask: nil,
+        time_delay_normal: nil
+      }
+
+      assert ChoiceSchema.active_arm_id(cov, choice) == :change_of_value
+
+      cob = ChoiceSchema.apply_arm(cov, choice, :change_of_bitstring)
+      assert %EventParameters.ChangeOfBitstring{} = cob
+      assert ChoiceSchema.active_arm_id(cob, choice) == :change_of_bitstring
+
+      none = ChoiceSchema.apply_arm(cob, choice, :none)
+      assert %EventParameters.None{} = none
+      assert ChoiceSchema.active_arm_id(none, choice) == :none
+    end
+
+    test "rejects non-union types" do
+      assert :error = ChoiceSchema.union_choice(:unsigned_integer)
+      assert :error = ChoiceSchema.union_choice({:struct, NameValue})
+      assert :error = ChoiceSchema.union_choice({:type_list, [:real, {:literal, nil}]})
     end
   end
 

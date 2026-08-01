@@ -13,6 +13,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     Destination,
     DeviceObjectPropertyRef,
     EventMessageTexts,
+    EventParameters,
     NameValue,
     ObjectIdentifier,
     ObjectPropertyRef,
@@ -411,6 +412,95 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
                %{"field" => %{"value_kind" => "date_time"}},
                with_encoding
              )
+  end
+
+  @event_params_opts [property: :event_parameters, object_type: :event_enrollment]
+
+  test "event_parameters form includes kind picker for multi-struct union" do
+    cov = %EventParameters.ChangeOfValue{
+      time_delay: 5,
+      increment: 1.0,
+      bitmask: nil,
+      time_delay_normal: nil
+    }
+
+    fields = ComplexPropertyEditor.form_fields(cov, @event_params_opts)
+    kind_field = Enum.find(fields, &(&1.path == "kind"))
+
+    assert kind_field != nil
+    assert kind_field.value == "change_of_value"
+    assert kind_field.label == "Type"
+    assert Enum.any?(kind_field.enum_options, &(&1.value == :change_of_bitstring))
+    assert Enum.any?(kind_field.enum_options, &(&1.value == :change_of_value))
+    assert Enum.any?(kind_field.enum_options, &(&1.value == :none))
+
+    # Payload fields of the current arm remain editable.
+    assert Enum.any?(fields, &(&1.path == "time_delay"))
+    assert Enum.any?(fields, &(&1.path == "increment"))
+  end
+
+  test "event_parameters kind switch replaces whole value (ChangeOfValue → ChangeOfBitstring)" do
+    cov = %EventParameters.ChangeOfValue{
+      time_delay: 5,
+      increment: 1.0,
+      bitmask: nil,
+      time_delay_normal: nil
+    }
+
+    assert {:ok, cob} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{"field" => %{"kind" => "change_of_bitstring"}},
+               cov,
+               @event_params_opts
+             )
+
+    assert %EventParameters.ChangeOfBitstring{} = cob
+    assert cob.time_delay == 0
+
+    fields = ComplexPropertyEditor.form_fields(cob, @event_params_opts)
+    kind_field = Enum.find(fields, &(&1.path == "kind"))
+    assert kind_field.value == "change_of_bitstring"
+    assert Enum.any?(fields, &(&1.path == "bitmask"))
+    assert Enum.any?(fields, &(&1.path == "time_delay"))
+    # Empty list payload (alarm_values) has no leaf form fields until items exist.
+    refute Enum.any?(fields, &(&1.path == "increment"))
+  end
+
+  test "event_parameters kind switch ignores stale previous-arm fields" do
+    cov = %EventParameters.ChangeOfValue{
+      time_delay: 5,
+      increment: 1.0,
+      bitmask: nil,
+      time_delay_normal: nil
+    }
+
+    # LiveView resubmits all previous branch fields with the new kind.
+    assert {:ok, cob} =
+             ComplexPropertyEditor.apply_form_fields(
+               %{
+                 "field" => %{
+                   "kind" => "change_of_bitstring",
+                   "increment" => "1.0",
+                   "time_delay" => "5"
+                 }
+               },
+               cov,
+               @event_params_opts
+             )
+
+    assert %EventParameters.ChangeOfBitstring{time_delay: 0} = cob
+  end
+
+  test "event_parameters without property opts has no root kind picker" do
+    cov = %EventParameters.ChangeOfValue{
+      time_delay: 5,
+      increment: 1.0,
+      bitmask: nil,
+      time_delay_normal: nil
+    }
+
+    fields = ComplexPropertyEditor.form_fields(cov)
+    refute Enum.any?(fields, &(&1.path == "kind"))
   end
 
   test "NameValue encoding fields survive resubmitted unchanged value_kind" do

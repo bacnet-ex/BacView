@@ -137,11 +137,13 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
 ### Complex property CHOICE forms
 
 Write-modal kind pickers (Recipient/CalendarEntry/Timestamp `type`, NameValue
-`value_kind`, SpecialEvent `period_kind`) come from
+`value_kind`, SpecialEvent `period_kind`, property-level multi-struct `kind` for
+`event_parameters` / `fault_parameters`) come from
 `BacView.BACnet.Protocol.ChoiceSchema` + `BeamTypesCache`, not hand-maintained
 option lists in the editor.
 
 - Arm **existence** tracks bacstack typespecs; only labels / arm ids / blanks may be overridden in `ChoiceSchema`.
+- Value-level unions need `form_fields/2` / `apply_form_fields/3` with `property:` + `object_type:` opts.
 - Do **not** re-add dedicated `*_type_options` tables for shapes ChoiceSchema already covers.
 - Full rules, overrides, and onboarding: **`docs/choice_schema.md`**.
 

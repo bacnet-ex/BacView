@@ -14,6 +14,10 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
   * **Inline** — optional (`payload | nil`) or multi-struct `type_list` on one field
     (`NameValue.value`, `SpecialEvent.period`). Form path is synthetic:
     `value` → `value_kind`, `period` → `period_kind`, else `:"\#{field}_kind"`.
+  * **Union** — multi-struct `type_list` as the *value itself* (property-level or
+    collection element), e.g. `event_parameters` / `fault_parameters`. Built via
+    `union_choice/1`. Form path is synthetic `kind`. Applying an arm replaces the
+    whole value with a blank of the selected struct.
 
   Inline detection requires optional-with-nil **or** all non-nil members to be
   `{:struct, _}` so type aliases like `ObjectIdentifier.type` are not treated as CHOICE.
@@ -47,12 +51,15 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
         }
 
   @type choice :: %{
-          kind: :tagged | :inline,
+          kind: :tagged | :inline | :union,
           discriminant_key: atom(),
           payload_key: atom() | nil,
           arms: [arm()],
-          source_field: atom()
+          source_field: atom() | nil
         }
+
+  # Synthetic path for property-/item-level multi-struct unions (event_parameters, …).
+  @union_discriminant_key :kind
 
   @type schema :: %{
           module: module(),
@@ -154,6 +161,48 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
     match_value_to_arm(value, arms)
   end
 
+  def active_arm_id(value, %{kind: :union, arms: arms}) do
+    match_value_to_arm(value, arms)
+  end
+
+  @doc """
+  Builds a value-level multi-struct union CHOICE from a BeamTypes shape.
+
+  Used for single-element properties (and collection items) whose type is a
+  `type_list` of two or more structs, e.g. `EventParameters.event_parameter()`.
+
+  Returns `:error` when the type is not a multi-struct union.
+  """
+  @spec union_choice(term()) :: {:ok, choice()} | :error
+  def union_choice(bac_type)
+
+  def union_choice({:with_validator, type, _validator}), do: union_choice(type)
+
+  def union_choice({:type_list, members}) when is_list(members) do
+    arms = multi_struct_union_arms(members)
+
+    if length(arms) >= 2 do
+      {:ok,
+       %{
+         kind: :union,
+         discriminant_key: @union_discriminant_key,
+         payload_key: nil,
+         arms: arms,
+         source_field: nil
+       }}
+    else
+      :error
+    end
+  end
+
+  def union_choice(_bac_type), do: :error
+
+  @doc """
+  True when `key` is the synthetic discriminant for value-level unions.
+  """
+  @spec union_discriminant_key?(atom()) :: boolean()
+  def union_discriminant_key?(key), do: key == @union_discriminant_key
+
   @doc """
   Enum options for a choice group (`%{value: arm_id, label: ...}`).
   """
@@ -166,8 +215,10 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
 
   @doc """
   Applies a kind switch: blanks the active arm and nils inactive tagged arms.
+
+  For `:union` choices, returns a blank of the selected arm (replaces the whole value).
   """
-  @spec apply_arm(struct(), choice(), atom()) :: struct()
+  @spec apply_arm(term(), choice(), atom()) :: term()
   def apply_arm(%mod{} = struct, %{kind: :tagged} = choice, arm_id) when is_atom(mod) do
     arm = fetch_arm!(choice, arm_id)
 
@@ -192,6 +243,11 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
     arm = fetch_arm!(choice, arm_id)
     payload = blank_arm_payload!(mod, arm)
     Map.put(struct, choice.payload_key, payload)
+  end
+
+  def apply_arm(_current, %{kind: :union} = choice, arm_id) do
+    arm = fetch_arm!(choice, arm_id)
+    blank_arm_payload!(nil, arm)
   end
 
   @doc """
@@ -220,6 +276,7 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
   @spec field_label(atom()) :: String.t()
   def field_label(:value_kind), do: "Value Kind"
   def field_label(:period_kind), do: "Period Kind"
+  def field_label(:kind), do: "Type"
   def field_label(key) when is_atom(key), do: humanize_name(Atom.to_string(key))
 
   # --- analysis ----------------------------------------------------------------
@@ -365,6 +422,27 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
   defp inline_choice_from_field(_module, _key, _type), do: :error
 
   defp valid_inline_arms?(arms), do: length(arms) >= 2
+
+  # Multi-struct type_list → value-level union arms (no parent module / field).
+  defp multi_struct_union_arms(members) when is_list(members) do
+    non_nil = Enum.reject(members, &nil_member?/1)
+
+    if length(non_nil) >= 2 and Enum.all?(non_nil, &match?({:struct, _mod}, &1)) do
+      Enum.map(non_nil, fn {:struct, mod} = member ->
+        id = module_kind_id(mod)
+
+        %{
+          id: id,
+          label: arm_label(id, member),
+          member: member,
+          field: nil,
+          payload_type: member
+        }
+      end)
+    else
+      []
+    end
+  end
 
   # Inline CHOICE only for optional unions (… | nil) or multi-struct unions.
   # Reject type aliases like ObjectIdentifier.type (`object_type | unsigned`).
@@ -545,7 +623,9 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
     end
   end
 
-  defp blank_arm_payload!(_module, %{id: :none}), do: nil
+  # Optional absence arm (NameValue value_kind: none) — not EventParameters.None, which
+  # is a real empty struct with payload_type {:struct, …}.
+  defp blank_arm_payload!(_module, %{member: {:literal, nil}}), do: nil
   defp blank_arm_payload!(_module, %{payload_type: nil}), do: nil
 
   defp blank_arm_payload!(module, arm) do
