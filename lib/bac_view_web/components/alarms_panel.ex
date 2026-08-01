@@ -34,7 +34,7 @@ defmodule BacViewWeb.AlarmsPanel do
   attr(:alarm_notifications_sort_dir, :atom, default: :asc)
 
   def alarms_panel(assigns) do
-    assigns = assign(assigns, :object_descriptions, object_descriptions_map(assigns.objects))
+    assigns = assign(assigns, :object_meta, object_meta_map(assigns.objects))
 
     ~H"""
     <div class="space-y-5">
@@ -82,7 +82,7 @@ defmodule BacViewWeb.AlarmsPanel do
         device_id={@device_id}
         list_opts={@list_opts}
         events={@events}
-        object_descriptions={@object_descriptions}
+        object_meta={@object_meta}
         summary={@summary}
         refreshing={@refreshing}
         sort_by={@alarm_events_sort_by}
@@ -111,7 +111,7 @@ defmodule BacViewWeb.AlarmsPanel do
         device_id={@device_id}
         list_opts={@list_opts}
         notifications={@notifications}
-        object_descriptions={@object_descriptions}
+        object_meta={@object_meta}
         sort_by={@alarm_notifications_sort_by}
         sort_dir={@alarm_notifications_sort_dir}
         locale={@locale}
@@ -124,7 +124,7 @@ defmodule BacViewWeb.AlarmsPanel do
   attr(:device_id, :integer, required: true)
   attr(:list_opts, :list, default: [])
   attr(:events, :list, required: true)
-  attr(:object_descriptions, :map, required: true)
+  attr(:object_meta, :map, required: true)
   attr(:summary, :map, required: true)
   attr(:refreshing, :boolean, default: false)
   attr(:sort_by, :string, default: nil)
@@ -265,14 +265,13 @@ defmodule BacViewWeb.AlarmsPanel do
                 EventRecord.active?(event) && "bac-row-alarm"
               ]}
             >
-              <td>
-                <.object_cell
-                  device_id={@device_id}
-                  list_opts={@list_opts}
-                  object_id={event.object_id}
-                  description={Map.get(@object_descriptions, {event.object_id.type, event.object_id.instance})}
-                />
-              </td>
+              <.object_cell
+                device_id={@device_id}
+                list_opts={@list_opts}
+                object_id={event.object_id}
+                object_name={object_meta_name(@object_meta, event.object_id)}
+                description={object_meta_description(@object_meta, event.object_id)}
+              />
               <td>
                 <span class={[
                   "bac-badge bac-badge-sm",
@@ -453,8 +452,8 @@ defmodule BacViewWeb.AlarmsPanel do
                 {obj.type}:{obj.instance}
               </td>
               <td>{ObjectTypes.short_label(obj.type)}</td>
-              <td class="max-w-xs truncate">{obj.name || "-"}</td>
-              <td class="max-w-sm truncate" title={Map.get(obj, :description)}>
+              <td>{obj.name || "-"}</td>
+              <td class="text-[var(--bac-text-muted)]" title={Map.get(obj, :description)}>
                 {Map.get(obj, :description) || "-"}
               </td>
               <td>
@@ -481,7 +480,7 @@ defmodule BacViewWeb.AlarmsPanel do
   attr(:device_id, :integer, required: true)
   attr(:list_opts, :list, default: [])
   attr(:notifications, :list, required: true)
-  attr(:object_descriptions, :map, required: true)
+  attr(:object_meta, :map, required: true)
   attr(:sort_by, :string, default: nil)
   attr(:sort_dir, :atom, default: :asc)
   attr(:locale, :string, required: true)
@@ -582,14 +581,13 @@ defmodule BacViewWeb.AlarmsPanel do
               <td class="bac-text-faint whitespace-nowrap">
                 {format_time(Map.get(notif, :received_at, notif.updated_at))}
               </td>
-              <td>
-                <.object_cell
-                  device_id={@device_id}
-                  list_opts={@list_opts}
-                  object_id={notif.object_id}
-                  description={Map.get(@object_descriptions, {notif.object_id.type, notif.object_id.instance})}
-                />
-              </td>
+              <.object_cell
+                device_id={@device_id}
+                list_opts={@list_opts}
+                object_id={notif.object_id}
+                object_name={object_meta_name(@object_meta, notif.object_id)}
+                description={object_meta_description(@object_meta, notif.object_id)}
+              />
               <td>
                 {EventFormatter.notify_type_label(notif.notify_type)}
                 <span :if={notif.event_type} class="bac-text-faint block text-xs">
@@ -622,6 +620,7 @@ defmodule BacViewWeb.AlarmsPanel do
   attr(:device_id, :integer, required: true)
   attr(:list_opts, :list, default: [])
   attr(:object_id, :map, required: true)
+  attr(:object_name, :string, default: nil)
   attr(:description, :string, default: nil)
 
   defp object_cell(assigns) do
@@ -642,16 +641,21 @@ defmodule BacViewWeb.AlarmsPanel do
       )
 
     ~H"""
-    <.link navigate={@object_href} class="bac-mono hover:underline">
-      {@object_id.type}:{@object_id.instance}
-    </.link>
-    <span
-      :if={@description_preview}
-      class="block text-xs bac-text-faint whitespace-normal break-words"
-      title={if(@description_truncated?, do: @description, else: nil)}
-    >
-      {@description_preview}
-    </span>
+    <td class="bac-row-clickable" phx-click={JS.navigate(@object_href)}>
+      <span class="bac-mono">
+        {@object_id.type}:{@object_id.instance}
+      </span>
+      <span :if={@object_name} class="block text-xs bac-text-muted whitespace-normal break-words">
+        {@object_name}
+      </span>
+      <span
+        :if={@description_preview}
+        class="block text-xs bac-text-faint whitespace-normal break-words"
+        title={if(@description_truncated?, do: @description, else: nil)}
+      >
+        {@description_preview}
+      </span>
+    </td>
     """
   end
 
@@ -665,11 +669,38 @@ defmodule BacViewWeb.AlarmsPanel do
     end
   end
 
-  defp object_descriptions_map(objects) when is_list(objects) do
+  defp object_meta_map(objects) when is_list(objects) do
     Map.new(objects, fn obj ->
-      {{obj.type, obj.instance}, object_description(obj)}
+      {{obj.type, obj.instance},
+       %{
+         name: object_name(obj),
+         description: object_description(obj)
+       }}
     end)
   end
+
+  defp object_meta_name(meta, object_id) do
+    case Map.get(meta, {object_id.type, object_id.instance}) do
+      %{name: name} -> name
+      _meta -> nil
+    end
+  end
+
+  defp object_meta_description(meta, object_id) do
+    case Map.get(meta, {object_id.type, object_id.instance}) do
+      %{description: description} -> description
+      _meta -> nil
+    end
+  end
+
+  defp object_name(%{name: name}) when is_binary(name) do
+    case String.trim(name) do
+      "" -> nil
+      trimmed -> trimmed
+    end
+  end
+
+  defp object_name(_object), do: nil
 
   defp object_description(%{description: description}) when is_binary(description) do
     case String.trim(description) do
@@ -678,7 +709,7 @@ defmodule BacViewWeb.AlarmsPanel do
     end
   end
 
-  defp object_description(_objects), do: nil
+  defp object_description(_object), do: nil
 
   defp state_transition_label(notif) do
     from = notif.from_state

@@ -112,6 +112,101 @@ Desktop notes:
 
 Verify desktop dependencies: `BACVIEW_DESKTOP=1 mix bacview.desktop.check`
 
+## Android app -experimental-
+
+Android uses the same Tauri shell and boots the BEAM **as a process** using a
+cross-compiled Android OTP ERTS (`erts-{abi}.zip` under
+`priv/runtimes/android/otp{N}/`). The Mix release is bundled as Tauri resources,
+extracted into app data on first launch, merged with the Android ERTS, then
+started via `bin/bacview start` (through `/system/bin/sh`; helpers live in
+jniLibs for W^X).
+
+**Requirements**
+
+- Android Studio SDK + NDK, `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) set
+- Rust Android targets, e.g.  
+  `rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android`
+- `cargo tauri android init` once (generates `src-tauri/gen/android`) if not present
+- Host Elixir/OTP major matching the ERTS tree (e.g. OTP **27.x** with `otp27/` zips)
+- Compile with `BACVIEW_DESKTOP=1` (same as desktop)
+
+**Dev / package**
+
+```bash
+BACVIEW_DESKTOP=1 mix mobile.android.dev    # emulator or device
+BACVIEW_DESKTOP=1 mix mobile.android.build  # APK/AAB
+```
+
+or
+
+```bash
+./scripts/mobile_android_dev.sh
+./scripts/mobile_android_build.sh
+```
+
+**Android OTP ERTS (host major)**
+
+The Mix release host and the packaged Android ERTS must share the same OTP
+**major** (`27`, `28`, or `29`). Exact patch versions need not match — on device
+the runtime rewrites `start_erl.data` and `ERTS_BIN` to the Android `erts-*`
+tree. Cross-compile Android trees for the major you develop on:
+
+```bash
+# Detect host major automatically via wrappers, or pass major explicitly:
+./scripts/build_android_otp.sh 27 x86_64       # emulator first
+./scripts/build_android_otp27.sh               # all ABIs for OTP 27
+./scripts/build_android_otp28.sh x86_64
+./scripts/build_android_otp29.sh
+```
+
+Output: `priv/runtimes/android/otp{N}/erts-{abi}.zip`. Requires Android NDK
+(`ANDROID_HOME`), host OTP of major **N** on `PATH` (bootstrap), and several
+minutes per ABI (OpenSSL + OTP).
+
+`mix mobile.prepare_release` **fails** if those zips are missing or the zip’s
+OTP major does not match the host major — run the matching build script first.
+
+**CI**
+
+See [docs/android_ci.md](docs/android_ci.md) for GitLab jobs (static checks,
+Android Rust targets, prepare/APK every pipeline; emulator smoke on tags).
+
+**Release signing**
+
+Release APKs must be signed (unsigned installs fail with `INSTALL_PARSE_FAILED_NO_CERTIFICATES`).
+
+1. Create a keystore + `keystore.properties` (gitignored):
+
+   ```bash
+   ./scripts/android_create_keystore.sh
+   ```
+
+   Or copy `src-tauri/gen/android/keystore.properties.example` to
+   `src-tauri/gen/android/keystore.properties` and point `storeFile` at your `.jks`.
+
+2. Rebuild: `BACVIEW_DESKTOP=1 mix mobile.android.build`
+
+3. Install the signed APK (name no longer ends in `-unsigned`):
+
+   ```bash
+   adb install -r src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk
+   ```
+
+CI / non-interactive: set `BACVIEW_ANDROID_STORE_FILE`, `BACVIEW_ANDROID_STORE_PASSWORD`,
+`BACVIEW_ANDROID_KEY_ALIAS`, and `BACVIEW_ANDROID_KEY_PASSWORD` instead of a properties file.
+
+Without a keystore, the Gradle release build **falls back to the Android debug key** so local
+sideloading still works; do not use that for Play Store uploads.
+
+**Notes**
+
+- Process-based BEAM: Android `beam.smp` / helpers from `erts-{abi}.zip` (not liberlang)
+- Host OTP major must match `priv/runtimes/android/otp{N}/` (see build scripts above)
+- Mix release keeps portable app beams; host `erts-*/bin` and host OTP system apps are stripped and replaced on device from the ERTS zip
+- First launch copies the release from APK assets into app data (marker file skips re-extract until app version changes)
+- Host-built NIFs (e.g. MS/TP `circuits_uart`) will not load on Android until rebuilt for the ABI
+- Grant network permissions in the generated Android manifest for BACnet UDP and local HTTP
+
 ## Configuration
 
 | Variable | Default | Description |

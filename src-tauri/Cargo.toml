@@ -38,3 +38,10 @@ strip = true
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-window-state = "2"
+
+# Android: extract bundled Mix release from APK assets into app data.
+# AssetManager is accessed via tauri::wry::prelude::dispatch (Activity JNI),
+# not ndk-context (Tauri never initializes that crate).
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+zip = { version = "2", default-features = false, features = ["deflate"] }

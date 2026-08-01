@@ -16,7 +16,7 @@ defmodule BacViewWeb.PropertyPanel do
           <p class="bac-section-title">{t(@locale, @locale_version, "Eigenschaften")}</p>
           <p :if={@object} class="bac-mono text-sm mt-1 truncate">
             {@object.type}:{@object.instance}
-            <span :if={@object.name} class="font-sans text-[var(--bac-text-muted)] ml-1">
+            <span :if={@object.name} class="font-sans text-[var(--bac-text-muted)] ml-1" title={@object.name}>
               {@object.name}
             </span>
           </p>

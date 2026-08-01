@@ -8,6 +8,11 @@
 
 use tauri::Manager;
 
+#[cfg(target_os = "android")]
+mod android_beam;
+#[cfg(target_os = "android")]
+mod android_runtime;
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let pubsub = elixirkit::PubSub::listen("tcp://127.0.0.1:0").expect("failed to listen");
@@ -32,25 +37,86 @@ pub fn run() {
             });
 
             let app_handle = app.handle().clone();
+            let pubsub_url = pubsub.url().to_string();
 
             tauri::async_runtime::spawn_blocking(move || {
-                let rel_dir = app_handle.path().resource_dir().unwrap().join("rel");
+                let sys_locale = tauri_plugin_os::locale().unwrap_or_else(|| "en-GB".to_string())
+                    [0..2]
+                    .to_string();
 
-                if cfg!(debug_assertions) {
-                    println!("[rust] release dir={}", rel_dir.to_str().unwrap());
+                #[cfg(target_os = "android")]
+                {
+                    run_android_beam(&app_handle, pubsub_url, sys_locale);
                 }
 
-                let mut command = elixir_command(&rel_dir);
-                command.env("ELIXIRKIT_PUBSUB", pubsub.url());
-                let status = command.status().expect("failed to start Elixir");
+                #[cfg(not(target_os = "android"))]
+                {
+                    let rel_dir = app_handle.path().resource_dir().unwrap().join("rel");
 
-                app_handle.exit(status.code().unwrap_or(1));
+                    if cfg!(debug_assertions) {
+                        println!("[rust] release dir={}", rel_dir.to_str().unwrap());
+                    }
+
+                    let mut command = elixir_command(&rel_dir, sys_locale);
+                    command.env("ELIXIRKIT_PUBSUB", pubsub_url);
+                    let status = command.status().expect("failed to start Elixir");
+
+                    app_handle.exit(status.code().unwrap_or(1));
+                }
             });
 
             Ok(())
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(target_os = "android")]
+fn run_android_beam(app_handle: &tauri::AppHandle, pubsub_url: String, sys_locale: String) {
+    let release_root = match android_runtime::ensure_release_extracted(app_handle) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("[rust] android release extract failed: {err}");
+            app_handle.exit(1);
+            return;
+        }
+    };
+
+    if cfg!(debug_assertions) {
+        println!(
+            "[rust] android release root={}",
+            release_root.to_str().unwrap_or("?")
+        );
+    }
+
+    let home = app_handle
+        .path()
+        .app_data_dir()
+        .unwrap_or_else(|_| release_root.clone());
+
+    let log_dir = app_handle
+        .path()
+        .app_log_dir()
+        .unwrap_or_else(|_| home.clone());
+
+    let secret_key_base = random_secret_key_base();
+
+    let env = android_beam::ReleaseEnv {
+        pubsub_url,
+        secret_key_base,
+        locale: sys_locale,
+        home,
+        log_dir,
+    };
+
+    if let Err(err) = android_beam::start_release(&release_root, env) {
+        eprintln!("[rust] Android BEAM boot failed: {err}");
+        app_handle.exit(1);
+        return;
+    }
+
+    // VM halted.
+    app_handle.exit(0);
 }
 
 fn create_window(app_handle: &tauri::AppHandle, endpoint_url: &[u8]) {
@@ -68,10 +134,8 @@ fn create_window(app_handle: &tauri::AppHandle, endpoint_url: &[u8]) {
         .unwrap();
 }
 
-fn elixir_command(rel_dir: &std::path::Path) -> std::process::Command {
-    let sys_locale =
-        tauri_plugin_os::locale().unwrap_or_else(|| "en-GB".to_string())[0..2].to_string();
-
+#[cfg(not(target_os = "android"))]
+fn elixir_command(rel_dir: &std::path::Path, sys_locale: String) -> std::process::Command {
     if cfg!(desktop) {
         if cfg!(debug_assertions) {
             let mut command = elixirkit::mix("phx.server", &[]);
@@ -82,18 +146,14 @@ fn elixir_command(rel_dir: &std::path::Path) -> std::process::Command {
             elixir_rel_command(rel_dir, sys_locale)
         }
     } else {
-        // If compiling for non-desktop, always go with the release
+        // If compiling for non-desktop (non-android), always go with the release
         elixir_rel_command(rel_dir, sys_locale)
     }
 }
 
+#[cfg(not(target_os = "android"))]
 fn elixir_rel_command(rel_dir: &std::path::Path, sys_locale: String) -> std::process::Command {
-    // Generate 64 cryptographically secure random bytes
-    let mut key = [0u8; 64];
-    getrandom::getrandom(&mut key).expect("failed to get random bytes from OS");
-
-    // Hex encode (lowercase)
-    let secret_key_base: String = key.iter().map(|b| format!("{:02x}", b)).collect();
+    let secret_key_base = random_secret_key_base();
 
     let mut command = elixirkit::release(rel_dir, "bacview");
     command.env("BACVIEW_DESKTOP_LOCALE", sys_locale);
@@ -117,4 +177,13 @@ fn elixir_rel_command(rel_dir: &std::path::Path, sys_locale: String) -> std::pro
     }
 
     command
+}
+
+fn random_secret_key_base() -> String {
+    // Generate 64 cryptographically secure random bytes
+    let mut key = [0u8; 64];
+    getrandom::getrandom(&mut key).expect("failed to get random bytes from OS");
+
+    // Hex encode (lowercase)
+    key.iter().map(|b| format!("{:02x}", b)).collect()
 }

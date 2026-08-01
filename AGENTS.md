@@ -189,6 +189,16 @@ option lists in the editor.
 - Compile with `BACVIEW_DESKTOP=1` (`mix desktop.server`, `mix desktop_installer`).
 - Web workflow remains the default. See README for wx/desktop requirements.
 
+### Android (optional, experimental)
+
+- Same `BACVIEW_DESKTOP=1` compile flag as desktop.
+- Process-based BEAM: host-matched Android OTP ERTS zips under `priv/runtimes/android/otp{N}/erts-{abi}.zip` (build with `scripts/build_android_otp.sh` / `build_android_otp{27,28,29}.sh`).
+- Host OTP **major** must match `otp{N}/` (exact `OTP_VERSION` patch need not match; runtime rewrites `start_erl.data` / `ERTS_BIN`). `mobile.prepare_release` fails if zips are missing or major differs.
+- Mix aliases: `mobile.prepare_release`, `mobile.android.dev`, `mobile.android.build`.
+- Release is extracted from Tauri resources into app data on first launch (`android_runtime.rs`); helpers packaged as jniLibs for W^X.
+- Do not expect host-built NIFs (e.g. `circuits_uart`) to load on device without Android builds.
+- CI: see `docs/android_ci.md` (Tier 0+1 on Android/mobile/Rust path changes only; emulator on tags; Tier 3 future).
+
 ---
 
 ### Phoenix v1.8 guidelines (BacView)

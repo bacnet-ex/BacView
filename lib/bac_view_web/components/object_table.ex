@@ -323,7 +323,7 @@ defmodule BacViewWeb.ObjectTable do
                 {obj.name || "-"}
               </td>
               <td
-                class="text-[var(--bac-text-muted)] max-w-xs truncate bac-row-clickable"
+                class="text-[var(--bac-text-muted)] bac-row-clickable"
                 phx-click={JS.navigate(object_path(@device_id, obj, @list_opts))}
                 title={object_description(obj)}
               >

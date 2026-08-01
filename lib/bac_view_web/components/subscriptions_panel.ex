@@ -250,14 +250,14 @@ defmodule BacViewWeb.SubscriptionsPanel do
                 <span class="bac-mono">{sub.object_id.type}:{sub.object_id.instance}</span>
                 <p
                   :if={sub.object_name}
-                  class="text-xs text-[var(--bac-text-muted)] truncate mt-0.5"
+                  class="text-xs text-[var(--bac-text-muted)] mt-0.5"
                   title={sub.object_name}
                 >
                   {sub.object_name}
                 </p>
               </td>
               <td
-                class="text-[var(--bac-text-muted)] max-w-xs truncate bac-row-clickable"
+                class="text-[var(--bac-text-muted)] bac-row-clickable"
                 phx-click={JS.navigate(object_path(@device_id, sub.object_id, @list_opts))}
                 title={sub.description}
               >
