@@ -6,12 +6,64 @@
 // https://github.com/rust-lang/rust/issues/157849
 #![cfg_attr(nightly, feature(windows_process_extensions_show_window))]
 
+use base64::Engine;
 use tauri::Manager;
+use tauri_plugin_dialog::DialogExt;
 
 #[cfg(target_os = "android")]
 mod android_beam;
 #[cfg(target_os = "android")]
 mod android_runtime;
+
+/// Show a native save dialog and write the given base64-encoded contents.
+/// Returns `true` when the file was written, `false` when the user cancelled.
+#[tauri::command]
+async fn save_file(
+    app: tauri::AppHandle,
+    default_filename: String,
+    contents_base64: String,
+) -> Result<bool, String> {
+    let bytes = base64::engine::general_purpose::STANDARD
+        .decode(contents_base64.as_bytes())
+        .map_err(|err| format!("invalid base64 content: {err}"))?;
+
+    let filename = default_filename.clone();
+    // blocking_save_file must not run on the UI thread (deadlock with the event loop).
+    // Async commands + spawn_blocking keep the dialog off the main thread.
+    let file_path = tauri::async_runtime::spawn_blocking(move || {
+        let mut dialog = app.dialog().file().set_file_name(&filename);
+
+        if let Some(ext) = extension_of(&filename) {
+            let label = ext.to_ascii_uppercase();
+            dialog = dialog.add_filter(label, &[ext.as_str()]);
+        }
+
+        dialog.blocking_save_file()
+    })
+    .await
+    .map_err(|err| format!("save dialog task failed: {err}"))?;
+
+    let Some(file_path) = file_path else {
+        return Ok(false);
+    };
+
+    let path = file_path
+        .into_path()
+        .map_err(|err| format!("could not resolve save path: {err}"))?;
+
+    std::fs::write(&path, &bytes)
+        .map_err(|err| format!("failed to write {}: {err}", path.display()))?;
+
+    Ok(true)
+}
+
+fn extension_of(filename: &str) -> Option<String> {
+    std::path::Path::new(filename)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .filter(|ext| !ext.is_empty())
+        .map(|ext| ext.to_ascii_lowercase())
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -20,6 +72,8 @@ pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_os::init())
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
+        .invoke_handler(tauri::generate_handler![save_file])
         .setup(move |app| {
             #[cfg(desktop)]
             app.handle()

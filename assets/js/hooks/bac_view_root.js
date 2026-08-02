@@ -44,6 +44,76 @@ function focusVisibleSearch() {
   return false
 }
 
+function contentToBytes(content, encoding) {
+  if (encoding === "base64" && typeof content === "string") {
+    const binary = atob(content)
+    const bytes = new Uint8Array(binary.length)
+    for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
+    return bytes
+  }
+
+  if (content instanceof Uint8Array) return content
+  if (typeof content === "string") return new TextEncoder().encode(content)
+  return new Uint8Array(content || [])
+}
+
+function bytesToBase64(bytes) {
+  let binary = ""
+  const chunk = 0x8000
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk))
+  }
+  return btoa(binary)
+}
+
+function isTauriRuntime() {
+  return Boolean(window.isTauri || window.__TAURI_INTERNALS__ || window.__TAURI__)
+}
+
+function tauriInvoke() {
+  return (
+    window.__TAURI__?.core?.invoke ||
+    window.__TAURI_INTERNALS__?.invoke ||
+    null
+  )
+}
+
+function downloadInBrowser(bytes, filename, mime) {
+  const blob = new Blob([bytes], {type: mime || "application/octet-stream"})
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.download = filename || "download"
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
+// Browser: standard blob + <a download>. Tauri webviews ignore that attribute, so use a
+// native save dialog via the Rust `save_file` command when running inside Tauri.
+async function downloadFile({content, filename, mime, encoding}) {
+  const bytes = contentToBytes(content, encoding)
+  const name = filename || "download"
+  const invoke = tauriInvoke()
+
+  if (invoke) {
+    await invoke("save_file", {
+      defaultFilename: name,
+      contentsBase64: bytesToBase64(bytes),
+    })
+    return
+  }
+
+  if (isTauriRuntime()) {
+    throw new Error(
+      "Tauri runtime detected but invoke() is unavailable; cannot open save dialog"
+    )
+  }
+
+  downloadInBrowser(bytes, name, mime)
+}
+
 const BacViewRoot = {
   mounted() {
     this.keydownHandler = (e) => {
@@ -82,20 +152,9 @@ const BacViewRoot = {
     })
 
     this.handleEvent("download_file", ({content, filename, mime, encoding}) => {
-      let blobData = content
-      if (encoding === "base64" && typeof content === "string") {
-        const binary = atob(content)
-        const bytes = new Uint8Array(binary.length)
-        for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i)
-        blobData = bytes
-      }
-      const blob = new Blob([blobData], {type: mime || "application/octet-stream"})
-      const url = URL.createObjectURL(blob)
-      const anchor = document.createElement("a")
-      anchor.href = url
-      anchor.download = filename
-      anchor.click()
-      URL.revokeObjectURL(url)
+      downloadFile({content, filename, mime, encoding}).catch((err) => {
+        console.error("[BacView] download failed:", err)
+      })
     })
 
     this.initResizableTables()

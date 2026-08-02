@@ -181,7 +181,10 @@ defmodule BacView.MixProject do
         "format --check-formatted",
         "credo --strict --all",
         "dialyzer",
-        "test --warnings-as-errors"
+        "test --warnings-as-errors",
+        "cmd#{cmd_prefix} cd src-tauri && cargo fmt --check",
+        "cmd#{cmd_prefix} cd src-tauri && cargo clippy --all-targets",
+        "cmd#{cmd_prefix} cd src-tauri && cargo test --all-targets"
       ]
     ]
   end

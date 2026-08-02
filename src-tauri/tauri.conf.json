@@ -34,9 +34,9 @@
         "desktopTemplate": "linux/BacView.desktop"
       }
     },
-		"macOS": {
-			"bundleName": "BacView"
-		},
+    "macOS": {
+      "bundleName": "BacView"
+    },
     "windows": {
       "nsis": {
         "template": "windows/installer.nsi"

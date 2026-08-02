@@ -47,7 +47,13 @@ fn main() {
     ensure_app_release_zip_placeholder();
     ensure_erts_zip_placeholders();
 
-    tauri_build::build()
+    // Autogenerate allow-save-file / deny-save-file so the Phoenix webview
+    // (loaded as http://127.0.0.1 — a remote origin) can invoke save_file.
+    tauri_build::try_build(
+        tauri_build::Attributes::new()
+            .app_manifest(tauri_build::AppManifest::new().commands(&["save_file"])),
+    )
+    .expect("failed to run tauri-build")
 }
 
 const EMPTY_ZIP: [u8; 22] = [

@@ -85,10 +85,18 @@ defmodule BacView.Application do
            if pubsub do
              case BacViewWeb.Endpoint.server_info(:http) do
                {:ok, {ip, port}} ->
+                 # Prefer loopback in the webview URL so Tauri remote IPC ACL
+                 # (http://127.0.0.1:*) matches, even if the server bound to 0.0.0.0.
+                 host =
+                   case ip do
+                     {0, 0, 0, 0} -> "127.0.0.1"
+                     {0, 0, 0, 0, 0, 0, 0, 0} -> "127.0.0.1"
+                     _ip -> List.to_string(:inet.ntoa(ip))
+                   end
+
                  ElixirKit.PubSub.broadcast(
                    "messages",
-                   "ready:" <>
-                     "http://" <> List.to_string(:inet.ntoa(ip)) <> ":" <> Integer.to_string(port)
+                   "ready:http://#{host}:#{port}"
                  )
 
                {:error, reason} ->
