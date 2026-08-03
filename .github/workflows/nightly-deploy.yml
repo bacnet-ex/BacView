@@ -1,8 +1,9 @@
 name: Nightly Deploy/Build
 
 on:
-  schedule:
-    - cron: '0 2 * * *' # run at 2 AM UTC
+# The schedule will be trigger externally - the GitHub schedule is very unreliable
+#  schedule:
+#    - cron: '0 2 * * *' # run at 2 AM UTC
   workflow_dispatch:
 
 concurrency:
