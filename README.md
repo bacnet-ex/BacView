@@ -5,7 +5,7 @@ BACnet explorer built in Elixir with Phoenix LiveView and [bacstack](https://git
 Discover devices, browse Structured View hierarchies or create your own based upon object names,
 read and write properties, subscribe to COV updates, and monitor alarms - all in real time from the browser.
 
-This project has been built with Grok Build and the Composer 2.5 Fast model.
+This project has been built with Grok Build (formerly with the Composer 2.5 Fast model).
 
 ![Application Scan Page screenshot](docs/assets/application_scan_page.png)
 
@@ -147,9 +147,11 @@ or
 **Android OTP ERTS (host major)**
 
 The Mix release host and the packaged Android ERTS must share the same OTP
-**major** (`27`, `28`, or `29`). Exact patch versions need not match — on device
-the runtime rewrites `start_erl.data` and `ERTS_BIN` to the Android `erts-*`
-tree. Cross-compile Android trees for the major you develop on:
+**major** (`27`, `28`, or `29`). Exact patch versions should match,
+but it's not checked —
+on device the runtime rewrites `start_erl.data` and `ERTS_BIN` to
+the Android `erts-*` tree.
+Cross-compile Android trees for the major you develop on:
 
 ```bash
 # Detect host major automatically via wrappers, or pass major explicitly:

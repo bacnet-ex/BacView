@@ -159,6 +159,8 @@ TRANSLATIONS: dict[str, str] = {
         "Bitstring: bits as 0/1 (e.g. 10110), optional spaces. Length must be %{count}.",
     "Bitstring-Länge: %{expected} Bits erwartet (aktuell: %{actual})":
         "Bitstring length: %{expected} bits expected (got: %{actual})",
+    "Leer oder „null“ = BACnet NULL (für alle Werttypen, auch mit Objektreferenz).":
+        "Empty or \"null\" = BACnet NULL (for all value types, including with an object reference).",
     "Bits als 0/1 …": "Bits as 0/1 …",
     "Bitte eine Schnittstelle auswählen.": "Please select an interface.",
     "Bitte einen Wert eingeben.": "Please enter a value.",
@@ -610,6 +612,8 @@ TRANSLATIONS: dict[str, str] = {
     "Ungültige Objekt-ID.": "Invalid object ID.",
     "Ungültige Struktur im JSON.": "Invalid structure in JSON.",
     "Ungültige Zeit. Erwartet HH:MM, HH:MM:SS oder HH:MM:SS.hh (00:00–23:59:59.99).": "Invalid time. Expected HH:MM, HH:MM:SS or HH:MM:SS.hh (00:00–23:59:59.99).",
+    "24h-Format: HH:MM, HH:MM:SS oder HH:MM:SS.hh (00:00–23:59:59.99)":
+        "24h format: HH:MM, HH:MM:SS or HH:MM:SS.hh (00:00–23:59:59.99)",
     "Ungültiger Enum-Wert im JSON.": "Invalid enum value in JSON.",
     "Ungültiger Enum-Wert.": "Invalid enum value.",
     "Ungültiger Feldpfad.": "Invalid field path.",

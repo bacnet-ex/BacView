@@ -1316,6 +1316,7 @@ defmodule BacView.BACnet.DeviceSession do
       |> Map.merge(%{type: type, units: units, resolution: Map.get(obj, :resolution)})
       |> Map.merge(MultistateState.object_fields(obj))
       |> Map.merge(BinaryPV.object_fields(Map.put(obj, :type, type)))
+      |> Map.merge(analog_range_fields(obj))
 
     %{
       object_id: object_id,
@@ -1411,6 +1412,7 @@ defmodule BacView.BACnet.DeviceSession do
     |> maybe_put_field(:out_of_service, property_row_value(props, :out_of_service))
     |> maybe_put_multistate_fields(props)
     |> maybe_put_binary_fields(props)
+    |> maybe_put_analog_range_fields(props)
     |> maybe_put_present_value(present_prop)
     |> maybe_put_status_flags(props)
     |> maybe_put_field(:event_state, property_row_value(props, :event_state))
@@ -1471,6 +1473,34 @@ defmodule BacView.BACnet.DeviceSession do
       BinaryPV.normalize_text(property_row_value(props, :active_text))
     )
   end
+
+  defp maybe_put_analog_range_fields(obj, props) do
+    obj
+    |> maybe_put_field(
+      :min_present_value,
+      normalize_analog_range_value(property_row_value(props, :min_present_value))
+    )
+    |> maybe_put_field(
+      :max_present_value,
+      normalize_analog_range_value(property_row_value(props, :max_present_value))
+    )
+  end
+
+  defp analog_range_fields(obj) when is_map(obj) do
+    %{}
+    |> maybe_put_field(
+      :min_present_value,
+      normalize_analog_range_value(Map.get(obj, :min_present_value))
+    )
+    |> maybe_put_field(
+      :max_present_value,
+      normalize_analog_range_value(Map.get(obj, :max_present_value))
+    )
+  end
+
+  defp normalize_analog_range_value(value) when is_integer(value), do: value
+  defp normalize_analog_range_value(value) when is_float(value), do: value
+  defp normalize_analog_range_value(_value), do: nil
 
   defp maybe_put_status_flags(obj, props) do
     case property_row_value(props, :status_flags) do

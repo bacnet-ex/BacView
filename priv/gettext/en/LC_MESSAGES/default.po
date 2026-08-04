@@ -96,6 +96,9 @@ msgstr "0 = unknown (auto-learn). 1–65534 = configured."
 msgid "0 Geräte"
 msgstr "0 devices"
 
+msgid "24h-Format: HH:MM, HH:MM:SS oder HH:MM:SS.hh (00:00–23:59:59.99)"
+msgstr "24h format: HH:MM, HH:MM:SS or HH:MM:SS.hh (00:00–23:59:59.99)"
+
 msgid "50–1476. Bestätigt-Requests nutzen die nächstkleinere BACnet-Stufe (z. B. 1000 → 480); Segmentierung nutzt den effektiven Rohwert mit dem Gerät."
 msgstr "50–1476. Confirmed requests use the next smaller BACnet size (e.g. 1000 → 480); segmentation uses the effective raw value with the device."
 
@@ -1046,6 +1049,9 @@ msgstr "Empty = object default"
 
 msgid "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
 msgstr "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is."
+
+msgid "Leer oder „null“ = BACnet NULL (für alle Werttypen, auch mit Objektreferenz)."
+msgstr "Empty or \"null\" = BACnet NULL (for all value types, including with an object reference)."
 
 msgid "Leeren"
 msgstr "Clear"

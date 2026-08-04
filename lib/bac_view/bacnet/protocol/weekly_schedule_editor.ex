@@ -2,6 +2,7 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
   @moduledoc false
 
   alias BACnet.Protocol.BACnetArray
+  alias BACnet.Protocol.BACnetDate
   alias BACnet.Protocol.BACnetTime
   alias BACnet.Protocol.DailySchedule
   alias BACnet.Protocol.DeviceObjectPropertyRef
@@ -12,9 +13,12 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   alias BACnet.Protocol.Constants
 
+  alias BacView.BACnet.Protocol.BinaryPV
   alias BacView.BACnet.Protocol.ComplexPropertyEditor
+  alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyEnumeration
   alias BacView.BACnet.Protocol.PropertyFormatter
+  alias BacView.BACnet.Protocol.PropertyWriter
 
   @weekdays [
     %{index: 1, weekday: :monday, label: "Montag"},
@@ -26,7 +30,22 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
     %{index: 7, weekday: :sunday, label: "Sonntag"}
   ]
 
-  @type value_kind :: :real | :boolean | :unsigned_integer | {:enumerated, atom()} | :text
+  @null_input "null"
+
+  @type value_kind ::
+          :real
+          | :double
+          | :boolean
+          | :unsigned_integer
+          | :signed_integer
+          | :text
+          | :octet_string
+          | :bitstring
+          | {:bitstring, pos_integer()}
+          | {:enumerated, atom()}
+          | :date
+          | :time
+          | :object_identifier
 
   @type entry :: %{
           id: String.t(),
@@ -150,24 +169,64 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   defp remappable_entry_value_kind?(_current, _inferred), do: false
 
-  defp reference_driven_value_kind?(:real), do: true
-  defp reference_driven_value_kind?(:unsigned_integer), do: true
-  defp reference_driven_value_kind?({:enumerated, _real}), do: true
-  defp reference_driven_value_kind?(_real), do: false
+  defp reference_driven_value_kind?(kind)
+       when kind in [
+              :real,
+              :double,
+              :boolean,
+              :unsigned_integer,
+              :signed_integer,
+              :text,
+              :octet_string,
+              :bitstring,
+              :date,
+              :time,
+              :object_identifier
+            ],
+       do: true
+
+  defp reference_driven_value_kind?({:bitstring, _size}), do: true
+  defp reference_driven_value_kind?({:enumerated, _enum_type}), do: true
+  defp reference_driven_value_kind?(_kind), do: false
+
+  @doc """
+  True when the form value is empty or the literal `null` (BACnet NULL for any value kind).
+  """
+  @spec null_input?(term()) :: boolean()
+  def null_input?(value) when is_binary(value) do
+    trimmed = String.trim(value)
+    trimmed == "" or String.downcase(trimmed) == @null_input
+  end
+
+  def null_input?(_value), do: false
+
+  @spec null_option() :: value_option()
+  def null_option(), do: %{value: @null_input, label: "NULL"}
 
   @spec default_entry_value(value_kind()) :: String.t()
   def default_entry_value(:real), do: "0"
+  def default_entry_value(:double), do: "0"
   def default_entry_value(:unsigned_integer), do: "1"
+  def default_entry_value(:signed_integer), do: "0"
   def default_entry_value(:boolean), do: "false"
 
   def default_entry_value({:enumerated, enum_type}) do
     case PropertyEnumeration.options(enum_type) do
-      [%{value: value} | _real] -> Atom.to_string(value)
-      _real -> ""
+      [%{value: value} | _rest] -> Atom.to_string(value)
+      _empty -> @null_input
     end
   end
 
+  def default_entry_value({:bitstring, size}) when is_integer(size) and size > 0,
+    do: String.duplicate("0", size)
+
+  def default_entry_value(:bitstring), do: ""
   def default_entry_value(:text), do: ""
+  def default_entry_value(:octet_string), do: ""
+  def default_entry_value(:date), do: "1970-01-01"
+  def default_entry_value(:time), do: "00:00"
+  def default_entry_value(:object_identifier), do: "analog_value:0"
+  def default_entry_value(_kind), do: ""
 
   @spec new_entry(value_kind(), pos_integer()) :: entry()
   def new_entry(value_kind, day_index) do
@@ -241,9 +300,92 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
     end
   end
 
-  @spec enum_options(value_kind()) :: [%{value: atom(), label: String.t()}] | nil
-  def enum_options({:enumerated, enum_type}), do: PropertyEnumeration.options(enum_type)
-  def enum_options(_enum_type), do: nil
+  @type value_option :: %{value: String.t(), label: String.t()}
+
+  @doc """
+  Resolves the first same-device object referenced by the schedule
+  (`list_of_object_property_references`) from `device_objects`.
+
+  Used for binary `active_text`/`inactive_text` and multistate `state_text` labels
+  in the weekly schedule value editor.
+  """
+  @spec schedule_target_object([map()], [map()] | nil) :: map() | nil
+  def schedule_target_object(properties, device_objects)
+      when is_list(properties) and is_list(device_objects) do
+    properties
+    |> property_reference_object_ids()
+    |> Enum.find_value(fn %ObjectIdentifier{type: type, instance: instance} ->
+      Enum.find(device_objects, fn obj ->
+        is_map(obj) and Map.get(obj, :type) == type and Map.get(obj, :instance) == instance
+      end)
+    end)
+  end
+
+  def schedule_target_object(_properties, _device_objects), do: nil
+
+  @doc """
+  Dropdown options for weekly schedule entry values.
+
+  Every dropdown includes an explicit **NULL** option (BACnet Null application tag),
+  including when the schedule has object references and a non-null value kind was
+  inferred. Free-text kinds return `nil` (use empty / `null` for NULL).
+
+  - Binary (`{:enumerated, :binary_present_value}`): active/inactive; labels use
+    target `active_text` / `inactive_text` when present.
+  - Multistate (`:unsigned_integer` + multistate target): `MultistateState.state_options/1`.
+  - Other enumerated kinds: `PropertyEnumeration` options.
+  - Boolean: true/false.
+  """
+  @spec value_options(value_kind(), map() | nil) :: [value_option()] | nil
+  def value_options(value_kind, target_object \\ nil)
+
+  def value_options({:enumerated, :binary_present_value}, target_object) do
+    :binary_present_value
+    |> PropertyEnumeration.options()
+    |> Enum.map(&relabel_binary_present_value_option(&1, target_object))
+    |> stringify_option_values()
+    |> with_null_option()
+  end
+
+  def value_options({:enumerated, enum_type}, _target_object) when is_atom(enum_type) do
+    case PropertyEnumeration.options(enum_type) do
+      [] -> nil
+      options -> options |> stringify_option_values() |> with_null_option()
+    end
+  end
+
+  def value_options(:unsigned_integer, target_object) when is_map(target_object) do
+    if MultistateState.multistate_object?(target_object) do
+      case MultistateState.state_options(target_object) do
+        [] ->
+          nil
+
+        options ->
+          options
+          |> Enum.map(fn %{value: value, label: label} ->
+            %{value: Integer.to_string(value), label: label}
+          end)
+          |> with_null_option()
+      end
+    else
+      nil
+    end
+  end
+
+  def value_options(:unsigned_integer, _target_object), do: nil
+
+  def value_options(:boolean, _target_object) do
+    with_null_option([
+      %{value: "true", label: "true"},
+      %{value: "false", label: "false"}
+    ])
+  end
+
+  def value_options(_value_kind, _target_object), do: nil
+
+  @doc false
+  @spec enum_options(value_kind()) :: [value_option()] | nil
+  def enum_options(value_kind), do: value_options(value_kind, nil)
 
   @spec draft_days(draft() | map()) :: [day_draft()]
   def draft_days(draft) when is_map(draft) do
@@ -327,7 +469,7 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   defp entry_value_kind_from_value(value) do
     case kind_from_tagged_value(value) do
-      :text -> :real
+      nil -> :real
       kind -> kind
     end
   end
@@ -414,26 +556,39 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
   end
 
   defp encode_value(value, value_kind) when is_binary(value) do
-    trimmed = String.trim(value)
-
-    if null_value?(trimmed) do
+    # NULL is valid for every inferred kind (including object-reference targets).
+    if null_input?(value) do
       {:ok, {:null, nil}}
     else
-      encode_non_null_value(trimmed, value_kind)
+      encode_non_null_value(String.trim(value), value_kind)
     end
   end
 
   defp encode_non_null_value(trimmed, :real) do
-    case Float.parse(trimmed) do
-      {float, ""} -> {:ok, {:real, float}}
-      _trimmed -> {:error, :invalid_schedule_value}
+    case parse_float_input(trimmed) do
+      {:ok, float} -> {:ok, {:real, float}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(trimmed, :double) do
+    case parse_float_input(trimmed) do
+      {:ok, float} -> {:ok, {:double, float}}
+      {:error, _reason} = err -> err
     end
   end
 
   defp encode_non_null_value(trimmed, :unsigned_integer) do
     case parse_unsigned_input(trimmed) do
       {:ok, int} -> {:ok, {:unsigned_integer, int}}
-      {:error, _trimmed} -> {:error, :invalid_schedule_value}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(trimmed, :signed_integer) do
+    case parse_signed_input(trimmed) do
+      {:ok, int} -> {:ok, {:signed_integer, int}}
+      {:error, _reason} = err -> err
     end
   end
 
@@ -448,7 +603,7 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
   defp encode_non_null_value(trimmed, {:enumerated, enum_type}) do
     case parse_enumerated_input(trimmed, enum_type) do
       {:ok, int} -> {:ok, {:enumerated, int}}
-      {:error, _trimmed} -> {:error, :invalid_schedule_value}
+      {:error, _reason} = err -> err
     end
   end
 
@@ -456,44 +611,72 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
     {:ok, {:character_string, trimmed}}
   end
 
-  defp validate_value(value, value_kind) do
-    trimmed = String.trim(value)
-
-    if null_value?(trimmed) do
-      :ok
-    else
-      validate_non_null_value(trimmed, value_kind)
+  defp encode_non_null_value(trimmed, :octet_string) do
+    case parse_octet_string_input(trimmed) do
+      {:ok, binary} -> {:ok, {:octet_string, binary}}
+      {:error, _reason} = err -> err
     end
   end
 
-  defp validate_non_null_value(trimmed, :real) do
+  defp encode_non_null_value(trimmed, :bitstring) do
+    case PropertyFormatter.parse_bitstring(trimmed) do
+      {:ok, bits} -> {:ok, {:bitstring, bits}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(trimmed, {:bitstring, size})
+       when is_integer(size) and size > 0 do
+    case PropertyFormatter.parse_bitstring(trimmed, size) do
+      {:ok, bits} -> {:ok, {:bitstring, bits}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(trimmed, :date) do
+    case parse_date_input(trimmed) do
+      {:ok, date} -> {:ok, {:date, date}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(trimmed, :time) do
+    case parse_time(trimmed) do
+      {:ok, time} -> {:ok, {:time, time}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(trimmed, :object_identifier) do
+    case parse_object_identifier_input(trimmed) do
+      {:ok, oid} -> {:ok, {:object_identifier, oid}}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp encode_non_null_value(_trimmed, _value_kind), do: {:error, :invalid_schedule_value}
+
+  defp validate_value(value, value_kind) do
+    if null_input?(value) do
+      :ok
+    else
+      validate_non_null_value(String.trim(value), value_kind)
+    end
+  end
+
+  defp validate_non_null_value(trimmed, value_kind) do
+    case encode_non_null_value(trimmed, value_kind) do
+      {:ok, _tagged} -> :ok
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp parse_float_input(trimmed) do
     case Float.parse(trimmed) do
-      {_trimmed, ""} -> :ok
+      {float, ""} -> {:ok, float}
       _trimmed -> {:error, :invalid_schedule_value}
     end
   end
-
-  defp validate_non_null_value(trimmed, :unsigned_integer) do
-    case parse_unsigned_input(trimmed) do
-      {:ok, _trimmed} -> :ok
-      {:error, _trimmed} -> {:error, :invalid_schedule_value}
-    end
-  end
-
-  defp validate_non_null_value(trimmed, :boolean) do
-    if String.downcase(trimmed) in ["true", "false"],
-      do: :ok,
-      else: {:error, :invalid_schedule_value}
-  end
-
-  defp validate_non_null_value(trimmed, {:enumerated, enum_type}) do
-    case parse_enumerated_input(trimmed, enum_type) do
-      {:ok, _trimmed} -> :ok
-      {:error, _trimmed} -> {:error, :invalid_schedule_value}
-    end
-  end
-
-  defp validate_non_null_value(_trimmed, :text), do: :ok
 
   defp parse_unsigned_input(trimmed) do
     case Integer.parse(trimmed) do
@@ -511,6 +694,79 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
     end
   end
 
+  defp parse_signed_input(trimmed) do
+    case Integer.parse(trimmed) do
+      {int, ""} ->
+        {:ok, int}
+
+      _trimmed ->
+        case Float.parse(trimmed) do
+          {float, ""} when float == trunc(float) ->
+            {:ok, trunc(float)}
+
+          _trimmed ->
+            {:error, :invalid_schedule_value}
+        end
+    end
+  end
+
+  defp parse_octet_string_input(trimmed) do
+    case PropertyWriter.parse_hex_input(trimmed) do
+      {:ok, binary} ->
+        {:ok, binary}
+
+      {:error, :invalid_hex} ->
+        # Printable form: keep UTF-8/raw bytes (same idea as PropertyWriter text mode).
+        {:ok, trimmed}
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  defp parse_date_input(trimmed) do
+    case Date.from_iso8601(trimmed) do
+      {:ok, date} ->
+        {:ok, BACnetDate.from_date(date)}
+
+      {:error, _reason} ->
+        parse_dotted_date(trimmed)
+    end
+  end
+
+  defp parse_dotted_date(trimmed) do
+    case String.split(trimmed, ".") do
+      [day_s, month_s, year_s] ->
+        with {day, ""} <- Integer.parse(day_s),
+             {month, ""} <- Integer.parse(month_s),
+             {year, ""} <- Integer.parse(year_s),
+             {:ok, date} <- Date.new(year, month, day) do
+          {:ok, BACnetDate.from_date(date)}
+        else
+          _date -> {:error, :invalid_schedule_value}
+        end
+
+      _parts ->
+        {:error, :invalid_schedule_value}
+    end
+  end
+
+  defp parse_object_identifier_input(trimmed) do
+    case String.split(trimmed, ":", parts: 2) do
+      [type_str, instance_str] ->
+        with {:ok, type} <- PropertyEnumeration.parse_value(String.trim(type_str), :object_type),
+             {instance, ""} <- Integer.parse(String.trim(instance_str)),
+             true <- instance >= 0 do
+          {:ok, %ObjectIdentifier{type: type, instance: instance}}
+        else
+          _oid -> {:error, :invalid_schedule_value}
+        end
+
+      _parts ->
+        {:error, :invalid_schedule_value}
+    end
+  end
+
   defp parse_enumerated_input(trimmed, enum_type) do
     case PropertyEnumeration.parse_value(trimmed, enum_type) do
       {:ok, atom} ->
@@ -520,7 +776,7 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
         case Integer.parse(trimmed) do
           {int, ""} ->
             case Constants.by_value(enum_type, int) do
-              {:ok, _trimmed} -> {:ok, int}
+              {:ok, _name} -> {:ok, int}
               :error -> {:error, :invalid_schedule_value}
             end
 
@@ -569,13 +825,13 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   defp normalize_schedule_time_value(_encoding), do: :error
 
-  defp null_value?(value), do: value == "" or String.downcase(value) == "null"
-
-  defp format_time_input(%BACnetTime{hour: hour, minute: minute, second: 0, hundredth: 0}) do
+  defp format_time_input(%BACnetTime{hour: hour, minute: minute, second: 0, hundredth: 0})
+       when is_integer(hour) and is_integer(minute) do
     "#{pad2(hour)}:#{pad2(minute)}"
   end
 
-  defp format_time_input(%BACnetTime{hour: hour, minute: minute, second: second, hundredth: 0}) do
+  defp format_time_input(%BACnetTime{hour: hour, minute: minute, second: second, hundredth: 0})
+       when is_integer(hour) and is_integer(minute) and is_integer(second) do
     "#{pad2(hour)}:#{pad2(minute)}:#{pad2(second)}"
   end
 
@@ -584,8 +840,17 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
          minute: minute,
          second: second,
          hundredth: hundredth
-       }) do
+       })
+       when is_integer(hour) and is_integer(minute) and is_integer(second) and
+              is_integer(hundredth) do
     "#{pad2(hour)}:#{pad2(minute)}:#{pad2(second)}.#{pad_hundredth(hundredth)}"
+  end
+
+  defp format_time_input(_time), do: ""
+
+  defp format_date_input(%BACnetDate{} = date) do
+    {:ok, elixir_date} = BACnetDate.to_date(date)
+    Date.to_iso8601(elixir_date)
   end
 
   defp pad2(value) when is_integer(value),
@@ -596,10 +861,18 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   defp pad_hundredth(value), do: Integer.to_string(value)
 
+  defp format_value_input({:null, _value}), do: @null_input
+  defp format_value_input(nil), do: @null_input
+
   defp format_value_input({:real, value}) when is_float(value),
     do: PropertyFormatter.format_float(value)
 
   defp format_value_input({:real, value}) when is_integer(value), do: Integer.to_string(value)
+
+  defp format_value_input({:double, value}) when is_float(value),
+    do: PropertyFormatter.format_float(value)
+
+  defp format_value_input({:double, value}) when is_integer(value), do: Integer.to_string(value)
   defp format_value_input({:boolean, value}), do: if(value, do: "true", else: "false")
   defp format_value_input({:enumerated, value}) when is_atom(value), do: Atom.to_string(value)
 
@@ -612,7 +885,27 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
   defp format_value_input({:signed_integer, value}) when is_integer(value),
     do: Integer.to_string(value)
 
-  defp format_value_input({:null, nil}), do: ""
+  defp format_value_input({:character_string, value}) when is_binary(value), do: value
+
+  defp format_value_input({:octet_string, value}) when is_binary(value),
+    do: PropertyFormatter.format_binary_hex(value)
+
+  defp format_value_input({:bitstring, value}) when is_tuple(value),
+    do: PropertyFormatter.format_edit_value(value, nil, nil)
+
+  defp format_value_input({:date, %BACnetDate{} = date}), do: format_date_input(date)
+  defp format_value_input({:time, %BACnetTime{} = time}), do: format_time_input(time)
+
+  defp format_value_input(
+         {:object_identifier, %ObjectIdentifier{type: type, instance: instance}}
+       ),
+       do: "#{type}:#{instance}"
+
+  defp format_value_input(%BACnetDate{} = date), do: format_date_input(date)
+  defp format_value_input(%BACnetTime{} = time), do: format_time_input(time)
+
+  defp format_value_input(%ObjectIdentifier{type: type, instance: instance}),
+    do: "#{type}:#{instance}"
 
   defp format_value_input(%Encoding{type: :enumerated, value: value}) when is_integer(value),
     do: format_enumerated_name(value)
@@ -620,15 +913,17 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
   defp format_value_input(%Encoding{type: :enumerated, value: value}) when is_atom(value),
     do: Atom.to_string(value)
 
-  defp format_value_input(%Encoding{type: :unsigned_integer, value: value})
-       when is_integer(value),
-       do: Integer.to_string(value)
+  defp format_value_input(%Encoding{type: type, value: value}),
+    do: format_value_input({type, value})
 
-  defp format_value_input(%Encoding{type: type, value: value})
-       when type in [:real, :boolean, :null],
-       do: format_value_input({type, value})
+  defp format_value_input(value) when is_tuple(value) do
+    if PropertyFormatter.bitstring_value?(value) do
+      PropertyFormatter.format_edit_value(value, nil, nil)
+    else
+      inspect(value, limit: 50)
+    end
+  end
 
-  defp format_value_input(%Encoding{value: value}), do: format_value_input(value)
   defp format_value_input(value) when is_binary(value), do: value
   defp format_value_input(value), do: inspect(value, limit: 50)
 
@@ -644,28 +939,68 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
   end
 
   defp kind_from_property_references(properties) do
+    properties
+    |> property_reference_object_ids()
+    |> Enum.find_value(fn %ObjectIdentifier{type: type} -> kind_from_object_type(type) end)
+  end
+
+  defp property_reference_object_ids(properties) when is_list(properties) do
     case Enum.find(properties, &(&1.property == :list_of_object_property_references)) do
-      %{value: %BACnetArray{} = array} -> kind_from_referenced_objects(array)
-      _properties -> nil
+      %{value: %BACnetArray{} = array} ->
+        array
+        |> array_elements()
+        |> Enum.flat_map(fn
+          %DeviceObjectPropertyRef{object_identifier: %ObjectIdentifier{} = oid} -> [oid]
+          _element -> []
+        end)
+
+      _properties ->
+        []
     end
   end
 
-  defp kind_from_referenced_objects(%BACnetArray{} = array) do
-    array
-    |> array_elements()
-    |> Enum.find_value(&kind_from_object_reference/1)
+  defp property_reference_object_ids(_properties), do: []
+
+  defp relabel_binary_present_value_option(%{value: value} = option, object)
+       when is_map(object) do
+    custom =
+      case value do
+        :active -> BinaryPV.active_text(object)
+        :inactive -> BinaryPV.inactive_text(object)
+        _value -> nil
+      end
+
+    if is_binary(custom) and custom != "" do
+      %{option | label: custom}
+    else
+      option
+    end
   end
 
-  defp kind_from_object_reference(%DeviceObjectPropertyRef{
-         object_identifier: %ObjectIdentifier{type: type}
-       }) do
-    kind_from_object_type(type)
+  defp relabel_binary_present_value_option(option, _object), do: option
+
+  defp with_null_option(options) when is_list(options) do
+    [null_option() | options]
   end
 
-  defp kind_from_object_reference(_kind_from_object_reference), do: nil
+  defp stringify_option_values(options) when is_list(options) do
+    Enum.map(options, fn
+      %{value: value, label: label} when is_atom(value) ->
+        %{value: Atom.to_string(value), label: label}
+
+      %{value: value, label: label} when is_integer(value) ->
+        %{value: Integer.to_string(value), label: label}
+
+      %{value: value, label: label} when is_binary(value) ->
+        %{value: value, label: label}
+
+      option ->
+        option
+    end)
+  end
 
   defp kind_from_object_type(type)
-       when type in [:binary_input, :binary_output, :binary_value],
+       when type in [:binary_input, :binary_output, :binary_value, :binary_lighting_output],
        do: {:enumerated, :binary_present_value}
 
   defp kind_from_object_type(type)
@@ -676,17 +1011,27 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
        when type in [:analog_input, :analog_output, :analog_value],
        do: :real
 
+  defp kind_from_object_type(:large_analog_value), do: :double
+  defp kind_from_object_type(:integer_value), do: :signed_integer
+  defp kind_from_object_type(:positive_integer_value), do: :unsigned_integer
   defp kind_from_object_type(:character_string_value), do: :text
+  defp kind_from_object_type(:octet_string_value), do: :octet_string
+  defp kind_from_object_type(:bitstring_value), do: :bitstring
+  defp kind_from_object_type(type) when type in [:date_value, :date_pattern_value], do: :date
+  defp kind_from_object_type(type) when type in [:time_value, :time_pattern_value], do: :time
   defp kind_from_object_type(_type), do: nil
 
   defp kind_from_weekly_schedule(%BACnetArray{} = array) do
     array
     |> array_elements()
     |> Enum.find_value(fn
-      %DailySchedule{schedule: [%TimeValue{value: value} | _array]} ->
-        kind_from_tagged_value(value)
+      %DailySchedule{schedule: schedule} when is_list(schedule) ->
+        Enum.find_value(schedule, fn
+          %TimeValue{value: value} -> kind_from_tagged_value(value)
+          _entry -> nil
+        end)
 
-      _array ->
+      _day ->
         nil
     end)
   end
@@ -697,29 +1042,73 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   defp kind_from_value(value), do: kind_from_tagged_value(value)
 
-  defp kind_from_encoding_type(:real, _real), do: :real
-  defp kind_from_encoding_type(:boolean, _real), do: :boolean
-  defp kind_from_encoding_type(:unsigned_integer, _real), do: :unsigned_integer
-  defp kind_from_encoding_type(:signed_integer, _real), do: :unsigned_integer
+  # NULL must not pin the schedule value kind — fall through to other sources.
+  defp kind_from_encoding_type(:null, _value), do: nil
+  defp kind_from_encoding_type(:real, _value), do: :real
+  defp kind_from_encoding_type(:double, _value), do: :double
+  defp kind_from_encoding_type(:boolean, _value), do: :boolean
+  defp kind_from_encoding_type(:unsigned_integer, _value), do: :unsigned_integer
+  defp kind_from_encoding_type(:signed_integer, _value), do: :signed_integer
+  defp kind_from_encoding_type(:character_string, _value), do: :text
+  defp kind_from_encoding_type(:octet_string, _value), do: :octet_string
+  defp kind_from_encoding_type(:bitstring, value), do: bitstring_value_kind(value)
+  defp kind_from_encoding_type(:date, _value), do: :date
+  defp kind_from_encoding_type(:time, _value), do: :time
+  defp kind_from_encoding_type(:object_identifier, _value), do: :object_identifier
 
   defp kind_from_encoding_type(:enumerated, value),
     do: {:enumerated, enum_type_for_sample(value)}
 
-  defp kind_from_encoding_type(:null, _real), do: :text
-  defp kind_from_encoding_type(_real, value), do: kind_from_tagged_value(value)
+  defp kind_from_encoding_type(_type, value), do: kind_from_tagged_value(value)
 
-  defp kind_from_tagged_value({:real, _atom}), do: :real
-  defp kind_from_tagged_value({:boolean, _atom}), do: :boolean
-  defp kind_from_tagged_value({:unsigned_integer, _atom}), do: :unsigned_integer
-  defp kind_from_tagged_value({:signed_integer, _atom}), do: :unsigned_integer
+  defp kind_from_tagged_value({:null, _value}), do: nil
+  defp kind_from_tagged_value(nil), do: nil
+  defp kind_from_tagged_value({:real, _value}), do: :real
+  defp kind_from_tagged_value({:double, _value}), do: :double
+  defp kind_from_tagged_value({:boolean, _value}), do: :boolean
+  defp kind_from_tagged_value({:unsigned_integer, _value}), do: :unsigned_integer
+  defp kind_from_tagged_value({:signed_integer, _value}), do: :signed_integer
+  defp kind_from_tagged_value({:character_string, _value}), do: :text
+  defp kind_from_tagged_value({:octet_string, _value}), do: :octet_string
+  defp kind_from_tagged_value({:bitstring, value}), do: bitstring_value_kind(value)
+  defp kind_from_tagged_value({:date, _value}), do: :date
+  defp kind_from_tagged_value({:time, _value}), do: :time
+  defp kind_from_tagged_value({:object_identifier, _value}), do: :object_identifier
+  defp kind_from_tagged_value(%BACnetDate{}), do: :date
+  defp kind_from_tagged_value(%BACnetTime{}), do: :time
+  defp kind_from_tagged_value(%ObjectIdentifier{}), do: :object_identifier
 
   defp kind_from_tagged_value({:enumerated, atom}) when is_atom(atom),
     do: {:enumerated, enum_type_for_atom(atom)}
 
-  defp kind_from_tagged_value({:enumerated, _atom}), do: {:enumerated, :binary_present_value}
-  defp kind_from_tagged_value({:null, nil}), do: :text
+  defp kind_from_tagged_value({:enumerated, _value}), do: {:enumerated, :binary_present_value}
   defp kind_from_tagged_value(%Encoding{} = encoding), do: kind_from_value(encoding)
-  defp kind_from_tagged_value(_atom), do: :text
+
+  defp kind_from_tagged_value(value) when is_tuple(value) do
+    if PropertyFormatter.bitstring_value?(value) do
+      bitstring_value_kind(value)
+    else
+      nil
+    end
+  end
+
+  defp kind_from_tagged_value(_value), do: nil
+
+  defp bitstring_value_kind(value) do
+    case bitstring_size(value) do
+      size when is_integer(size) and size > 0 -> {:bitstring, size}
+      _size -> :bitstring
+    end
+  end
+
+  defp bitstring_size({:bitstring, value}), do: bitstring_size(value)
+  defp bitstring_size(%Encoding{type: :bitstring, value: value}), do: bitstring_size(value)
+
+  defp bitstring_size(value) when is_tuple(value) do
+    if PropertyFormatter.bitstring_value?(value), do: tuple_size(value), else: nil
+  end
+
+  defp bitstring_size(_value), do: nil
 
   defp enum_type_for_sample(value), do: enum_type_for_atom(sample_enum_atom(value))
 

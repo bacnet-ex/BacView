@@ -8,6 +8,8 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
 
   attr(:object, :map, required: true)
   attr(:property, :map, required: true)
+  attr(:properties, :list, default: [])
+  attr(:device_objects, :list, default: [])
   attr(:mode, :atom, default: :weekdays)
   attr(:active_day, :integer, default: 1)
   attr(:draft, :map, required: true)
@@ -20,11 +22,16 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
   attr(:writing, :boolean, default: false)
 
   def modal(assigns) do
-    assigns =
-      assign(assigns, :active_day_data, active_day_data(assigns.draft, assigns.active_day))
+    target_object =
+      WeeklyScheduleEditor.schedule_target_object(assigns.properties, assigns.device_objects)
+
+    value_options = WeeklyScheduleEditor.value_options(assigns.value_kind, target_object) || []
 
     assigns =
-      assign(assigns, :enum_options, WeeklyScheduleEditor.enum_options(assigns.value_kind))
+      assigns
+      |> assign(:active_day_data, active_day_data(assigns.draft, assigns.active_day))
+      |> assign(:value_options, value_options)
+      |> assign(:value_dropdown?, value_options != [])
 
     ~H"""
     <div id="write-weekly-schedule-modal" class="bac-modal-backdrop">
@@ -164,10 +171,20 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
                       <input
                         id={"weekly-entry-time-#{entry.id}"}
                         name={"entries[#{index}][time]"}
-                        type="time"
-                        step="0.01"
+                        type="text"
+                        inputmode="numeric"
+                        autocomplete="off"
+                        spellcheck="false"
+                        placeholder="HH:MM"
+                        title={
+                          t(
+                            @locale,
+                            @locale_version,
+                            "24h-Format: HH:MM, HH:MM:SS oder HH:MM:SS.hh (00:00–23:59:59.99)"
+                          )
+                        }
                         value={entry.time}
-                        class="bac-input bac-input-sm w-full"
+                        class="bac-input bac-input-sm bac-mono w-full"
                         disabled={@writing}
                         phx-debounce="300"
                       />
@@ -180,7 +197,7 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
                         {t(@locale, @locale_version, "Wert")}
                       </label>
                       <select
-                        :if={@enum_options}
+                        :if={@value_dropdown?}
                         id={"weekly-entry-value-#{entry.id}"}
                         name={"entries[#{index}][value]"}
                         class="bac-input bac-input-sm w-full"
@@ -188,33 +205,23 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
                         phx-debounce="300"
                       >
                         <option
-                          :for={opt <- @enum_options}
-                          value={Atom.to_string(opt.value)}
-                          selected={entry.value == Atom.to_string(opt.value)}
+                          :for={opt <- @value_options}
+                          value={opt.value}
+                          selected={weekly_value_selected?(entry.value, opt.value)}
                         >
                           {opt.label}
                         </option>
                       </select>
-                      <select
-                        :if={@value_kind == :boolean and !@enum_options}
-                        id={"weekly-entry-value-#{entry.id}"}
-                        name={"entries[#{index}][value]"}
-                        class="bac-input bac-input-sm w-full"
-                        disabled={@writing}
-                        phx-debounce="300"
-                      >
-                        <option value="true" selected={entry.value == "true"}>true</option>
-                        <option value="false" selected={entry.value == "false"}>false</option>
-                      </select>
                       <input
-                        :if={@value_kind != :boolean and !@enum_options}
+                        :if={!@value_dropdown?}
                         id={"weekly-entry-value-#{entry.id}"}
                         name={"entries[#{index}][value]"}
-                        type={if(@value_kind in [:real, :unsigned_integer], do: "number", else: "text")}
+                        type={if(weekly_number_kind?(@value_kind), do: "number", else: "text")}
                         step={weekly_entry_value_step(@value_kind)}
                         min={if(@value_kind == :unsigned_integer, do: "0", else: nil)}
                         value={entry.value}
-                        class="bac-input bac-input-sm w-full"
+                        placeholder={weekly_value_placeholder(@value_kind)}
+                        class="bac-input bac-input-sm bac-mono w-full"
                         disabled={@writing}
                         phx-debounce="300"
                       />
@@ -233,6 +240,13 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
                   </div>
                 <% end %>
               </div>
+              <p class="text-xs bac-text-faint">
+                {t(
+                  @locale,
+                  @locale_version,
+                  "Leer oder „null“ = BACnet NULL (für alle Werttypen, auch mit Objektreferenz)."
+                )}
+              </p>
             </form>
             <p :if={@field_error} class="text-sm text-error">{@field_error}</p>
           <% else %>
@@ -310,7 +324,32 @@ defmodule BacViewWeb.WriteWeeklyScheduleModal do
   defp submit_disabled?(:weekdays, field_error, _json_error), do: field_error != nil
   defp submit_disabled?(:json, _field_error, json_error), do: json_error != nil
 
-  defp weekly_entry_value_step(:real), do: "any"
-  defp weekly_entry_value_step(:unsigned_integer), do: "1"
-  defp weekly_entry_value_step(_real), do: nil
+  defp weekly_entry_value_step(kind) when kind in [:real, :double], do: "any"
+  defp weekly_entry_value_step(kind) when kind in [:unsigned_integer, :signed_integer], do: "1"
+  defp weekly_entry_value_step(_kind), do: nil
+
+  defp weekly_number_kind?(kind)
+       when kind in [:real, :double, :unsigned_integer, :signed_integer],
+       do: true
+
+  defp weekly_number_kind?(_kind), do: false
+
+  defp weekly_value_selected?(entry_value, option_value) do
+    if WeeklyScheduleEditor.null_input?(entry_value) do
+      option_value == "null"
+    else
+      entry_value == option_value
+    end
+  end
+
+  defp weekly_value_placeholder(:bitstring), do: "10110"
+
+  defp weekly_value_placeholder({:bitstring, size}) when is_integer(size),
+    do: String.duplicate("0", size)
+
+  defp weekly_value_placeholder(:date), do: "YYYY-MM-DD"
+  defp weekly_value_placeholder(:time), do: "HH:MM"
+  defp weekly_value_placeholder(:object_identifier), do: "analog_value:0"
+  defp weekly_value_placeholder(:octet_string), do: "AA:BB:00"
+  defp weekly_value_placeholder(_kind), do: "null"
 end

@@ -7,6 +7,16 @@ defmodule BacViewWeb.WritePresentValueModal do
   alias BacView.BACnet.Protocol.MultistateState
   alias BacView.BACnet.Protocol.PropertyFormatter
 
+  @analog_types [
+    :analog_input,
+    :analog_output,
+    :analog_value,
+    :large_analog_value
+  ]
+
+  @max_slider_span 9999
+  @tick_intervals 10
+
   attr(:object, :map, required: true)
   attr(:write_priority, :integer, default: 8)
   attr(:writing, :boolean, default: false)
@@ -21,12 +31,16 @@ defmodule BacViewWeb.WritePresentValueModal do
         []
       end
 
+    slider = slider_config(assigns.object)
+
     assigns =
       assigns
       |> assign(:boolean_options, boolean_options)
       |> assign(:boolean_dropdown?, boolean_options != [])
       |> assign(:state_options, state_options)
       |> assign(:state_dropdown?, state_options != [])
+      |> assign(:slider, slider)
+      |> assign(:slider?, is_map(slider))
 
     ~H"""
     <div id="write-present-value-modal" class="bac-modal-backdrop" phx-hook="FocusFirstInput">
@@ -139,7 +153,7 @@ defmodule BacViewWeb.WritePresentValueModal do
                   {opt.label}
                 </option>
               </select>
-              <div :if={!@boolean_dropdown? && !@state_dropdown?} class="space-y-1">
+              <div :if={!@boolean_dropdown? && !@state_dropdown?} class="space-y-2">
                 <input
                   id="modal-write-value"
                   type="text"
@@ -150,6 +164,41 @@ defmodule BacViewWeb.WritePresentValueModal do
                   autocomplete="off"
                   data-autofocus
                 />
+                <div
+                  :if={@slider?}
+                  id="modal-write-value-slider-wrap"
+                  class="space-y-2"
+                  phx-hook="SyncRangeInput"
+                  phx-update="ignore"
+                  data-target="modal-write-value"
+                >
+                  <input
+                    type="range"
+                    id="modal-write-value-slider"
+                    class="bac-range w-full"
+                    min={@slider.min}
+                    max={@slider.max}
+                    step="1"
+                    value={@slider.value}
+                    aria-valuemin={@slider.min}
+                    aria-valuemax={@slider.max}
+                    aria-valuenow={@slider.value}
+                  />
+                  <div class="flex flex-wrap justify-between gap-1">
+                    <button
+                      :for={tick <- @slider.ticks}
+                      type="button"
+                      data-tick={tick}
+                      class="bac-btn bac-btn-ghost bac-btn-xs bac-mono min-w-[2.25rem] px-1.5"
+                    >
+                      {tick}
+                    </button>
+                  </div>
+                  <div class="flex justify-between text-xs bac-text-faint bac-mono">
+                    <span>{@slider.min}</span>
+                    <span>{@slider.max}</span>
+                  </div>
+                </div>
                 <p :if={bitstring_present_value?(@object)} class="text-xs bac-text-faint">
                   {t(
                     @locale,
@@ -189,6 +238,34 @@ defmodule BacViewWeb.WritePresentValueModal do
     </div>
     """
   end
+
+  @doc """
+  Builds integer range-slider config for analog objects with min/max present value.
+
+  Returns `%{min, max, value, ticks}` or `nil` when the object is not eligible.
+  """
+  @spec slider_config(map() | nil) ::
+          %{min: integer(), max: integer(), value: integer(), ticks: [integer()]} | nil
+  def slider_config(object) when is_map(object) do
+    with true <- analog_object?(object),
+         {:ok, min_i} <- integer_bound(Map.get(object, :min_present_value)),
+         {:ok, max_i} <- integer_bound(Map.get(object, :max_present_value)),
+         true <- min_i < max_i,
+         true <- max_i - min_i <= @max_slider_span do
+      value = clamp_integer(present_value_integer(object), min_i, max_i)
+
+      %{
+        min: min_i,
+        max: max_i,
+        value: value,
+        ticks: tick_values(min_i, max_i)
+      }
+    else
+      _ineligible -> nil
+    end
+  end
+
+  def slider_config(_object), do: nil
 
   defp commandable?(object) when is_map(object), do: Map.get(object, :commandable, false)
   defp commandable?(_object), do: false
@@ -260,6 +337,38 @@ defmodule BacViewWeb.WritePresentValueModal do
       {:bitstring, value} when is_tuple(value) -> tuple_size(value)
       value when is_tuple(value) -> tuple_size(value)
       _other -> 0
+    end
+  end
+
+  defp analog_object?(%{type: type}) when type in @analog_types, do: true
+  defp analog_object?(_object), do: false
+
+  defp integer_bound(value) when is_integer(value), do: {:ok, value}
+  defp integer_bound(value) when is_float(value), do: {:ok, trunc(value)}
+  defp integer_bound(_value), do: :error
+
+  defp present_value_integer(object) when is_map(object) do
+    case Map.get(object, :present_value) do
+      value when is_integer(value) -> value
+      value when is_float(value) -> trunc(value)
+      _other -> nil
+    end
+  end
+
+  defp clamp_integer(nil, min_i, _max_i), do: min_i
+  defp clamp_integer(value, min_i, _max_i) when value < min_i, do: min_i
+  defp clamp_integer(value, _min_i, max_i) when value > max_i, do: max_i
+  defp clamp_integer(value, _min_i, _max_i), do: value
+
+  defp tick_values(min_i, max_i) do
+    span = max_i - min_i
+
+    if span <= @tick_intervals do
+      Enum.to_list(min_i..max_i)
+    else
+      0..@tick_intervals
+      |> Enum.map(fn i -> min_i + round(i * span / @tick_intervals) end)
+      |> Enum.uniq()
     end
   end
 end

@@ -312,6 +312,307 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditorTest do
     assert :unsigned_integer = WeeklyScheduleEditor.infer_value_kind(properties, array)
   end
 
+  test "schedule_target_object resolves first list_of_object_property_references target" do
+    properties = [
+      %{
+        property: :list_of_object_property_references,
+        value:
+          BACnetArray.from_list(
+            [
+              %DeviceObjectPropertyRef{
+                object_identifier: %ObjectIdentifier{type: :binary_value, instance: 7},
+                property_identifier: :present_value,
+                property_array_index: nil,
+                device_identifier: nil
+              }
+            ],
+            false
+          )
+      }
+    ]
+
+    device_objects = [
+      %{type: :analog_value, instance: 1, name: "AV1"},
+      %{type: :binary_value, instance: 7, name: "BV7", active_text: "On", inactive_text: "Off"}
+    ]
+
+    target = WeeklyScheduleEditor.schedule_target_object(properties, device_objects)
+    assert target.instance == 7
+    assert target.active_text == "On"
+  end
+
+  test "value_options for binary uses active/inactive text when present" do
+    target = %{
+      type: :binary_value,
+      instance: 1,
+      active_text: "Belegt",
+      inactive_text: "Frei"
+    }
+
+    options =
+      WeeklyScheduleEditor.value_options({:enumerated, :binary_present_value}, target)
+
+    assert Enum.find(options, &(&1.value == "active")).label == "Belegt"
+    assert Enum.find(options, &(&1.value == "inactive")).label == "Frei"
+  end
+
+  test "value_options for binary keeps default labels when texts missing" do
+    target = %{type: :binary_value, instance: 1}
+
+    with_target =
+      WeeklyScheduleEditor.value_options({:enumerated, :binary_present_value}, target)
+
+    without_target =
+      WeeklyScheduleEditor.value_options({:enumerated, :binary_present_value}, nil)
+
+    assert with_target == without_target
+    assert Enum.map(with_target, & &1.value) == ["null", "active", "inactive"]
+  end
+
+  test "value_options for binary uses only the texts that are present" do
+    target = %{type: :binary_output, instance: 2, active_text: "Läuft"}
+
+    options =
+      WeeklyScheduleEditor.value_options({:enumerated, :binary_present_value}, target)
+
+    assert Enum.find(options, &(&1.value == "active")).label == "Läuft"
+    assert Enum.find(options, &(&1.value == "inactive")).label == "inactive (0)"
+  end
+
+  test "value_options for multistate target is a state dropdown" do
+    target = %{
+      type: :multi_state_value,
+      instance: 3,
+      number_of_states: 3,
+      state_text: ["Aus", "Bereit", "Störung"]
+    }
+
+    options = WeeklyScheduleEditor.value_options(:unsigned_integer, target)
+
+    assert options == [
+             %{value: "null", label: "NULL"},
+             %{value: "1", label: "1 (Aus)"},
+             %{value: "2", label: "2 (Bereit)"},
+             %{value: "3", label: "3 (Störung)"}
+           ]
+  end
+
+  test "value_options for unsigned without multistate target falls back to free input" do
+    assert is_nil(WeeklyScheduleEditor.value_options(:unsigned_integer, nil))
+    assert is_nil(WeeklyScheduleEditor.value_options(:unsigned_integer, %{type: :analog_value}))
+    assert is_nil(WeeklyScheduleEditor.value_options(:real, nil))
+  end
+
+  test "infer_value_kind uses bitstring schedule_default with size" do
+    bits = {true, false, true, false, false, false, false, false, false, false}
+    array = weekly_array(daily: %DailySchedule{schedule: []})
+
+    properties = [
+      %{
+        property: :schedule_default,
+        value: %Encoding{encoding: :primitive, extras: [], type: :bitstring, value: bits}
+      },
+      weekly_prop(array)
+    ]
+
+    assert {:bitstring, 10} = WeeklyScheduleEditor.infer_value_kind(properties, array)
+  end
+
+  test "to_bacnet encodes bitstring values from 0/1 input" do
+    bits = {true, false, true, false, false, false, false, false, false, false}
+    array = weekly_array(daily: %DailySchedule{schedule: []})
+    draft = WeeklyScheduleEditor.from_bacnet(array)
+    monday = hd(draft.days)
+
+    assert {:ok, updated} =
+             WeeklyScheduleEditor.apply_day_entries(
+               monday,
+               %{"0" => %{"id" => "1-0", "time" => "08:00", "value" => "1010000000"}},
+               {:bitstring, 10}
+             )
+
+    draft = %{draft | days: [updated | tl(draft.days)]}
+
+    assert {:ok, decoded} = WeeklyScheduleEditor.to_bacnet(draft, array, {:bitstring, 10})
+
+    assert {:ok,
+            %DailySchedule{
+              schedule: [%TimeValue{value: %Encoding{type: :bitstring, value: ^bits}}]
+            }} = BACnetArray.get_item(decoded, 1)
+  end
+
+  test "bitstring value rejects wrong length and character_string encoding path" do
+    array = weekly_array(daily: %DailySchedule{schedule: []})
+    monday = hd(WeeklyScheduleEditor.from_bacnet(array).days)
+
+    assert {:error, {:bitstring_size_mismatch, 10, 2}} =
+             WeeklyScheduleEditor.apply_day_entries(
+               monday,
+               %{"0" => %{"id" => "1-0", "time" => "08:00", "value" => "10"}},
+               {:bitstring, 10}
+             )
+
+    # Without bitstring kind, free text wrongly becomes character_string — the
+    # regression this test guards against is fixed via infer_value_kind above.
+    refute WeeklyScheduleEditor.infer_value_kind(
+             [
+               %{
+                 property: :schedule_default,
+                 value: %Encoding{
+                   encoding: :primitive,
+                   extras: [],
+                   type: :bitstring,
+                   value: {true, false, true, false, false, false, false, false, false, false}
+                 }
+               }
+             ],
+             array
+           ) == :text
+  end
+
+  test "infer_value_kind covers remaining primitive ApplicationTags types" do
+    array = weekly_array(daily: %DailySchedule{schedule: []})
+
+    cases = [
+      {:double, 1.25, :double},
+      {:signed_integer, -7, :signed_integer},
+      {:octet_string, <<1, 2, 3>>, :octet_string},
+      {:date, BACnet.Protocol.BACnetDate.from_date(~D[2024-06-15]), :date},
+      {:time, %BACnetTime{hour: 9, minute: 15, second: 0, hundredth: 0}, :time},
+      {:object_identifier, %ObjectIdentifier{type: :analog_value, instance: 9},
+       :object_identifier},
+      {:character_string, "hello", :text}
+    ]
+
+    for {type, value, expected} <- cases do
+      properties = [
+        %{
+          property: :schedule_default,
+          value: %Encoding{encoding: :primitive, extras: [], type: type, value: value}
+        }
+      ]
+
+      assert expected == WeeklyScheduleEditor.infer_value_kind(properties, array),
+             "expected #{inspect(expected)} for #{type}"
+    end
+  end
+
+  test "null schedule_default does not pin kind; falls through to weekly entries" do
+    array =
+      weekly_array(
+        daily: %DailySchedule{
+          schedule: [
+            %TimeValue{
+              time: %BACnetTime{hour: 8, minute: 0, second: 0, hundredth: 0},
+              value: {:signed_integer, -3}
+            }
+          ]
+        }
+      )
+
+    properties = [
+      %{
+        property: :schedule_default,
+        value: %Encoding{encoding: :primitive, extras: [], type: :null, value: nil}
+      }
+    ]
+
+    assert :signed_integer = WeeklyScheduleEditor.infer_value_kind(properties, array)
+  end
+
+  test "null is accepted for every primitive value kind including referenced types" do
+    array = weekly_array(daily: %DailySchedule{schedule: []})
+    draft = WeeklyScheduleEditor.from_bacnet(array)
+    monday = hd(draft.days)
+
+    kinds = [
+      :real,
+      :double,
+      :boolean,
+      :unsigned_integer,
+      :signed_integer,
+      :text,
+      :octet_string,
+      :bitstring,
+      {:bitstring, 8},
+      {:enumerated, :binary_present_value},
+      :date,
+      :time,
+      :object_identifier
+    ]
+
+    for kind <- kinds do
+      assert {:ok, updated} =
+               WeeklyScheduleEditor.apply_day_entries(
+                 monday,
+                 %{"0" => %{"id" => "1-0", "time" => "08:00", "value" => "null"}},
+                 kind
+               )
+
+      draft = %{draft | days: [updated | tl(draft.days)]}
+      assert {:ok, decoded} = WeeklyScheduleEditor.to_bacnet(draft, array, kind)
+
+      assert {:ok,
+              %DailySchedule{
+                schedule: [%TimeValue{value: %Encoding{type: :null, value: nil}}]
+              }} = BACnetArray.get_item(decoded, 1)
+    end
+  end
+
+  test "encodes double, signed, octet_string, date, time, object_identifier" do
+    array = weekly_array(daily: %DailySchedule{schedule: []})
+    draft = WeeklyScheduleEditor.from_bacnet(array)
+    monday = hd(draft.days)
+
+    samples = [
+      {:double, "1.5", :double, 1.5},
+      {:signed_integer, "-12", :signed_integer, -12},
+      {:octet_string, "01:02:FF", :octet_string, <<0x01, 0x02, 0xFF>>},
+      {:date, "2024-06-15", :date, BACnet.Protocol.BACnetDate.from_date(~D[2024-06-15])},
+      {:time, "09:30", :time, %BACnetTime{hour: 9, minute: 30, second: 0, hundredth: 0}},
+      {:object_identifier, "analog_value:42", :object_identifier,
+       %ObjectIdentifier{type: :analog_value, instance: 42}}
+    ]
+
+    for {kind, input, tag, expected} <- samples do
+      assert {:ok, updated} =
+               WeeklyScheduleEditor.apply_day_entries(
+                 monday,
+                 %{"0" => %{"id" => "1-0", "time" => "08:00", "value" => input}},
+                 kind
+               )
+
+      draft = %{draft | days: [updated | tl(draft.days)]}
+      assert {:ok, decoded} = WeeklyScheduleEditor.to_bacnet(draft, array, kind)
+
+      assert {:ok,
+              %DailySchedule{schedule: [%TimeValue{value: %Encoding{type: ^tag, value: value}}]}} =
+               BACnetArray.get_item(decoded, 1)
+
+      assert value == expected
+    end
+  end
+
+  test "value_options include explicit NULL for dropdown kinds" do
+    binary_opts =
+      WeeklyScheduleEditor.value_options({:enumerated, :binary_present_value}, nil)
+
+    assert hd(binary_opts).value == "null"
+    assert hd(binary_opts).label == "NULL"
+
+    bool_opts = WeeklyScheduleEditor.value_options(:boolean, nil)
+    assert hd(bool_opts).value == "null"
+
+    multi_opts =
+      WeeklyScheduleEditor.value_options(:unsigned_integer, %{
+        type: :multi_state_value,
+        number_of_states: 2,
+        state_text: ["A", "B"]
+      })
+
+    assert hd(multi_opts).value == "null"
+  end
+
   test "to_bacnet encodes unsigned integer values for multi-state schedules" do
     array = weekly_array(daily: %DailySchedule{schedule: []})
     draft = WeeklyScheduleEditor.from_bacnet(array)

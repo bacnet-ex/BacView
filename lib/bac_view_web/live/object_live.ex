@@ -2653,6 +2653,8 @@ defmodule BacViewWeb.ObjectLive do
       :if={@write_property_modal && @object && @write_property_modal.editor == :weekly_schedule}
       object={@object}
       property={@write_property_modal.property}
+      properties={@properties}
+      device_objects={@device_objects}
       mode={@write_property_modal.mode}
       active_day={@write_property_modal.active_day}
       draft={@write_property_modal.draft}

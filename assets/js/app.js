@@ -32,6 +32,7 @@ import FocusFirstInput from "./hooks/focus_first_input"
 import TrendLogChart from "./hooks/trend_log_chart"
 import StopPropagation from "./hooks/stop_propagation"
 import ScanFormPersist from "./hooks/scan_form_persist"
+import SyncRangeInput from "./hooks/sync_range_input"
 
 const csrfToken =
   document.querySelector("meta[name='csrf-token']")?.getAttribute("content") ?? ""
@@ -59,6 +60,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
     TrendLogChart,
     StopPropagation,
     ScanFormPersist,
+    SyncRangeInput,
   },
 })
 

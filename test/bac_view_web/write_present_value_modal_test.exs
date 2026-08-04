@@ -99,6 +99,95 @@ defmodule BacViewWeb.WritePresentValueModalTest do
     assert html =~ ~s(id="modal-write-value")
     assert html =~ ~s(data-autofocus)
     refute html =~ ~s(<select id="modal-write-value")
+    refute html =~ ~s(id="modal-write-value-slider")
+  end
+
+  test "renders range slider and ticks for analog with min/max present value" do
+    html =
+      render_modal(%{
+        name: "AO-1",
+        type: :analog_output,
+        instance: 1,
+        writable: true,
+        commandable: false,
+        present_value: 42,
+        present_value_formatted: "42",
+        min_present_value: 0,
+        max_present_value: 100
+      })
+
+    assert html =~ ~s(id="modal-write-value-slider")
+    assert html =~ ~s(type="range")
+    assert html =~ ~s(step="1")
+    assert html =~ ~s(min="0")
+    assert html =~ ~s(max="100")
+    assert html =~ ~s(phx-hook="SyncRangeInput")
+    assert html =~ ~s(data-tick="0")
+    assert html =~ ~s(data-tick="50")
+    assert html =~ ~s(data-tick="100")
+    assert html =~ ~s(id="modal-write-value")
+    assert html =~ ~s(type="text")
+  end
+
+  test "slider_config returns integer range ticks without coarse step" do
+    config =
+      WritePresentValueModal.slider_config(%{
+        type: :analog_value,
+        present_value: 21.7,
+        min_present_value: 0.0,
+        max_present_value: 100.0
+      })
+
+    assert config.min == 0
+    assert config.max == 100
+    assert config.value == 21
+    assert hd(config.ticks) == 0
+    assert List.last(config.ticks) == 100
+    assert length(config.ticks) == 11
+  end
+
+  test "slider_config rejects span above 9999" do
+    assert is_nil(
+             WritePresentValueModal.slider_config(%{
+               type: :analog_input,
+               present_value: 0,
+               min_present_value: 0,
+               max_present_value: 10_000
+             })
+           )
+  end
+
+  test "slider_config allows large bounds with small span" do
+    config =
+      WritePresentValueModal.slider_config(%{
+        type: :analog_input,
+        present_value: 10_050,
+        min_present_value: 10_000,
+        max_present_value: 10_100
+      })
+
+    assert config.min == 10_000
+    assert config.max == 10_100
+    assert config.value == 10_050
+  end
+
+  test "slider_config rejects non-analog and missing bounds" do
+    assert is_nil(
+             WritePresentValueModal.slider_config(%{
+               type: :binary_value,
+               present_value: true,
+               min_present_value: 0,
+               max_present_value: 1
+             })
+           )
+
+    assert is_nil(
+             WritePresentValueModal.slider_config(%{
+               type: :analog_value,
+               present_value: 1,
+               min_present_value: 0
+             })
+           )
   end
 
   test "renders binary dropdown with inactive/active text labels" do
