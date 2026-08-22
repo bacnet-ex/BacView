@@ -537,6 +537,7 @@ defmodule BacViewWeb.DashboardLive do
       locale_version={@locale_version}
       show_shortcuts={@show_shortcuts}
       shortcuts_context={:dashboard}
+      read_property={@read_property}
     >
       <:topbar_end>
         <%= for _ <- [@locale_version] do %>

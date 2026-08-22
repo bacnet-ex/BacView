@@ -12,6 +12,45 @@ defmodule BacView.BACnet.AddressTest do
     assert {:error, :invalid_host} = Address.parse_host("not-an-ip")
   end
 
+  describe "parse_transport_destination/2" do
+    test "parses IPv4 host with default port" do
+      assert {:ok, {{192, 168, 1, 10}, 47_808}} =
+               Address.parse_transport_destination("192.168.1.10", "ipv4")
+    end
+
+    test "parses IPv4 host with explicit port" do
+      assert {:ok, {{10, 0, 0, 1}, 47_809}} =
+               Address.parse_transport_destination("10.0.0.1:47809", "ipv4")
+    end
+
+    test "rejects invalid IPv4 host and port" do
+      assert {:error, :invalid_host} = Address.parse_transport_destination("", "ipv4")
+      assert {:error, :invalid_host} = Address.parse_transport_destination("not-an-ip", "ipv4")
+      assert {:error, :invalid_port} = Address.parse_transport_destination("10.0.0.1:", "ipv4")
+      assert {:error, :invalid_port} = Address.parse_transport_destination("10.0.0.1:abc", "ipv4")
+    end
+
+    test "parses MS/TP unicast MAC 0..254" do
+      assert {:ok, 0} = Address.parse_transport_destination("0", "mstp")
+      assert {:ok, 42} = Address.parse_transport_destination("42", "mstp")
+      assert {:ok, 254} = Address.parse_transport_destination("254", "mstp")
+    end
+
+    test "rejects invalid MS/TP addresses" do
+      assert {:error, :invalid_mstp_address} = Address.parse_transport_destination("", "mstp")
+      assert {:error, :invalid_mstp_address} = Address.parse_transport_destination("255", "mstp")
+      assert {:error, :invalid_mstp_address} = Address.parse_transport_destination("-1", "mstp")
+
+      assert {:error, :invalid_mstp_address} =
+               Address.parse_transport_destination("192.168.1.10", "mstp")
+    end
+
+    test "rejects unknown transports" do
+      assert {:error, :unsupported_transport} =
+               Address.parse_transport_destination("10.0.0.1", "bacnet_sc")
+    end
+  end
+
   test "parse_port accepts integer and string" do
     assert {:ok, 47_808} = Address.parse_port(47_808)
     assert {:ok, 47_808} = Address.parse_port("47808")

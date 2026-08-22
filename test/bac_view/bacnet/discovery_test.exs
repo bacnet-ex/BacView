@@ -45,6 +45,62 @@ defmodule BacView.BACnet.DiscoveryTest do
     {:bacview_validation_skip_modes, [:named_table, :set, :public]}
   ]
 
+  describe "resolve_destination/1" do
+    test "returns cached address" do
+      BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+        address = {{10, 0, 0, 1}, 47_808}
+        :ets.insert(:bacview_devices, {7, %{id: 7, instance: 7, address: address}})
+
+        assert {:ok, ^address} = Discovery.resolve_destination(7)
+      end)
+    end
+
+    test "returns unknown_device when missing and probe fails" do
+      previous = Application.get_env(:bacview, :device_iam_broadcast_probe)
+      Application.put_env(:bacview, :device_iam_broadcast_probe, fn _id -> {:error, :no_iam} end)
+
+      try do
+        BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+          assert {:error, :unknown_device} = Discovery.resolve_destination(8)
+        end)
+      after
+        if previous do
+          Application.put_env(:bacview, :device_iam_broadcast_probe, previous)
+        else
+          Application.delete_env(:bacview, :device_iam_broadcast_probe)
+        end
+      end
+    end
+
+    test "uses broadcast probe address without requiring a stored device" do
+      previous = Application.get_env(:bacview, :device_iam_broadcast_probe)
+      address = {{192, 168, 10, 2}, 47_808}
+
+      Application.put_env(:bacview, :device_iam_broadcast_probe, fn 55 ->
+        iam = %BACnet.Protocol.Services.IAm{
+          device: %ObjectIdentifier{type: :device, instance: 55},
+          max_apdu: 1476,
+          segmentation_supported: :no_segmentation,
+          vendor_id: 1
+        }
+
+        {:ok, iam, address, nil, nil}
+      end)
+
+      try do
+        BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->
+          assert {:ok, ^address} = Discovery.resolve_destination(55)
+        end)
+      after
+        if previous do
+          Application.put_env(:bacview, :device_iam_broadcast_probe, previous)
+        else
+          Application.delete_env(:bacview, :device_iam_broadcast_probe)
+        end
+      end
+    end
+  end
+
   describe "list_devices/0" do
     test "sorts by instance and tolerates partial maps without instance" do
       BacView.Test.BacnetEtsLock.with_tables(@clear_tables, fn ->

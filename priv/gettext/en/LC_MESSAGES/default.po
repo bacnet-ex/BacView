@@ -90,6 +90,9 @@ msgstr "%{succeeded} objects re-read (%{mode}), %{failed} failed."
 msgid "-"
 msgstr "-"
 
+msgid ".this ist nur auf einer Geräte- oder Objektseite gültig."
+msgstr ".this is only valid on a device or object page."
+
 msgid "0 = unbekannt (automatisch lernen). 1–65534 = konfiguriert."
 msgstr "0 = unknown (auto-learn). 1–65534 = configured."
 
@@ -131,6 +134,9 @@ msgstr "Actions"
 
 msgid "Adresse"
 msgstr "Address"
+
+msgid "Adressmodus wird für diesen Transport nicht unterstützt."
+msgstr "Address mode is not supported for this transport."
 
 msgid "Aktionen"
 msgstr "Actions"
@@ -243,6 +249,9 @@ msgstr "Other priority…"
 msgid "Ansicht"
 msgstr "View"
 
+msgid "Array-Index"
+msgstr "Array index"
+
 msgid "Aufklappen"
 msgstr "Expand"
 
@@ -288,6 +297,9 @@ msgstr "BACnet Network Explorer"
 msgid "BACnet-Dekodierung fehlgeschlagen: %{detail}"
 msgstr "BACnet decoding failed: %{detail}"
 
+msgid "BACnet-Dienst"
+msgstr "BACnet service"
+
 msgid "BACnet-Kodierung fehlgeschlagen: %{detail}"
 msgstr "BACnet encoding failed: %{detail}"
 
@@ -302,6 +314,15 @@ msgstr "BACnet stack restarted."
 
 msgid "BACnet-Stack neu starten? Aktive COV-Abonnements werden neu aufgebaut."
 msgstr "Restart the BACnet stack? Active COV subscriptions will be re-established."
+
+msgid "BACnet-URI"
+msgstr "BACnet URI"
+
+msgid "BACnet-URI enthält kein Objekt."
+msgstr "BACnet URI does not include an object."
+
+msgid "BACnet-URI kopieren"
+msgstr "Copy BACnet URI"
 
 msgid "BACnet/IP"
 msgstr "BACnet/IP"
@@ -366,8 +387,23 @@ msgstr "Bitstring change"
 msgid "Bitstring: Bits als 0/1 (z. B. 10110), optional mit Leerzeichen. Länge muss %{count} betragen."
 msgstr "Bitstring: bits as 0/1 (e.g. 10110), optional spaces. Length must be %{count}."
 
+msgid "Bitte Geräte-ID oder Adresse wählen."
+msgstr "Please choose device ID or address."
+
+msgid "Bitte eine Adresse angeben."
+msgstr "Please enter an address."
+
+msgid "Bitte eine Geräte-ID angeben."
+msgstr "Please enter a device ID."
+
+msgid "Bitte eine Objektinstanz angeben."
+msgstr "Please enter an object instance."
+
 msgid "Bitte eine Schnittstelle auswählen."
 msgstr "Please select an interface."
+
+msgid "Bitte einen Objekttyp angeben."
+msgstr "Please enter an object type."
 
 msgid "Bitte einen Wert eingeben."
 msgstr "Please enter a value."
@@ -489,6 +525,9 @@ msgstr "Write file"
 msgid "Datei schreiben fehlgeschlagen: %{detail}"
 msgstr "Failed to write file: %{detail}"
 
+msgid "Datei-Objekte ohne Eigenschaft beziehen sich auf den Dateiinhalt, nicht auf ReadProperty. Bitte eine Eigenschaft angeben."
+msgstr "File objects without a property refer to file contents, not ReadProperty. Please specify a property."
+
 msgid "Dateiübertragung"
 msgstr "File transfer"
 
@@ -581,6 +620,12 @@ msgstr "Property"
 
 msgid "Eigenschaft erfolgreich geschrieben."
 msgstr "Property written successfully."
+
+msgid "Eigenschaft lesen"
+msgstr "Read property"
+
+msgid "Eigenschaft lesen fehlgeschlagen: %{detail}"
+msgstr "Failed to read property: %{detail}"
 
 msgid "Eigenschaft nicht gefunden."
 msgstr "Property not found."
@@ -695,6 +740,9 @@ msgstr "Events updated."
 
 msgid "Erforderliche Eigenschaft fehlt (%{property})."
 msgstr "Required property is missing (%{property})."
+
+msgid "Ergebnis"
+msgstr "Result"
 
 msgid "Erlernt"
 msgstr "Learned"
@@ -897,6 +945,9 @@ msgstr "Help"
 msgid "Hilfe schliessen"
 msgstr "Close help"
 
+msgid "IPv4-Adresse, Port optional (Standard 47808)."
+msgstr "IPv4 address, port optional (default 47808)."
+
 msgid "In Alarm"
 msgstr "In alarm"
 
@@ -911,6 +962,9 @@ msgstr "Initializing"
 
 msgid "Initiierung deaktivieren"
 msgstr "Disable initiation"
+
+msgid "Instanz"
+msgstr "Instance"
 
 msgid "JSON"
 msgstr "JSON"
@@ -1032,6 +1086,9 @@ msgstr "Communication error (%{reason})"
 msgid "Komplex"
 msgstr "Complex"
 
+msgid "Kopiert"
+msgstr "Copied"
+
 msgid "Kündigen"
 msgstr "Cancel"
 
@@ -1059,6 +1116,9 @@ msgstr "Clear"
 msgid "Leerzeichen"
 msgstr "Space"
 
+msgid "Lesen"
+msgstr "Read"
+
 msgid "Lesezugriff verweigert."
 msgstr "Read access denied."
 
@@ -1085,6 +1145,9 @@ msgstr "Local time"
 
 msgid "MS/TP-Adresse"
 msgstr "MS/TP address"
+
+msgid "MS/TP-MAC (0–254)"
+msgstr "MS/TP MAC (0–254)"
 
 msgid "Max. APDU-Länge"
 msgstr "Max. APDU length"
@@ -1284,11 +1347,17 @@ msgstr "Object error"
 msgid "Objektliste abrufen…"
 msgstr "Fetching object list…"
 
+msgid "Objekttyp"
+msgstr "Object type"
+
 msgid "Objekttypen"
 msgstr "Object types"
 
 msgid "Offline"
 msgstr "Offline"
+
+msgid "Optional"
+msgstr "Optional"
 
 msgid "Optionaler Instanzbereich für Who-Is (0–4194303)."
 msgstr "Optional instance range for Who-Is (0–4194303)."
@@ -1587,6 +1656,9 @@ msgstr "UDP port"
 msgid "UDP-Port ist bereits belegt (eaddrinuse). Möglicherweise läuft bereits eine andere BACnet-Anwendung auf diesem Port."
 msgstr "UDP port is already in use (eaddrinuse). Another BACnet application may already be running on this port."
 
+msgid "URI"
+msgstr "URI"
+
 msgid "UTC"
 msgstr "UTC"
 
@@ -1626,6 +1698,12 @@ msgstr "Invalid split rules for the object-name hierarchy."
 msgid "Ungültige BACnet-Kodierung."
 msgstr "Invalid BACnet encoding."
 
+msgid "Ungültige BACnet-URI."
+msgstr "Invalid BACnet URI."
+
+msgid "Ungültige Eigenschaft."
+msgstr "Invalid property."
+
 msgid "Ungültige Eigenschaften ausgelassen"
 msgstr "invalid properties omitted"
 
@@ -1634,6 +1712,9 @@ msgstr "Omit invalid properties"
 
 msgid "Ungültige Eigenschaften auslassen entfernt Eigenschaften, die nicht dekodiert werden können; die übrigen bleiben lesbar."
 msgstr "Omitting invalid properties removes properties that cannot be decoded; the remaining ones stay readable."
+
+msgid "Ungültige Geräte-ID."
+msgstr "Invalid device ID."
 
 msgid "Ungültige Geräte-Instanz (0–4194303)."
 msgstr "Invalid device instance (0–4194303)."
@@ -1647,8 +1728,14 @@ msgstr "Invalid hex string"
 msgid "Ungültige IP-Adresse."
 msgstr "Invalid IP address."
 
+msgid "Ungültige MS/TP-Adresse (0–254)."
+msgstr "Invalid MS/TP address (0–254)."
+
 msgid "Ungültige Objekt-ID."
 msgstr "Invalid object ID."
+
+msgid "Ungültige Objektinstanz."
+msgstr "Invalid object instance."
 
 msgid "Ungültige Parameter für die BACnet-Kodierung des Werts."
 msgstr "Invalid parameters for BACnet encoding of the value."
@@ -1665,6 +1752,9 @@ msgstr "Invalid structure in JSON."
 msgid "Ungültige Zeit. Erwartet HH:MM, HH:MM:SS oder HH:MM:SS.hh (00:00–23:59:59.99)."
 msgstr "Invalid time. Expected HH:MM, HH:MM:SS or HH:MM:SS.hh (00:00–23:59:59.99)."
 
+msgid "Ungültiger Array-Index."
+msgstr "Invalid array index."
+
 msgid "Ungültiger Enum-Wert im JSON."
 msgstr "Invalid enum value in JSON."
 
@@ -1676,6 +1766,12 @@ msgstr "Invalid field path."
 
 msgid "Ungültiger JSON-Wert."
 msgstr "Invalid JSON value."
+
+msgid "Ungültiger Objekttyp."
+msgstr "Invalid object type."
+
+msgid "Ungültiger Port."
+msgstr "Invalid port."
 
 msgid "Ungültiger Textwert für Eigenschaft (%{property})."
 msgstr "Invalid text value for property (%{property})."
@@ -1694,6 +1790,9 @@ msgstr "Invalid encoding."
 
 msgid "Ungültiges JSON."
 msgstr "Invalid JSON."
+
+msgid "Ungültiges Objekt."
+msgstr "Invalid object."
 
 msgid "Ungültiges Objektmodul im BACnet-Stack."
 msgstr "Invalid object module in the BACnet stack."
@@ -1820,6 +1919,9 @@ msgstr "Time synchronization sent."
 
 msgid "Zeitüberschreitung bei der Gerätekommunikation."
 msgstr "Device communication timed out."
+
+msgid "Ziel"
+msgstr "Destination"
 
 msgid "Ziel-IP (optional)"
 msgstr "Target IP (optional)"

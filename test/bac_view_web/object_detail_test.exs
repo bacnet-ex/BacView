@@ -105,6 +105,77 @@ defmodule BacViewWeb.ObjectDetailTest do
     assert html =~ "In Alarm (inaktiv)"
   end
 
+  test "renders a copy button with the object BACnet URI" do
+    object = %{
+      name: "AV-5",
+      type: :analog_value,
+      instance: 5,
+      status_flags: nil,
+      present_value: 1.0,
+      present_value_formatted: "1.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 114_705},
+          object: object,
+          properties: [],
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(id="copy-object-bacnet-uri")
+    assert html =~ ~s(data-clipboard-text="bacnet://114705/2,5")
+  end
+
+  test "renders a copy button for each known property URI" do
+    object = %{
+      name: "AV-5",
+      type: :analog_value,
+      instance: 5,
+      status_flags: nil,
+      present_value: 1.0,
+      present_value_formatted: "1.0",
+      writable: false,
+      commandable: false,
+      units: nil,
+      updated_at: nil
+    }
+
+    prop = %{
+      property: :present_value,
+      property_name: "present value",
+      type: "REAL",
+      value: 1.0,
+      value_display: %{kind: :scalar, formatted: "1.0", fields: [], items: []},
+      value_formatted: "1.0",
+      writable: false
+    }
+
+    html =
+      render_component(
+        &ObjectDetail.object_detail/1,
+        %{
+          device: %{id: 114_705},
+          object: object,
+          properties: [prop],
+          locale: "de",
+          locale_version: 0
+        }
+      )
+
+    assert html =~ ~s(id="copy-prop-uri-present_value")
+    assert html =~ ~s(data-clipboard-text="bacnet://114705/2,5/85")
+    assert html =~ ~s(data-copied-label="Kopiert")
+  end
+
   test "renders status flags in header from object._unknown_properties" do
     flags = %StatusFlags{
       in_alarm: false,

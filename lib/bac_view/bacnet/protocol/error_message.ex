@@ -17,6 +17,7 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
           | :cov_unsubscribe
           | :load_properties
           | :refresh_properties
+          | :read_property
           | :write_property
           | :read_back_property
           | :load_device
@@ -42,7 +43,14 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
     detail = format_reason(reason)
 
     case action do
-      a when a in [:cov_subscribe, :cov_unsubscribe, :load_properties, :refresh_properties] ->
+      a
+      when a in [
+             :cov_subscribe,
+             :cov_unsubscribe,
+             :load_properties,
+             :refresh_properties,
+             :read_property
+           ] ->
         property_action_message(a, detail)
 
       a
@@ -86,6 +94,9 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
 
   defp property_action_message(:refresh_properties, detail),
     do: gettext("Eigenschaften aktualisieren fehlgeschlagen: %{detail}", detail: detail)
+
+  defp property_action_message(:read_property, detail),
+    do: gettext("Eigenschaft lesen fehlgeschlagen: %{detail}", detail: detail)
 
   defp data_action_message(:write_property, detail),
     do: gettext("Schreiben fehlgeschlagen: %{detail}", detail: detail)
@@ -258,6 +269,39 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
     do: gettext("Ungültiges Objektmodul im BACnet-Stack.")
 
   def format_reason(:device_not_found), do: gettext("Gerät nicht gefunden.")
+  def format_reason(:unknown_device), do: gettext("Gerät nicht gefunden.")
+
+  def format_reason(:this_device_unknown),
+    do: gettext(".this ist nur auf einer Geräte- oder Objektseite gültig.")
+
+  def format_reason(:file_content_uri),
+    do:
+      gettext(
+        "Datei-Objekte ohne Eigenschaft beziehen sich auf den Dateiinhalt, nicht auf ReadProperty. Bitte eine Eigenschaft angeben."
+      )
+
+  def format_reason(:invalid_bacnet_uri), do: gettext("Ungültige BACnet-URI.")
+  def format_reason(:invalid_device), do: gettext("Ungültige Geräte-ID.")
+  def format_reason(:missing_device_id), do: gettext("Bitte eine Geräte-ID angeben.")
+  def format_reason(:missing_address), do: gettext("Bitte eine Adresse angeben.")
+  def format_reason(:missing_object_type), do: gettext("Bitte einen Objekttyp angeben.")
+  def format_reason(:missing_instance), do: gettext("Bitte eine Objektinstanz angeben.")
+  def format_reason(:invalid_object), do: gettext("Ungültiges Objekt.")
+  def format_reason(:invalid_object_type), do: gettext("Ungültiger Objekttyp.")
+  def format_reason(:invalid_instance), do: gettext("Ungültige Objektinstanz.")
+  def format_reason(:invalid_property), do: gettext("Ungültige Eigenschaft.")
+  def format_reason(:invalid_index), do: gettext("Ungültiger Array-Index.")
+  def format_reason(:invalid_locator), do: gettext("Bitte Geräte-ID oder Adresse wählen.")
+
+  def format_reason(:invalid_mstp_address),
+    do: gettext("Ungültige MS/TP-Adresse (0–254).")
+
+  def format_reason(:unsupported_transport),
+    do: gettext("Adressmodus wird für diesen Transport nicht unterstützt.")
+
+  def format_reason(:invalid_host), do: gettext("Ungültige IP-Adresse.")
+  def format_reason(:invalid_port), do: gettext("Ungültiger Port.")
+  def format_reason(:missing_object), do: gettext("BACnet-URI enthält kein Objekt.")
   def format_reason(:device_not_loaded), do: gettext("Gerätedaten sind noch nicht geladen.")
 
   def format_reason(:object_unavailable),

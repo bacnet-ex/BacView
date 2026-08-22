@@ -118,6 +118,8 @@ defmodule BacViewWeb.KeyboardNavigationTest do
     assert Shortcuts.blocking_modal_open?(%{reset_priority_modal: %{mode: :confirm, priority: 8}})
     assert Shortcuts.blocking_modal_open?(%{show_shortcuts: true})
     assert Shortcuts.blocking_modal_open?(%{log_viewer_open: true})
+    assert Shortcuts.blocking_modal_open?(%{read_property: %{busy: false}})
+    refute Shortcuts.blocking_modal_open?(%{read_property: nil})
     assert Shortcuts.blocking_modal_open?(%{device_service_modal: %{type: :dcc}})
   end
 
@@ -156,6 +158,9 @@ defmodule BacViewWeb.KeyboardNavigationTest do
 
     assert Shortcuts.escape_close_action(%{log_viewer_open: true}) == {:event, "close_log_viewer"}
 
+    assert Shortcuts.escape_close_action(%{read_property: %{busy: false}}) ==
+             {:event, "close_read_property"}
+
     assert Shortcuts.escape_close_action(%{show_shortcuts: true}) == :close_shortcuts
     assert Shortcuts.escape_close_action(%{}) == :none
   end
@@ -172,6 +177,20 @@ defmodule BacViewWeb.KeyboardNavigationTest do
              end)
 
     assert closed.assigns.write_property_modal == nil
+  end
+
+  test "apply_escape_close closes the ReadProperty modal without dispatch" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> Phoenix.Component.assign(:read_property, %{busy: false})
+      |> Phoenix.Component.assign(:show_shortcuts, false)
+
+    assert {:noreply, closed} =
+             Shortcuts.apply_escape_close(socket, fn _event, _sock ->
+               flunk("hook-owned modal must not dispatch to LiveView handle_event/3")
+             end)
+
+    assert closed.assigns.read_property == nil
   end
 
   test "apply_escape_close closes shortcuts help without dispatch" do

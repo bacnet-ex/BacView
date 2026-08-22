@@ -26,6 +26,7 @@ import {hooks as colocatedHooks} from "phoenix-colocated/bacview"
 import topbar from "../vendor/topbar"
 import "../vendor/uplot.min.js"
 import BacViewRoot from "./hooks/bac_view_root"
+import CopyToClipboard from "./hooks/copy_to_clipboard"
 import DetailsOutsideClose from "./hooks/details_outside_close"
 import FilterMenu from "./hooks/filter_menu"
 import FocusFirstInput from "./hooks/focus_first_input"
@@ -54,6 +55,7 @@ const liveSocket = new LiveSocket("/live", Socket, {
   hooks: {
     ...colocatedHooks,
     BacViewRoot,
+    CopyToClipboard,
     DetailsOutsideClose,
     FilterMenu,
     FocusFirstInput,

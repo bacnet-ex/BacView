@@ -4,7 +4,9 @@ defmodule BacViewWeb.ObjectDetail do
   use BacViewWeb.LocaleAttrs
 
   alias BACnet.Protocol.ApplicationTags.Encoding
+  alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.HierarchySplit
+  alias BacView.BACnet.Protocol.BacnetUri
   alias BacView.BACnet.Protocol.EngineeringUnits
   alias BacView.BACnet.Protocol.ObjectTypes
   alias BacView.BACnet.Protocol.PropertyEnumeration
@@ -100,6 +102,9 @@ defmodule BacViewWeb.ObjectDetail do
           assigns.unknown_properties_editing and has_editable?
         )
       end)
+      |> then(fn assigns ->
+        assign(assigns, :bacnet_uri, object_bacnet_uri(assigns.device, assigns.object))
+      end)
 
     ~H"""
     <div class="flex flex-col flex-1 min-h-0">
@@ -146,6 +151,15 @@ defmodule BacViewWeb.ObjectDetail do
           </div>
         </div>
         <div :if={@object} class="flex items-center gap-2 shrink-0 pt-0.5">
+          <.copy_uri_button
+            :if={@bacnet_uri}
+            id="copy-object-bacnet-uri"
+            uri={@bacnet_uri}
+            size="sm"
+            show_label={true}
+            locale={@locale}
+            locale_version={@locale_version}
+          />
           <span :if={live?(@subscribed_keys, @object)} class="bac-badge bac-badge-success">
             <.icon name="hero-signal" class="size-3" />
             {t(@locale, @locale_version, "Live")}
@@ -432,7 +446,18 @@ defmodule BacViewWeb.ObjectDetail do
               </thead>
               <tbody id="object-properties">
                 <tr :for={prop <- @sorted_properties} id={"prop-#{prop.property}"}>
-                  <td class="bac-mono align-top">{prop.property_name}</td>
+                  <td class="bac-mono align-top">
+                    <div class="flex items-center gap-1.5">
+                      <span class="min-w-0 flex-1 break-all">{prop.property_name}</span>
+                      <.copy_uri_button
+                        :if={property_bacnet_uri(@device, @object, prop.property)}
+                        id={"copy-prop-uri-#{prop.property}"}
+                        uri={property_bacnet_uri(@device, @object, prop.property)}
+                        locale={@locale}
+                        locale_version={@locale_version}
+                      />
+                    </div>
+                  </td>
                   <td class="align-top min-w-0">
                     <div :if={!property_writable_in_ui?(prop)}>
                       <.known_property_value
@@ -592,33 +617,35 @@ defmodule BacViewWeb.ObjectDetail do
                     {prop.type}
                   </td>
                   <td class="align-top">
-                    <button
-                      :if={
-                        log_buffer_chart?(prop, @object) &&
-                          TrendLogReader.trend_log_type?(@object.type)
-                      }
-                      type="button"
-                      id="trend-chart-open"
-                      phx-click="open_trend_chart_modal"
-                      class="bac-btn bac-btn-ghost bac-btn-xs"
-                    >
-                      <.icon name="hero-chart-bar" class="size-3.5" />
-                      {t(@locale, @locale_version, "Diagramm")}
-                    </button>
-                    <button
-                      :if={
-                        cov_subscribable?(prop.property) &&
-                          !subscribed?(@subscribed_keys, @object, prop.property)
-                      }
-                      type="button"
-                      phx-click="subscribe_cov"
-                      phx-value-type={@object.type}
-                      phx-value-instance={@object.instance}
-                      phx-value-property={prop.property}
-                      class="bac-btn bac-btn-ghost bac-btn-xs"
-                    >
-                      COV
-                    </button>
+                    <div class="flex flex-wrap items-center gap-1">
+                      <button
+                        :if={
+                          log_buffer_chart?(prop, @object) &&
+                            TrendLogReader.trend_log_type?(@object.type)
+                        }
+                        type="button"
+                        id="trend-chart-open"
+                        phx-click="open_trend_chart_modal"
+                        class="bac-btn bac-btn-ghost bac-btn-xs"
+                      >
+                        <.icon name="hero-chart-bar" class="size-3.5" />
+                        {t(@locale, @locale_version, "Diagramm")}
+                      </button>
+                      <button
+                        :if={
+                          cov_subscribable?(prop.property) &&
+                            !subscribed?(@subscribed_keys, @object, prop.property)
+                        }
+                        type="button"
+                        phx-click="subscribe_cov"
+                        phx-value-type={@object.type}
+                        phx-value-instance={@object.instance}
+                        phx-value-property={prop.property}
+                        class="bac-btn bac-btn-ghost bac-btn-xs"
+                      >
+                        COV
+                      </button>
+                    </div>
                   </td>
                 </tr>
               </tbody>
@@ -726,7 +753,18 @@ defmodule BacViewWeb.ObjectDetail do
               </thead>
               <tbody id="object-unknown-properties">
                 <tr :for={prop <- @sorted_unknown_properties} id={"unknown-prop-#{prop.property}"}>
-                  <td class="bac-mono align-top">{prop.property_name}</td>
+                  <td class="bac-mono align-top">
+                    <div class="flex items-center gap-1.5">
+                      <span class="min-w-0 flex-1 break-all">{prop.property_name}</span>
+                      <.copy_uri_button
+                        :if={property_bacnet_uri(@device, @object, prop.property)}
+                        id={"copy-unknown-prop-uri-#{prop.property}"}
+                        uri={property_bacnet_uri(@device, @object, prop.property)}
+                        locale={@locale}
+                        locale_version={@locale_version}
+                      />
+                    </div>
+                  </td>
                   <td class="align-top min-w-0">
                     <div :if={!@unknown_properties_editing or !unknown_primitive_editable?(prop)}>
                       <.unknown_property_value
@@ -920,6 +958,66 @@ defmodule BacViewWeb.ObjectDetail do
   defp subscribed?(_keys, _object2, _object), do: false
 
   defp live?(keys, obj), do: MapSet.member?(keys, {obj.type, obj.instance, :present_value})
+
+  defp object_bacnet_uri(%{id: device_id}, %{type: type, instance: instance})
+       when is_integer(device_id) do
+    case BacnetUri.encode_object(device_id, %ObjectIdentifier{type: type, instance: instance}) do
+      {:ok, uri} -> uri
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp object_bacnet_uri(_device, _object), do: nil
+
+  defp property_bacnet_uri(%{id: device_id}, %{type: type, instance: instance}, property)
+       when is_integer(device_id) do
+    case BacnetUri.encode_property(
+           device_id,
+           %ObjectIdentifier{type: type, instance: instance},
+           property
+         ) do
+      {:ok, uri} -> uri
+      {:error, _reason} -> nil
+    end
+  end
+
+  defp property_bacnet_uri(_device, _object, _property), do: nil
+
+  attr(:id, :string, required: true)
+  attr(:uri, :string, required: true)
+  attr(:size, :string, default: "xs")
+  attr(:show_label, :boolean, default: false)
+  attr(:locale, :string, required: true)
+  attr(:locale_version, :integer, required: true)
+
+  defp copy_uri_button(assigns) do
+    assigns =
+      assign(
+        assigns,
+        :icon_class,
+        if(assigns.size == "sm", do: "size-4", else: "size-3.5")
+      )
+
+    ~H"""
+    <button
+      type="button"
+      id={@id}
+      phx-hook="CopyToClipboard"
+      data-clipboard-text={@uri}
+      data-copied-label={t(@locale, @locale_version, "Kopiert")}
+      class={[
+        "bac-btn bac-btn-ghost shrink-0",
+        if(@size == "sm", do: "bac-btn-sm", else: "bac-btn-xs")
+      ]}
+      title={t(@locale, @locale_version, "BACnet-URI kopieren")}
+      aria-label={t(@locale, @locale_version, "BACnet-URI kopieren")}
+    >
+      <.icon name="hero-clipboard-document" class={"bac-copy-icon-idle #{@icon_class}"} />
+      <.icon name="hero-clipboard-document-check" class={"bac-copy-icon-copied #{@icon_class}"} />
+      <span :if={@show_label} class="hidden sm:inline">{t(@locale, @locale_version, "URI")}</span>
+    </button>
+    """
+  end
 
   defp properties_progress_total?(%{total: total, done: done})
        when is_integer(total) and total > 0 and is_integer(done),

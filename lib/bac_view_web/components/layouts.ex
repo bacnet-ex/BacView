@@ -6,6 +6,7 @@ defmodule BacViewWeb.Layouts do
   use BacViewWeb, :html
 
   alias BacView.BuildInfo
+  alias BacViewWeb.ReadPropertyModal
 
   # Embed all files in layouts/* within this module.
   # The default root.html.heex file contains the HTML
@@ -33,6 +34,7 @@ defmodule BacViewWeb.Layouts do
   attr(:locale_version, :integer, default: 0)
   attr(:show_shortcuts, :boolean, default: false)
   attr(:shortcuts_context, :atom, default: :dashboard)
+  attr(:read_property, :map, default: nil)
 
   slot(:inner_block, required: true)
   slot(:topbar_end)
@@ -62,6 +64,16 @@ defmodule BacViewWeb.Layouts do
 
         <div class="flex items-center gap-2 overflow-visible">
           {render_slot(@topbar_end)}
+          <button
+            type="button"
+            id="open-read-property-btn"
+            phx-click="open_read_property"
+            class="bac-btn bac-btn-ghost bac-btn-xs"
+            title={t(@locale, @locale_version, "Eigenschaft lesen")}
+          >
+            <.icon name="hero-magnifying-glass" class="size-3.5" />
+            <span class="hidden sm:inline">{t(@locale, @locale_version, "Eigenschaft lesen")}</span>
+          </button>
           <button
             type="button"
             id="open-log-viewer-btn"
@@ -95,6 +107,12 @@ defmodule BacViewWeb.Layouts do
       <BacViewWeb.KeyboardShortcuts.keyboard_shortcuts
         show={@show_shortcuts}
         context={@shortcuts_context}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
+      <ReadPropertyModal.modal
+        state={@read_property}
         locale={@locale}
         locale_version={@locale_version}
       />

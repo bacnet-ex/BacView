@@ -2524,6 +2524,7 @@ defmodule BacViewWeb.ObjectLive do
       locale_version={@locale_version}
       show_shortcuts={@show_shortcuts}
       shortcuts_context={:object}
+      read_property={@read_property}
     >
       <:topbar_end>
         <%= for _ <- [@locale_version] do %>

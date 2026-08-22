@@ -275,6 +275,36 @@ defmodule BacView.BACnet.Discovery do
     end
   end
 
+  defp probe_unknown_device(instance) do
+    probe =
+      Application.get_env(
+        :bacview,
+        :device_iam_broadcast_probe,
+        &default_broadcast_iam_probe/1
+      )
+
+    case probe.(instance) do
+      {:ok, iam, address, npci_source, source_address} ->
+        _stored = store_device(iam, address, npci_source, source_address)
+        {:ok, address}
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
+  defp default_broadcast_iam_probe(instance) do
+    opts = [low_limit: instance, high_limit: instance]
+
+    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms) do
+      {:ok, responses} ->
+        match_iam_response(responses, instance)
+
+      {:error, _reason} = err ->
+        err
+    end
+  end
+
   defp probe_device_iam(instance, address) do
     probe = Application.get_env(:bacview, :device_iam_probe, &default_device_iam_probe/2)
     probe.(instance, address)
@@ -289,27 +319,30 @@ defmodule BacView.BACnet.Discovery do
 
     case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms) do
       {:ok, responses} ->
-        match =
-          Enum.find_value(responses, fn
-            {addr, %IAm{device: %{instance: ^instance}} = iam, npci_source, source_address} ->
-              {:ok, iam, addr, npci_source, source_address}
-
-            {_addr, %IAm{}, _npci, _src} ->
-              nil
-
-            # collect_while typespec mentions 2-tuples; accept either shape
-            {addr, %IAm{device: %{instance: ^instance}} = iam} ->
-              {:ok, iam, addr, nil, nil}
-
-            _other ->
-              nil
-          end)
-
-        match || {:error, :no_iam}
+        match_iam_response(responses, instance)
 
       {:error, _reason} = err ->
         err
     end
+  end
+
+  defp match_iam_response(responses, instance) do
+    match =
+      Enum.find_value(responses, fn
+        {addr, %IAm{device: %{instance: ^instance}} = iam, npci_source, source_address} ->
+          {:ok, iam, addr, npci_source, source_address}
+
+        {_addr, %IAm{}, _npci, _src} ->
+          nil
+
+        {addr, %IAm{device: %{instance: ^instance}} = iam} ->
+          {:ok, iam, addr, nil, nil}
+
+        _other ->
+          nil
+      end)
+
+    match || {:error, :no_iam}
   end
 
   defp refresh_discovered_device_address(
@@ -397,6 +430,32 @@ defmodule BacView.BACnet.Discovery do
       end
     end
   end
+
+  @doc """
+  Resolves a device instance to a transport destination for a one-shot request.
+
+  Uses the discovery cache first. If the device is unknown, broadcasts a targeted
+  Who-Is and uses the matching I-Am address. Does not fail the read if the I-Am
+  is filtered out of the dashboard list.
+  """
+  @spec resolve_destination(integer()) :: {:ok, term()} | {:error, :unknown_device}
+  def resolve_destination(device_id) when is_integer(device_id) and device_id >= 0 do
+    case get_device(device_id) do
+      {:ok, %{address: address}} when not is_nil(address) ->
+        {:ok, address}
+
+      {:ok, _device} ->
+        {:error, :unknown_device}
+
+      :error ->
+        case probe_unknown_device(device_id) do
+          {:ok, address} -> {:ok, address}
+          {:error, _reason} -> {:error, :unknown_device}
+        end
+    end
+  end
+
+  def resolve_destination(_device_id), do: {:error, :unknown_device}
 
   @impl true
   def init(_opts) do

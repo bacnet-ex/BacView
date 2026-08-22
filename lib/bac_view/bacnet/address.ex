@@ -8,6 +8,7 @@ defmodule BacView.BACnet.Address do
 
   @bacnet_port 47_808
   @ipv4_port_range 47_808..65_535
+  @mstp_unicast_range 0..254
   @max_scan_targets 256
   @octet_range_re ~r/^\[(\d+)-(\d+)\]$/
 
@@ -22,6 +23,28 @@ defmodule BacView.BACnet.Address do
   end
 
   def parse_host(_host), do: {:error, :invalid_host}
+
+  @doc """
+  Parses a user-entered destination for the active stack transport.
+
+  * `"ipv4"` — IPv4 host, optional `:port` (default #{@bacnet_port})
+  * `"mstp"` — unicast MS/TP MAC in `0..254` (255 is broadcast)
+  """
+  @spec parse_transport_destination(String.t(), String.t()) ::
+          {:ok, {:inet.ip_address(), pos_integer()} | 0..254}
+          | {:error,
+             :invalid_host | :invalid_port | :invalid_mstp_address | :unsupported_transport}
+  def parse_transport_destination(value, transport)
+
+  def parse_transport_destination(value, "ipv4") when is_binary(value) do
+    parse_ipv4_destination(String.trim(value))
+  end
+
+  def parse_transport_destination(value, "mstp") when is_binary(value) do
+    parse_mstp_destination(String.trim(value))
+  end
+
+  def parse_transport_destination(_value, _transport), do: {:error, :unsupported_transport}
 
   @doc """
   Expands a scan target into one or more IPv4 addresses.
@@ -197,6 +220,33 @@ defmodule BacView.BACnet.Address do
   def valid_ipv4_port?(port) when is_integer(port), do: port in @ipv4_port_range
 
   def valid_ipv4_port?(_port), do: false
+
+  defp parse_ipv4_destination(""), do: {:error, :invalid_host}
+
+  defp parse_ipv4_destination(value) do
+    case String.split(value, ":", parts: 2) do
+      [host] ->
+        case parse_host(host) do
+          {:ok, ip} -> {:ok, {ip, default_ipv4_port()}}
+          {:error, _host} = err -> err
+        end
+
+      [host, port] ->
+        with {:ok, ip} <- parse_host(host),
+             {:ok, parsed_port} <- parse_port(port) do
+          {:ok, {ip, parsed_port}}
+        end
+    end
+  end
+
+  defp parse_mstp_destination(""), do: {:error, :invalid_mstp_address}
+
+  defp parse_mstp_destination(value) do
+    case Integer.parse(value) do
+      {mac, ""} when mac in @mstp_unicast_range -> {:ok, mac}
+      _mac -> {:error, :invalid_mstp_address}
+    end
+  end
 
   defp expand_host_ranges(host) do
     parts = String.split(host, ".")
