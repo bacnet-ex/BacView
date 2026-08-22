@@ -40,6 +40,7 @@ defmodule BacViewWeb.ObjectLive do
   alias BacViewWeb.DeviceScanRecovery
   alias BacViewWeb.DeviceUrl
   alias BacViewWeb.LiveFlash
+  alias BacViewWeb.LiveMailbox
   alias BacViewWeb.LogViewerLive
   alias BacViewWeb.LogViewerModal
   alias BacViewWeb.ObjectDetail
@@ -488,6 +489,7 @@ defmodule BacViewWeb.ObjectLive do
 
   @impl true
   def handle_info(:cov_updated, socket) do
+    LiveMailbox.drain_repeated(:cov_updated)
     {:noreply, refresh_cov_state(socket)}
   end
 

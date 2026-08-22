@@ -19,4 +19,16 @@ defmodule BacViewWeb.SubscriptionSelectionBarTest do
     assert html =~ "Erneut abonnieren"
     assert html =~ "Ausgewählte kündigen"
   end
+
+  test "disables actions while bulk COV is running" do
+    html =
+      render_component(&SubscriptionSelectionBar.selection_bar/1,
+        count: 2,
+        disabled: true,
+        locale: "de",
+        locale_version: 0
+      )
+
+    assert html =~ ~r/id="resubscribe-selected-subscriptions"[^>]*disabled/
+  end
 end

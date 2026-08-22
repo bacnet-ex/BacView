@@ -323,110 +323,25 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_info({:cov_update, update}, socket) do
-    socket =
-      case update.property do
-        :present_value ->
-          objects =
-            Enum.map(socket.assigns.objects, fn obj ->
-              if obj.type == update.type and obj.instance == update.instance do
-                Map.merge(obj, %{
-                  present_value: PropertyFormatter.coerce_present_value(update.value, obj),
-                  present_value_formatted:
-                    PropertyFormatter.format_present_value(update.value, obj),
-                  updated_at: update.at
-                })
-              else
-                obj
-              end
-            end)
-
-          flash_cells = MapSet.put(socket.assigns.flash_cells, {update.type, update.instance})
-
-          socket
-          |> assign(:objects, objects)
-          |> assign(:flash_cells, flash_cells)
-          |> refresh_hierarchy_explorer()
-
-        :status_flags ->
-          objects =
-            Enum.map(socket.assigns.objects, fn obj ->
-              if obj.type == update.type and obj.instance == update.instance do
-                Map.merge(obj, %{
-                  status_flags: StatusFlagsParser.normalize(update.value),
-                  updated_at: update.at
-                })
-              else
-                obj
-              end
-            end)
-
-          socket
-          |> assign(:objects, objects)
-          |> refresh_hierarchy_explorer()
-
-        :out_of_service when is_boolean(update.value) ->
-          objects =
-            Enum.map(socket.assigns.objects, fn obj ->
-              if obj.type == update.type and obj.instance == update.instance do
-                Map.merge(obj, %{
-                  out_of_service: update.value,
-                  updated_at: update.at
-                })
-              else
-                obj
-              end
-            end)
-
-          assign(socket, :objects, objects)
-
-        :object_name when is_binary(update.value) and update.value != "" ->
-          objects =
-            Enum.map(socket.assigns.objects, fn obj ->
-              if obj.type == update.type and obj.instance == update.instance do
-                Map.merge(obj, %{name: update.value, updated_at: update.at})
-              else
-                obj
-              end
-            end)
-
-          socket
-          |> assign(:objects, objects)
-          |> refresh_hierarchy_explorer()
-
-        :description when is_binary(update.value) ->
-          objects =
-            Enum.map(socket.assigns.objects, fn obj ->
-              if obj.type == update.type and obj.instance == update.instance do
-                Map.merge(obj, %{description: update.value, updated_at: update.at})
-              else
-                obj
-              end
-            end)
-
-          socket
-          |> assign(:objects, objects)
-          |> refresh_hierarchy_explorer()
-
-        _property ->
-          socket
-      end
-
-    {:noreply,
-     socket
-     |> refresh_cov_state()
-     |> refresh_cov_notifications()
-     |> refresh_active_alarm_objects()
-     |> refresh_alarm_popup()}
+    if socket.assigns.bulk_subscribing do
+      {:noreply, assign_drained_cov_progress(socket)}
+    else
+      handle_live_cov_update(socket, update)
+    end
   end
 
   @impl true
   def handle_info({:cov_notification, _entry}, socket) do
-    socket =
-      socket
-      |> refresh_cov_notifications()
-      |> CovNotificationChartLive.maybe_reload_on_notification()
+    if socket.assigns.bulk_subscribing do
+      {:noreply, assign_drained_cov_progress(socket)}
+    else
+      socket =
+        socket
+        |> refresh_cov_notifications()
+        |> CovNotificationChartLive.maybe_reload_on_notification()
 
-    {:noreply, socket}
+      {:noreply, socket}
+    end
   end
 
   @impl true
@@ -441,15 +356,39 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_info(:cov_updated, socket) do
-    {:noreply, socket |> refresh_cov_state() |> refresh_cov_notifications()}
+    if socket.assigns.bulk_subscribing do
+      {:noreply, assign_drained_cov_progress(socket)}
+    else
+      {:noreply, socket |> refresh_cov_state() |> refresh_cov_notifications()}
+    end
   end
 
   @impl true
   def handle_info({:cov_bulk_progress, done, total}, socket) do
+    progress = drain_cov_bulk_mailbox(%{done: done, total: total})
+
     {:noreply,
      socket
      |> assign(:bulk_subscribing, true)
-     |> assign(:bulk_progress, %{done: done, total: total})}
+     |> assign(:bulk_progress, progress)}
+  end
+
+  @impl true
+  def handle_info({:alarms_refresh_done, result}, socket) do
+    case result do
+      :ok ->
+        {:noreply,
+         socket
+         |> assign(:alarms_refreshing, false)
+         |> refresh_alarm_state()
+         |> put_flash(:info, gt("Ereignisse aktualisiert."))}
+
+      {:error, reason} ->
+        {:noreply,
+         socket
+         |> assign(:alarms_refreshing, false)
+         |> LiveFlash.put_error(:fetch_events, reason)}
+    end
   end
 
   @impl true
@@ -474,17 +413,24 @@ defmodule BacViewWeb.DeviceLive do
   end
 
   @impl true
-  def handle_info({:cov_bulk_done, _total}, socket) do
+  def handle_info({:cov_bulk_done, result}, socket) when is_map(result) do
     {:noreply,
      socket
      |> assign(:bulk_subscribing, false)
      |> assign(:bulk_progress, %{done: 0, total: 0})
      |> refresh_cov_state()
-     |> put_flash(:info, gt("Bulk-Abonnement abgeschlossen."))}
+     |> refresh_cov_notifications()
+     |> put_cov_bulk_flash(result)}
+  end
+
+  def handle_info({:cov_bulk_done, total}, socket) when is_integer(total) do
+    handle_info({:cov_bulk_done, %{action: :subscribe_all, total: total}}, socket)
   end
 
   @impl true
   def handle_info({:priority_reset_progress, done, total}, socket) do
+    {done, total} = drain_progress_messages(:priority_reset_progress, done, total)
+
     {:noreply,
      socket
      |> assign(:bulk_priority_resetting, true)
@@ -519,6 +465,8 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_info({:nc_bulk_progress, done, total}, socket) do
+    {done, total} = drain_progress_messages(:nc_bulk_progress, done, total)
+
     {:noreply,
      socket
      |> assign(:nc_subscribing, true)
@@ -1006,12 +954,7 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("subscribe_all_pv", _params, socket) do
-    SubscriptionManager.subscribe_all_present_values(socket.assigns.device_id, self())
-
-    {:noreply,
-     socket
-     |> assign(:bulk_subscribing, true)
-     |> assign(:bulk_progress, %{done: 0, total: 0})}
+    {:noreply, start_present_value_cov_bulk(socket, :subscribe_all)}
   end
 
   @impl true
@@ -1107,80 +1050,41 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("unsubscribe_all_cov", _params, socket) do
-    device_id = socket.assigns.device_id
-
-    results =
-      Enum.map(socket.assigns.subscriptions, fn sub ->
-        SubscriptionManager.unsubscribe(device_id, sub.object_id, sub.property)
-      end)
-
-    failed = Enum.count(results, &match?({:error, _err}, &1))
-    ok = length(results) - failed
+    targets = subscription_cov_targets(socket.assigns.subscriptions)
 
     {:noreply,
      socket
      |> assign(:selected_subscription_keys, MapSet.new())
-     |> refresh_cov_state()
-     |> put_flash(
-       :info,
-       gt("Alle COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
-         ok: ok,
-         failed: failed
-       )
-     )}
+     |> start_cov_bulk(:unsubscribe, targets, action: :unsubscribe_all)}
   end
 
   @impl true
   def handle_event("resubscribe_selected_subscriptions", _params, socket) do
-    device_id = socket.assigns.device_id
-
-    results =
-      socket.assigns.subscriptions
-      |> selected_subscriptions(socket.assigns.selected_subscription_keys)
-      |> Enum.map(&resubscribe_subscription(device_id, &1))
-
-    failed = Enum.count(results, &match?({:error, _err}, &1))
-    ok = length(results) - failed
+    selected =
+      selected_subscriptions(
+        socket.assigns.subscriptions,
+        socket.assigns.selected_subscription_keys
+      )
 
     {:noreply,
      socket
      |> assign(:selected_subscription_keys, MapSet.new())
-     |> refresh_cov_state()
-     |> put_flash(
-       :info,
-       gt("COV erneut abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
-         ok: ok,
-         failed: failed
-       )
-     )}
+     |> start_cov_resubscribe_bulk(selected)}
   end
 
   @impl true
   def handle_event("unsubscribe_selected_subscriptions", _params, socket) do
-    device_id = socket.assigns.device_id
-
-    results =
+    targets =
       socket.assigns.selected_subscription_keys
       |> MapSet.to_list()
       |> Enum.map(fn {type, instance, property} ->
-        object_id = %ObjectIdentifier{type: type, instance: instance}
-        SubscriptionManager.unsubscribe(device_id, object_id, property)
+        {%ObjectIdentifier{type: type, instance: instance}, property}
       end)
-
-    failed = Enum.count(results, &match?({:error, _err}, &1))
-    ok = length(results) - failed
 
     {:noreply,
      socket
      |> assign(:selected_subscription_keys, MapSet.new())
-     |> refresh_cov_state()
-     |> put_flash(
-       :info,
-       gt("COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
-         ok: ok,
-         failed: failed
-       )
-     )}
+     |> start_cov_bulk(:unsubscribe, targets, action: :unsubscribe_selected)}
   end
 
   @impl true
@@ -1219,74 +1123,12 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("subscribe_selected_cov", _params, socket) do
-    device_id = socket.assigns.device_id
-
-    {keys, skipped} =
-      ObjectSelectionBar.cov_present_value_keys(
-        socket.assigns.selected_object_keys,
-        socket.assigns.selectable_object_keys,
-        socket.assigns.objects
-      )
-
-    results =
-      Enum.map(keys, fn {type, instance} ->
-        object_id = %ObjectIdentifier{type: type, instance: instance}
-        SubscriptionManager.subscribe(device_id, object_id, :present_value)
-      end)
-
-    failed = Enum.count(results, &match?({:error, _err}, &1))
-    ok = length(results) - failed
-
-    socket =
-      socket
-      |> refresh_cov_state()
-      |> put_flash(
-        :info,
-        gt(
-          "COV abonniert: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
-          ok: ok,
-          skipped: skipped,
-          failed: failed
-        )
-      )
-
-    {:noreply, socket}
+    {:noreply, start_selected_present_value_cov_bulk(socket, :subscribe)}
   end
 
   @impl true
   def handle_event("unsubscribe_selected_cov", _params, socket) do
-    device_id = socket.assigns.device_id
-
-    {keys, skipped} =
-      ObjectSelectionBar.cov_present_value_keys(
-        socket.assigns.selected_object_keys,
-        socket.assigns.selectable_object_keys,
-        socket.assigns.objects
-      )
-
-    results =
-      Enum.map(keys, fn {type, instance} ->
-        object_id = %ObjectIdentifier{type: type, instance: instance}
-        SubscriptionManager.unsubscribe(device_id, object_id, :present_value)
-      end)
-
-    failed = Enum.count(results, &match?({:error, _err}, &1))
-    ok = length(results) - failed
-
-    socket =
-      socket
-      |> refresh_cov_state()
-      |> put_flash(
-        :info,
-        gt(
-          "COV gekündigt: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
-          ok: ok,
-          skipped: skipped,
-          failed: failed
-        )
-      )
-
-    {:noreply, socket}
+    {:noreply, start_selected_present_value_cov_bulk(socket, :unsubscribe)}
   end
 
   @impl true
@@ -1456,21 +1298,17 @@ defmodule BacViewWeb.DeviceLive do
 
   @impl true
   def handle_event("refresh_alarms", _params, socket) do
-    socket = assign(socket, :alarms_refreshing, true)
+    if socket.assigns.alarms_refreshing do
+      {:noreply, socket}
+    else
+      parent = self()
+      device_id = socket.assigns.device_id
 
-    case AlarmEvent.refresh(socket.assigns.device_id) do
-      :ok ->
-        {:noreply,
-         socket
-         |> assign(:alarms_refreshing, false)
-         |> refresh_alarm_state()
-         |> put_flash(:info, gt("Ereignisse aktualisiert."))}
+      Task.start(fn ->
+        send(parent, {:alarms_refresh_done, AlarmEvent.refresh(device_id)})
+      end)
 
-      {:error, reason} ->
-        {:noreply,
-         socket
-         |> assign(:alarms_refreshing, false)
-         |> LiveFlash.put_error(:fetch_events, reason)}
+      {:noreply, assign(socket, :alarms_refreshing, true)}
     end
   end
 
@@ -1810,6 +1648,103 @@ defmodule BacViewWeb.DeviceLive do
       "notifications" =>
         device_tab_path(device_id, "alarms", Keyword.put(opts, :alarm_view, "notifications"))
     }
+  end
+
+  defp handle_live_cov_update(socket, update) do
+    socket =
+      case update.property do
+        :present_value ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{
+                  present_value: PropertyFormatter.coerce_present_value(update.value, obj),
+                  present_value_formatted:
+                    PropertyFormatter.format_present_value(update.value, obj),
+                  updated_at: update.at
+                })
+              else
+                obj
+              end
+            end)
+
+          flash_cells = MapSet.put(socket.assigns.flash_cells, {update.type, update.instance})
+
+          socket
+          |> assign(:objects, objects)
+          |> assign(:flash_cells, flash_cells)
+          |> refresh_hierarchy_explorer()
+
+        :status_flags ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{
+                  status_flags: StatusFlagsParser.normalize(update.value),
+                  updated_at: update.at
+                })
+              else
+                obj
+              end
+            end)
+
+          socket
+          |> assign(:objects, objects)
+          |> refresh_hierarchy_explorer()
+
+        :out_of_service when is_boolean(update.value) ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{
+                  out_of_service: update.value,
+                  updated_at: update.at
+                })
+              else
+                obj
+              end
+            end)
+
+          assign(socket, :objects, objects)
+
+        :object_name when is_binary(update.value) and update.value != "" ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{name: update.value, updated_at: update.at})
+              else
+                obj
+              end
+            end)
+
+          socket
+          |> assign(:objects, objects)
+          |> refresh_hierarchy_explorer()
+
+        :description when is_binary(update.value) ->
+          objects =
+            Enum.map(socket.assigns.objects, fn obj ->
+              if obj.type == update.type and obj.instance == update.instance do
+                Map.merge(obj, %{description: update.value, updated_at: update.at})
+              else
+                obj
+              end
+            end)
+
+          socket
+          |> assign(:objects, objects)
+          |> refresh_hierarchy_explorer()
+
+        _property ->
+          socket
+      end
+
+    {:noreply,
+     socket
+     |> refresh_cov_state()
+     |> refresh_cov_notifications()
+     |> refresh_active_alarm_objects()
+     |> refresh_alarm_popup()}
   end
 
   defp refresh_cov_state(socket) do
@@ -2341,13 +2276,181 @@ defmodule BacViewWeb.DeviceLive do
     |> MapSet.new()
   end
 
-  defp resubscribe_subscription(device_id, sub) do
-    SubscriptionManager.subscribe(device_id, sub.object_id, sub.property,
-      lifetime: sub.lifetime,
-      confirmed: sub.confirmed,
-      process_id: sub.process_id,
-      subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
-    )
+  defp start_present_value_cov_bulk(socket, action) do
+    targets = present_value_cov_targets(socket.assigns.objects)
+    start_cov_bulk(socket, :subscribe, targets, action: action)
+  end
+
+  defp start_selected_present_value_cov_bulk(socket, action) do
+    {keys, skipped} =
+      ObjectSelectionBar.cov_present_value_keys(
+        socket.assigns.selected_object_keys,
+        socket.assigns.selectable_object_keys,
+        socket.assigns.objects
+      )
+
+    targets =
+      Enum.map(keys, fn {type, instance} ->
+        {%ObjectIdentifier{type: type, instance: instance}, :present_value}
+      end)
+
+    start_cov_bulk(socket, action, targets, action: action, skipped: skipped)
+  end
+
+  defp start_cov_resubscribe_bulk(socket, subscriptions) do
+    if socket.assigns.bulk_subscribing do
+      socket
+    else
+      SubscriptionManager.bulk_resubscribe(
+        socket.assigns.device_id,
+        subscriptions,
+        self(),
+        action: :resubscribe
+      )
+
+      mark_cov_bulk_started(socket, length(subscriptions))
+    end
+  end
+
+  defp start_cov_bulk(socket, action, targets, opts) do
+    if socket.assigns.bulk_subscribing do
+      socket
+    else
+      do_start_cov_bulk(socket, action, targets, opts)
+    end
+  end
+
+  defp do_start_cov_bulk(socket, action, targets, opts) do
+    device_id = socket.assigns.device_id
+    progress_pid = self()
+    bulk_opts = Keyword.take(opts, [:action, :skipped])
+
+    case action do
+      :unsubscribe ->
+        SubscriptionManager.bulk_unsubscribe(device_id, targets, progress_pid, bulk_opts)
+
+      _subscribe ->
+        SubscriptionManager.bulk_subscribe(device_id, targets, progress_pid, bulk_opts)
+    end
+
+    mark_cov_bulk_started(socket, length(targets))
+  end
+
+  defp mark_cov_bulk_started(socket, total) do
+    socket
+    |> assign(:bulk_subscribing, true)
+    |> assign(:bulk_progress, %{done: 0, total: total})
+  end
+
+  defp present_value_cov_targets(objects) when is_list(objects) do
+    objects
+    |> Enum.filter(&(not is_nil(Map.get(&1, :present_value))))
+    |> Enum.map(fn obj ->
+      {%ObjectIdentifier{type: obj.type, instance: obj.instance}, :present_value}
+    end)
+  end
+
+  defp subscription_cov_targets(subscriptions) when is_list(subscriptions) do
+    Enum.map(subscriptions, fn sub -> {sub.object_id, sub.property} end)
+  end
+
+  defp assign_drained_cov_progress(socket) do
+    progress = drain_cov_bulk_mailbox(socket.assigns.bulk_progress)
+
+    socket
+    |> assign(:bulk_subscribing, true)
+    |> assign(:bulk_progress, progress)
+  end
+
+  defp drain_cov_bulk_mailbox(%{done: done, total: total} = progress) do
+    receive do
+      {:cov_bulk_progress, next_done, next_total} ->
+        drain_cov_bulk_mailbox(%{done: next_done, total: next_total})
+
+      {:cov_update, _update} ->
+        drain_cov_bulk_mailbox(progress)
+
+      {:cov_notification, _entry} ->
+        drain_cov_bulk_mailbox(progress)
+
+      :cov_updated ->
+        drain_cov_bulk_mailbox(progress)
+    after
+      0 -> %{done: done, total: total}
+    end
+  end
+
+  defp drain_progress_messages(tag, done, total) do
+    receive do
+      {^tag, next_done, next_total} -> drain_progress_messages(tag, next_done, next_total)
+    after
+      0 -> {done, total}
+    end
+  end
+
+  defp put_cov_bulk_flash(socket, result) when is_map(result) do
+    ok = Map.get(result, :ok, 0)
+    failed = Map.get(result, :failed, 0)
+    skipped = Map.get(result, :skipped, 0)
+
+    case Map.get(result, :action) do
+      :subscribe_all ->
+        put_flash(socket, :info, gt("Bulk-Abonnement abgeschlossen."))
+
+      :resubscribe ->
+        put_flash(
+          socket,
+          :info,
+          gt("COV erneut abonniert: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
+            ok: ok,
+            failed: failed
+          )
+        )
+
+      :unsubscribe_all ->
+        put_flash(
+          socket,
+          :info,
+          gt("Alle COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
+            ok: ok,
+            failed: failed
+          )
+        )
+
+      :unsubscribe_selected ->
+        put_flash(
+          socket,
+          :info,
+          gt("COV gekündigt: %{ok} erfolgreich, %{failed} fehlgeschlagen.",
+            ok: ok,
+            failed: failed
+          )
+        )
+
+      :unsubscribe ->
+        put_flash(
+          socket,
+          :info,
+          gt(
+            "COV gekündigt: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
+            ok: ok,
+            skipped: skipped,
+            failed: failed
+          )
+        )
+
+      _subscribe ->
+        put_flash(
+          socket,
+          :info,
+          gt(
+            "COV abonniert: %{ok} erfolgreich, %{skipped} übersprungen, %{failed} fehlgeschlagen.",
+            ok: ok,
+            skipped: skipped,
+            failed: failed
+          )
+        )
+    end
   end
 
   defp subscription_key_from_params(params) do
@@ -3111,6 +3214,7 @@ defmodule BacViewWeb.DeviceLive do
             </button>
             <button
               type="button"
+              id="subscribe-all-pv-btn"
               phx-click="subscribe_all_pv"
               disabled={@bulk_subscribing || @loading}
               class="bac-btn bac-btn-primary bac-btn-sm hidden md:inline-flex"
@@ -3139,7 +3243,7 @@ defmodule BacViewWeb.DeviceLive do
           </div>
         </header>
 
-        <div :if={@bulk_subscribing} class="px-5 pt-3">
+        <div :if={@bulk_subscribing} id="cov-bulk-progress" class="px-5 pt-3">
           <progress
             class="bac-progress"
             value={@bulk_progress.done}
@@ -3249,7 +3353,7 @@ defmodule BacViewWeb.DeviceLive do
               }
               count={MapSet.size(@selected_object_keys)}
               write_priority={@write_priority}
-              bulk_resetting={@bulk_priority_resetting}
+              bulk_resetting={@bulk_priority_resetting || @bulk_subscribing}
               locale={@locale}
               locale_version={@locale_version}
             />
@@ -3260,6 +3364,7 @@ defmodule BacViewWeb.DeviceLive do
                   MapSet.size(@selected_subscription_keys) > 0
               }
               count={MapSet.size(@selected_subscription_keys)}
+              disabled={@bulk_subscribing}
               locale={@locale}
               locale_version={@locale_version}
             />
@@ -3326,6 +3431,7 @@ defmodule BacViewWeb.DeviceLive do
               sort_dir={@subscriptions_sort_dir}
               notifications_sort_by={@cov_notifications_sort_by}
               notifications_sort_dir={@cov_notifications_sort_dir}
+              bulk_subscribing={@bulk_subscribing}
               locale={@locale}
               locale_version={@locale_version}
             />

@@ -22,6 +22,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   attr(:sort_dir, :atom, default: :asc)
   attr(:notifications_sort_by, :string, default: nil)
   attr(:notifications_sort_dir, :atom, default: :desc)
+  attr(:bulk_subscribing, :boolean, default: false)
 
   def subscriptions_panel(assigns) do
     ~H"""
@@ -64,6 +65,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
         search={@search}
         sort_by={@sort_by}
         sort_dir={@sort_dir}
+        bulk_subscribing={@bulk_subscribing}
         locale={@locale}
         locale_version={@locale_version}
       />
@@ -90,6 +92,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
   attr(:search, :string, default: "")
   attr(:sort_by, :string, default: nil)
   attr(:sort_dir, :atom, default: :asc)
+  attr(:bulk_subscribing, :boolean, default: false)
   attr(:locale, :string, required: true)
   attr(:locale_version, :integer, required: true)
 
@@ -128,6 +131,7 @@ defmodule BacViewWeb.SubscriptionsPanel do
           type="button"
           id="unsubscribe-all-cov"
           phx-click="unsubscribe_all_cov"
+          disabled={@bulk_subscribing}
           class="bac-btn bac-btn-ghost bac-btn-sm text-[var(--bac-rose)]"
         >
           <.icon name="hero-signal-slash" class="size-4" />

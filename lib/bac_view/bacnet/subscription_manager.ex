@@ -28,8 +28,13 @@ defmodule BacView.BACnet.SubscriptionManager do
   @notification_log :bacview_cov_notification_log
   @notification_seq :bacview_cov_notification_seq
   @topic_cov "cov:updates"
+  @bulk_progress_interval_ms 150
   # Device restart unsolicited COV (ASHRAE 135): must include all three.
   @restart_cov_property_atoms [:system_status, :time_of_device_restart, :last_restart_reason]
+
+  @type bulk_target ::
+          {ObjectIdentifier.t(), atom() | integer()}
+          | {ObjectIdentifier.t(), atom() | integer(), keyword()}
 
   def start_link(opts \\ []) do
     GenServer.start_link(__MODULE__, opts, name: __MODULE__)
@@ -43,8 +48,10 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   @spec unsubscribe(integer(), ObjectIdentifier.t(), atom() | integer()) ::
           :ok | {:error, term()}
-  def unsubscribe(device_id, object_id, property \\ :present_value) do
-    GenServer.call(__MODULE__, {:unsubscribe, device_id, object_id, property})
+  @spec unsubscribe(integer(), ObjectIdentifier.t(), atom() | integer(), keyword()) ::
+          :ok | {:error, term()}
+  def unsubscribe(device_id, object_id, property \\ :present_value, opts \\ []) do
+    GenServer.call(__MODULE__, {:unsubscribe, device_id, object_id, property, opts})
   end
 
   @spec list_active(integer() | nil) :: [map()]
@@ -93,7 +100,61 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   @spec subscribe_all_present_values(integer(), pid()) :: :ok
   def subscribe_all_present_values(device_id, progress_pid) do
-    GenServer.cast(__MODULE__, {:subscribe_all_pv, device_id, progress_pid})
+    start_bulk_task(fn ->
+      targets =
+        device_id
+        |> DeviceSession.objects()
+        |> Enum.filter(&(not is_nil(&1.present_value)))
+        |> Enum.map(fn obj ->
+          {%ObjectIdentifier{type: obj.type, instance: obj.instance}, :present_value}
+        end)
+
+      run_bulk_jobs(:subscribe, device_id, targets, progress_pid, action: :subscribe_all)
+    end)
+  end
+
+  @doc """
+  Subscribe COV on `targets` in a background task.
+
+  Sends `{:cov_bulk_progress, done, total}` (throttled) and
+  `{:cov_bulk_done, result}` to `progress_pid`. Does not block the caller.
+  """
+  @spec bulk_subscribe(integer(), [bulk_target()], pid(), keyword()) :: :ok
+  def bulk_subscribe(device_id, targets, progress_pid, opts \\ [])
+      when is_list(targets) and is_pid(progress_pid) do
+    start_bulk_task(fn ->
+      run_bulk_jobs(:subscribe, device_id, targets, progress_pid, opts)
+    end)
+  end
+
+  @doc """
+  Unsubscribe COV on `targets` in a background task. See `bulk_subscribe/4`.
+  """
+  @spec bulk_unsubscribe(integer(), [bulk_target()], pid(), keyword()) :: :ok
+  def bulk_unsubscribe(device_id, targets, progress_pid, opts \\ [])
+      when is_list(targets) and is_pid(progress_pid) do
+    start_bulk_task(fn ->
+      run_bulk_jobs(:unsubscribe, device_id, targets, progress_pid, opts)
+    end)
+  end
+
+  @doc """
+  Re-subscribe existing subscription records in a background task.
+  """
+  @spec bulk_resubscribe(integer(), [map()], pid(), keyword()) :: :ok
+  def bulk_resubscribe(device_id, subscriptions, progress_pid, opts \\ [])
+      when is_list(subscriptions) and is_pid(progress_pid) do
+    targets = Enum.map(subscriptions, &resubscribe_target/1)
+
+    start_bulk_task(fn ->
+      run_bulk_jobs(
+        :subscribe,
+        device_id,
+        targets,
+        progress_pid,
+        Keyword.put_new(opts, :action, :resubscribe)
+      )
+    end)
   end
 
   @impl true
@@ -123,33 +184,9 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   @impl true
-  def handle_call({:unsubscribe, device_id, object_id, property}, _from, state) do
-    result = do_unsubscribe(device_id, object_id, property)
+  def handle_call({:unsubscribe, device_id, object_id, property, opts}, _from, state) do
+    result = do_unsubscribe(device_id, object_id, property, opts)
     {:reply, result, state}
-  end
-
-  @impl true
-  def handle_cast({:subscribe_all_pv, device_id, progress_pid}, state) do
-    objects =
-      Enum.filter(DeviceSession.objects(device_id), &(not is_nil(&1.present_value)))
-
-    total = length(objects)
-
-    Task.start(fn ->
-      objects
-      |> Enum.with_index(1)
-      |> Enum.each(fn {obj, idx} ->
-        object_id = %ObjectIdentifier{type: obj.type, instance: obj.instance}
-
-        _handle_cast = subscribe(device_id, object_id, :present_value)
-
-        send(progress_pid, {:cov_bulk_progress, idx, total})
-      end)
-
-      send(progress_pid, {:cov_bulk_done, total})
-    end)
-
-    {:noreply, state}
   end
 
   @impl true
@@ -420,6 +457,7 @@ defmodule BacView.BACnet.SubscriptionManager do
   end
 
   defp do_subscribe(device_id, object_id, property, opts) do
+    {broadcast?, opts} = Keyword.pop(opts, :broadcast, true)
     settings = BacView.Settings.get()
     lifetime = Keyword.get(opts, :lifetime, settings.cov_lifetime_seconds)
     confirmed = Keyword.get(opts, :confirmed, settings.cov_confirmed)
@@ -461,14 +499,16 @@ defmodule BacView.BACnet.SubscriptionManager do
         )
 
       :ets.insert(@table, {Subscription.key(device_id, object_id, property), sub})
-      broadcast_cov_meta()
+      if broadcast?, do: broadcast_cov_meta()
       :ok
     else
       {:error, _device_id} = err -> err
     end
   end
 
-  defp do_unsubscribe(device_id, object_id, property) do
+  defp do_unsubscribe(device_id, object_id, property, opts) do
+    broadcast? = Keyword.get(opts, :broadcast, true)
+
     {process_id, subscribe_service} =
       case lookup_subscription(device_id, object_id, property) do
         {:ok, sub} ->
@@ -489,7 +529,7 @@ defmodule BacView.BACnet.SubscriptionManager do
              subscribe_service
            ) do
       :ets.delete(@table, Subscription.key(device_id, object_id, property))
-      broadcast_cov_meta()
+      if broadcast?, do: broadcast_cov_meta()
       :ok
     else
       {:error, _device_id} = err -> err
@@ -757,6 +797,117 @@ defmodule BacView.BACnet.SubscriptionManager do
 
   defp maybe_filter_device(subs, nil), do: subs
   defp maybe_filter_device(subs, device_id), do: Enum.filter(subs, &(&1.device_id == device_id))
+
+  defp start_bulk_task(fun) when is_function(fun, 0) do
+    {:ok, _pid} = Task.start(fun)
+    :ok
+  end
+
+  defp resubscribe_target(sub) do
+    {sub.object_id, sub.property,
+     [
+       lifetime: sub.lifetime,
+       confirmed: sub.confirmed,
+       process_id: sub.process_id,
+       subscribe_service: Map.get(sub, :subscribe_service, :subscribe_cov_property)
+     ]}
+  end
+
+  defp run_bulk_jobs(action, device_id, targets, progress_pid, opts) do
+    jobs = Enum.map(targets, &normalize_bulk_target/1)
+    total = length(jobs)
+    skipped = Keyword.get(opts, :skipped, 0)
+    result_action = Keyword.get(opts, :action, action)
+
+    send_bulk_progress(progress_pid, 0, total)
+
+    {ok, failed} =
+      try do
+        {ok_count, fail_count, _last_ms} =
+          jobs
+          |> Enum.with_index(1)
+          |> Enum.reduce({0, 0, nil}, fn {job, idx}, {ok_acc, fail_acc, last_ms} ->
+            result = run_bulk_job(action, device_id, job)
+            last_ms = maybe_send_bulk_progress(progress_pid, idx, total, last_ms)
+
+            case result do
+              :ok -> {ok_acc + 1, fail_acc, last_ms}
+              {:error, _reason} -> {ok_acc, fail_acc + 1, last_ms}
+            end
+          end)
+
+        {ok_count, fail_count}
+      catch
+        kind, reason ->
+          Logger.error(
+            "COV bulk #{result_action} aborted: " <>
+              Exception.format(kind, reason, __STACKTRACE__)
+          )
+
+          {0, total}
+      end
+
+    broadcast_cov_meta()
+
+    send(
+      progress_pid,
+      {:cov_bulk_done,
+       %{
+         action: result_action,
+         ok: ok,
+         failed: failed,
+         skipped: skipped,
+         total: total
+       }}
+    )
+  end
+
+  defp run_bulk_job(:subscribe, device_id, {object_id, property, job_opts}) do
+    subscribe(device_id, object_id, property, Keyword.put(job_opts, :broadcast, false))
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  defp run_bulk_job(:unsubscribe, device_id, {object_id, property, _job_opts}) do
+    unsubscribe(device_id, object_id, property, broadcast: false)
+  catch
+    :exit, reason -> {:error, reason}
+  end
+
+  defp normalize_bulk_target({%ObjectIdentifier{} = object_id, property})
+       when is_atom(property) or is_integer(property) do
+    {object_id, property, []}
+  end
+
+  defp normalize_bulk_target({%ObjectIdentifier{} = object_id, property, opts})
+       when (is_atom(property) or is_integer(property)) and is_list(opts) do
+    {object_id, property, opts}
+  end
+
+  defp send_bulk_progress(progress_pid, done, total) do
+    send(progress_pid, {:cov_bulk_progress, done, total})
+  end
+
+  defp maybe_send_bulk_progress(progress_pid, idx, total, last_ms) do
+    now = System.monotonic_time(:millisecond)
+
+    cond do
+      idx == total ->
+        send_bulk_progress(progress_pid, idx, total)
+        now
+
+      is_nil(last_ms) ->
+        send_bulk_progress(progress_pid, idx, total)
+        now
+
+      now - last_ms >= @bulk_progress_interval_ms ->
+        send_bulk_progress(progress_pid, idx, total)
+        now
+
+      true ->
+        last_ms
+    end
+  end
 
   defp cov_increment_opt(%{cov_increment: nil}), do: []
   defp cov_increment_opt(%{cov_increment: inc}), do: [cov_increment: inc]

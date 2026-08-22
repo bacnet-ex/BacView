@@ -4,6 +4,7 @@ defmodule BacViewWeb.SubscriptionSelectionBar do
   use BacViewWeb.LocaleAttrs
 
   attr(:count, :integer, required: true)
+  attr(:disabled, :boolean, default: false)
 
   def selection_bar(assigns) do
     ~H"""
@@ -19,6 +20,7 @@ defmodule BacViewWeb.SubscriptionSelectionBar do
           type="button"
           id="resubscribe-selected-subscriptions"
           phx-click="resubscribe_selected_subscriptions"
+          disabled={@disabled}
           class="bac-btn bac-btn-primary bac-btn-sm"
         >
           <.icon name="hero-signal" class="size-4" />
@@ -27,6 +29,7 @@ defmodule BacViewWeb.SubscriptionSelectionBar do
         <button
           type="button"
           phx-click="unsubscribe_selected_subscriptions"
+          disabled={@disabled}
           class="bac-btn bac-btn-ghost bac-btn-sm text-[var(--bac-rose)]"
         >
           <.icon name="hero-signal-slash" class="size-4" />
@@ -35,6 +38,7 @@ defmodule BacViewWeb.SubscriptionSelectionBar do
         <button
           type="button"
           phx-click="clear_subscription_selection"
+          disabled={@disabled}
           class="bac-btn bac-btn-ghost bac-btn-sm"
         >
           {t(@locale, @locale_version, "Auswahl aufheben")}

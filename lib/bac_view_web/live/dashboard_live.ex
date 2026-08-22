@@ -22,6 +22,7 @@ defmodule BacViewWeb.DashboardLive do
   alias BacViewWeb.DeviceServiceModals
   alias BacViewWeb.DeviceServicesMenu
   alias BacViewWeb.LiveFlash
+  alias BacViewWeb.LiveMailbox
   alias BacViewWeb.LogViewerLive
   alias BacViewWeb.LogViewerModal
   alias BacViewWeb.ScanPanel
@@ -487,6 +488,7 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_info(:cov_updated, socket) do
+    LiveMailbox.drain_repeated(:cov_updated)
     {:noreply, refresh_dashboard_badge_state(socket)}
   end
 
