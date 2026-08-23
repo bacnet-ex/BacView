@@ -296,7 +296,9 @@ defmodule BacView.BACnet.Discovery do
   defp default_broadcast_iam_probe(instance) do
     opts = [low_limit: instance, high_limit: instance]
 
-    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms) do
+    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms,
+           max_count: 1
+         ) do
       {:ok, responses} ->
         match_iam_response(responses, instance)
 
@@ -317,7 +319,9 @@ defmodule BacView.BACnet.Discovery do
       high_limit: instance
     ]
 
-    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms) do
+    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms,
+           max_count: 1
+         ) do
       {:ok, responses} ->
         match_iam_response(responses, instance)
 

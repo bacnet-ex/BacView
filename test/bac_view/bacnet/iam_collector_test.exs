@@ -137,6 +137,50 @@ defmodule BacView.BACnet.IAmCollectorTest do
     assert Task.await(task) == {origin, 42, origin}
   end
 
+  test "collect returns as soon as max_count unique devices are received" do
+    task =
+      Task.async(fn ->
+        send_iam(self(), @iam_apdu, {{192, 168, 1, 79}, 47_808})
+        started = System.monotonic_time(:millisecond)
+        devices = IAmCollector.collect(2_000, max_count: 1)
+        elapsed = System.monotonic_time(:millisecond) - started
+        {length(devices), elapsed}
+      end)
+
+    {count, elapsed} = Task.await(task)
+    assert count == 1
+    assert elapsed < 500
+  end
+
+  test "collect waits for timeout when unique devices stay below max_count" do
+    task =
+      Task.async(fn ->
+        send_iam(self(), @iam_apdu, {{192, 168, 1, 79}, 47_808})
+        send_iam(self(), @iam_apdu, {{192, 168, 1, 80}, 47_808})
+        started = System.monotonic_time(:millisecond)
+        devices = IAmCollector.collect(80, max_count: 2)
+        elapsed = System.monotonic_time(:millisecond) - started
+        {length(devices), elapsed}
+      end)
+
+    {count, elapsed} = Task.await(task)
+    assert count == 1
+    assert elapsed >= 50
+  end
+
+  defp send_iam(pid, apdu, source) do
+    npci = %BACnet.Protocol.NPCI{
+      priority: :normal,
+      expects_reply: false,
+      destination: nil,
+      source: nil,
+      hopcount: nil,
+      is_network_message: false
+    }
+
+    send(pid, {:bacnet_client, make_ref(), apdu, {source, :original_unicast, npci}, pid})
+  end
+
   test "collect_while returns stack_not_started when client process is absent" do
     client = BacView.BACnet.Client.stack_client()
 

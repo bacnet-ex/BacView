@@ -22,6 +22,8 @@ defmodule BacView.BACnet.IAmCollector do
   When the BACnet client process is not running (stack not started, transport
   bind failure, etc.), returns `{:error, :stack_not_started}` without raising
   or exiting — that situation is expected and must not crash callers.
+
+  See `collect/2` for options (`:on_iam`, `:max_count`).
   """
   @spec collect_while((-> :ok | {:error, term()}), pos_integer(), keyword()) ::
           {:ok, [{term(), IAm.t()}]} | {:error, term()}
@@ -62,6 +64,8 @@ defmodule BacView.BACnet.IAmCollector do
     * `:on_iam` - optional
       `(address, IAm.t(), npci_source :: NpciTarget.t() | nil, source_address :: term() -> any)`
       callback invoked per response
+    * `:max_count` - optional positive integer. Stop as soon as this many unique
+      device instances have been collected, without waiting for the timeout.
   """
   @spec collect(pos_integer(), keyword()) ::
           [{term(), IAm.t(), NpciTarget.t() | nil, term()}]
@@ -69,9 +73,10 @@ defmodule BacView.BACnet.IAmCollector do
     ref = make_ref()
     timer = Process.send_after(self(), {:bacview_iam_collector, :stop, ref}, timeout)
     on_iam = Keyword.get(opts, :on_iam)
+    max_count = max_count(opts)
 
     try do
-      {acc, messages} = collect_loop(ref, %{}, on_iam, 0)
+      {acc, messages} = collect_loop(ref, %{}, on_iam, max_count, 0)
 
       Logger.info(
         "IAmCollector: collected #{map_size(acc)} device(s) from #{messages} BACnet message(s)"
@@ -89,15 +94,17 @@ defmodule BacView.BACnet.IAmCollector do
     end
   end
 
-  defp collect_loop(ref, acc, on_iam, messages) do
+  defp collect_loop(ref, acc, on_iam, max_count, messages) do
     receive do
       {:bacnet_client, _reply_ref, apdu, {source, bvlc, npci}, _client_pid} ->
-        collect_loop(
-          ref,
-          ingest_apdu(acc, apdu, source, bvlc, npci, on_iam),
-          on_iam,
-          messages + 1
-        )
+        acc = ingest_apdu(acc, apdu, source, bvlc, npci, on_iam)
+        messages = messages + 1
+
+        if reached_max?(acc, max_count) do
+          {acc, messages}
+        else
+          collect_loop(ref, acc, on_iam, max_count, messages)
+        end
 
       {:bacview_iam_collector, :stop, ^ref} ->
         {acc, messages}
@@ -107,13 +114,23 @@ defmodule BacView.BACnet.IAmCollector do
           "IAmCollector: BVLC message from #{format_address(source)}: #{inspect(bvlc)}"
         )
 
-        collect_loop(ref, acc, on_iam, messages)
+        collect_loop(ref, acc, on_iam, max_count, messages)
 
       other ->
         Logger.debug("IAmCollector: ignored message #{inspect(other)}")
-        collect_loop(ref, acc, on_iam, messages)
+        collect_loop(ref, acc, on_iam, max_count, messages)
     end
   end
+
+  defp max_count(opts) do
+    case Keyword.get(opts, :max_count) do
+      n when is_integer(n) and n > 0 -> n
+      _other -> nil
+    end
+  end
+
+  defp reached_max?(_acc, nil), do: false
+  defp reached_max?(acc, max_count), do: map_size(acc) >= max_count
 
   defp ingest_apdu(acc, apdu, source, bvlc, npci, on_iam) do
     case parse_iam(apdu) do
