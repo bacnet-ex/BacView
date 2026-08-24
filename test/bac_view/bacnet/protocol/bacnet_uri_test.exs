@@ -21,20 +21,22 @@ defmodule BacView.BACnet.Protocol.BacnetUriTest do
   test "encode_object/2 builds an object-level numeric URI" do
     object = %ObjectIdentifier{type: :analog_value, instance: 5}
 
-    assert {:ok, "bacnet://114705/2,5"} = BacnetUri.encode_object(114_705, object)
+    assert {:ok, "bacnet://114705/analog-value,5/present-value"} =
+             BacnetUri.encode_object(114_705, object)
+
     assert {:ok, parsed} = BacnetUri.parse("bacnet://114705/2,5")
     assert parsed.object_identifier == object
   end
 
   test "encode_object/2 accepts integer proprietary types" do
     object = %ObjectIdentifier{type: 685, instance: 10}
-    assert {:ok, "bacnet://5/685,10"} = BacnetUri.encode_object(5, object)
+    assert {:ok, "bacnet://5/685,10/present-value"} = BacnetUri.encode_object(5, object)
   end
 
   test "encode_property/3 appends the numeric property identifier" do
     object = %ObjectIdentifier{type: :analog_value, instance: 5}
 
-    assert {:ok, "bacnet://114705/2,5/85"} =
+    assert {:ok, "bacnet://114705/analog-value,5/present-value"} =
              BacnetUri.encode_property(114_705, object, :present_value)
 
     assert {:ok, "bacnet://5/685,10/35920"} =

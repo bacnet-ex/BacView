@@ -132,7 +132,7 @@ defmodule BacViewWeb.ObjectDetailTest do
       )
 
     assert html =~ ~s(id="copy-object-bacnet-uri")
-    assert html =~ ~s(data-clipboard-text="bacnet://114705/2,5")
+    assert html =~ ~s(data-clipboard-text="bacnet://114705/analog-value,5/present-value")
   end
 
   test "renders a copy button for each known property URI" do
@@ -172,7 +172,7 @@ defmodule BacViewWeb.ObjectDetailTest do
       )
 
     assert html =~ ~s(id="copy-prop-uri-present_value")
-    assert html =~ ~s(data-clipboard-text="bacnet://114705/2,5/85")
+    assert html =~ ~s(data-clipboard-text="bacnet://114705/analog-value,5/present-value")
     assert html =~ ~s(data-copied-label="Kopiert")
   end
 

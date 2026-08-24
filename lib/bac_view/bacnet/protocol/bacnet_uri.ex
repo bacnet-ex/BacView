@@ -31,16 +31,12 @@ defmodule BacView.BACnet.Protocol.BacnetUri do
       when is_integer(device_instance) and device_instance >= 0 and
              device_instance <= @max_instance do
     if ObjectIdentifier.valid?(object) do
-      case object_type_to_string(object.type) do
-        {:ok, type_str} ->
-          {:ok,
-           "bacnet://" <>
-             Integer.to_string(device_instance) <>
-             "/" <> type_str <> "," <> Integer.to_string(object.instance)}
-
-        {:error, _reason} = err ->
-          err
-      end
+      BACnetURI.encode(%BACnetURI{
+        device_identifier: %ObjectIdentifier{type: :device, instance: device_instance},
+        object_identifier: object,
+        property_identifier: if(object.type == :file, do: nil, else: :present_value),
+        property_array_index: nil
+      })
     else
       {:error, :invalid_data}
     end
@@ -57,9 +53,15 @@ defmodule BacView.BACnet.Protocol.BacnetUri do
           atom() | non_neg_integer()
         ) :: {:ok, String.t()} | {:error, term()}
   def encode_property(device_instance, %ObjectIdentifier{} = object, property) do
-    with {:ok, object_uri} <- encode_object(device_instance, object),
-         {:ok, prop_str} <- property_to_string(property) do
-      {:ok, object_uri <> "/" <> prop_str}
+    if ObjectIdentifier.valid?(object) do
+      BACnetURI.encode(%BACnetURI{
+        device_identifier: %ObjectIdentifier{type: :device, instance: device_instance},
+        object_identifier: object,
+        property_identifier: property,
+        property_array_index: nil
+      })
+    else
+      {:error, :invalid_data}
     end
   end
 
@@ -109,32 +111,6 @@ defmodule BacView.BACnet.Protocol.BacnetUri do
 
   @spec property_identifier_options() :: [String.t()]
   def property_identifier_options(), do: identifier_options(:property_identifier)
-
-  defp property_to_string(property) when is_atom(property) do
-    case Constants.by_name(:property_identifier, property) do
-      {:ok, num} -> {:ok, Integer.to_string(num)}
-      :error -> {:error, :invalid_data}
-    end
-  end
-
-  defp property_to_string(property) when is_integer(property) and property >= 0 do
-    {:ok, Integer.to_string(property)}
-  end
-
-  defp property_to_string(_property), do: {:error, :invalid_data}
-
-  defp object_type_to_string(type) when is_atom(type) do
-    case Constants.by_name(:object_type, type) do
-      {:ok, num} -> {:ok, Integer.to_string(num)}
-      :error -> {:error, :invalid_data}
-    end
-  end
-
-  defp object_type_to_string(type) when is_integer(type) and type >= 0 do
-    {:ok, Integer.to_string(type)}
-  end
-
-  defp object_type_to_string(_type), do: {:error, :invalid_data}
 
   defp identifier_options(category) do
     case Map.get(Constants.get_typespecs(), category) do
