@@ -10,5 +10,8 @@ config :bacview, BacViewWeb.Endpoint, cache_static_manifest: "priv/static/cache_
 # Do not print debug messages in production
 config :logger, level: :info
 
+# Disable TZdata auto update, as it may fail on readonly filesystem
+config :tzdata, :autoupdate, :disabled
+
 # Runtime production configuration, including reading
 # of environment variables, is done on config/runtime.exs.
