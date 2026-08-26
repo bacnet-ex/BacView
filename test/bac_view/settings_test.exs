@@ -25,6 +25,10 @@ defmodule BacView.SettingsTest do
     assert defaults.mstp_baud_rate == :auto
     assert defaults.network_number == 0
     assert defaults.max_apdu_length == 1476
+    assert defaults.apdu_timeout == 3_000
+    assert defaults.apdu_retries == 3
+    assert defaults.apdu_segments_timeout == 3_000
+    assert defaults.max_segments == :more_than_64
     assert defaults.scan_on_online == false
   end
 
@@ -87,6 +91,47 @@ defmodule BacView.SettingsTest do
 
     assert {:error, :invalid_settings} = Settings.update(max_apdu_length: 49)
     assert {:error, :invalid_settings} = Settings.update(max_apdu_length: 1477)
+  end
+
+  test "accepts apdu timeout, retries, segments timeout and max segments" do
+    assert {:ok, settings} =
+             Settings.update(
+               apdu_timeout: 5_000,
+               apdu_retries: 5,
+               apdu_segments_timeout: 4_000,
+               max_segments: 16
+             )
+
+    assert settings.apdu_timeout == 5_000
+    assert settings.apdu_retries == 5
+    assert settings.apdu_segments_timeout == 4_000
+    assert settings.max_segments == 16
+    assert Settings.apdu_timeout() == 5_000
+    assert Settings.apdu_retries() == 5
+    assert Settings.apdu_segments_timeout() == 4_000
+    assert Settings.max_segments() == 16
+
+    assert {:ok, unlimited} = Settings.update(max_segments: :more_than_64)
+    assert unlimited.max_segments == :more_than_64
+  end
+
+  test "rejects invalid apdu timeout, retries and max segments" do
+    assert {:error, :invalid_settings} = Settings.update(apdu_timeout: 99)
+    assert {:error, :invalid_settings} = Settings.update(apdu_timeout: 60_001)
+    assert {:error, :invalid_settings} = Settings.update(apdu_retries: -1)
+    assert {:error, :invalid_settings} = Settings.update(apdu_retries: 17)
+    assert {:error, :invalid_settings} = Settings.update(apdu_segments_timeout: 50)
+    assert {:error, :invalid_settings} = Settings.update(max_segments: 3)
+    assert {:error, :invalid_settings} = Settings.update(max_segments: 128)
+  end
+
+  test "apdu settings do not require a stack restart" do
+    before = Settings.defaults()
+
+    refute Settings.stack_restart_required?(before, %{before | apdu_timeout: 5_000})
+    refute Settings.stack_restart_required?(before, %{before | apdu_retries: 1})
+    refute Settings.stack_restart_required?(before, %{before | apdu_segments_timeout: 1_000})
+    refute Settings.stack_restart_required?(before, %{before | max_segments: 8})
   end
 
   test "update persists and reloads settings" do
@@ -179,6 +224,10 @@ defmodule BacView.SettingsTest do
         device_id: defaults.device_id,
         network_number: defaults.network_number,
         max_apdu_length: defaults.max_apdu_length,
+        apdu_timeout: defaults.apdu_timeout,
+        apdu_retries: defaults.apdu_retries,
+        apdu_segments_timeout: defaults.apdu_segments_timeout,
+        max_segments: defaults.max_segments,
         cov_lifetime_seconds: defaults.cov_lifetime_seconds,
         cov_confirmed: defaults.cov_confirmed,
         scan_on_online: defaults.scan_on_online,

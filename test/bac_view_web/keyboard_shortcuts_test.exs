@@ -30,6 +30,32 @@ defmodule BacViewWeb.KeyboardShortcutsTest do
     assert html =~ ~s(<kbd class="bac-kbd">e</kbd>)
   end
 
+  test "object help lists nested collapsible shortcut" do
+    html =
+      render_component(&KeyboardShortcuts.keyboard_shortcuts/1,
+        show: true,
+        context: :object,
+        locale: "en",
+        locale_version: 1
+      )
+
+    assert html =~ ~s(<kbd class="bac-kbd">Ctrl + Click</kbd>)
+    assert html =~ "Expand/collapse this level and all nested levels"
+  end
+
+  test "dashboard help omits nested collapsible shortcut" do
+    html =
+      render_component(&KeyboardShortcuts.keyboard_shortcuts/1,
+        show: true,
+        context: :dashboard,
+        locale: "en",
+        locale_version: 1
+      )
+
+    refute html =~ "Ctrl + Click"
+    refute html =~ "Expand/collapse this level and all nested levels"
+  end
+
   test "dashboard help omits device list shortcuts" do
     html =
       render_component(&KeyboardShortcuts.keyboard_shortcuts/1,

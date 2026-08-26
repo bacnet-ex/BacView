@@ -140,6 +140,25 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
              SinglePropertyRead.from_uri("bacnet://.this/analog-input,1", client: FakeClient)
   end
 
+  test "from_params uses form fields even when a URI is present" do
+    params = %{
+      "uri" => "bacnet://123/analog-value,5/present-value",
+      "locator" => "address",
+      "address" => "10.0.0.1",
+      "object_type" => "binary-input",
+      "instance" => "9",
+      "property" => "object-name"
+    }
+
+    assert {:ok, result} =
+             SinglePropertyRead.from_params(params, client: FakeClient, transport: "ipv4")
+
+    assert result.destination == {{10, 0, 0, 1}, 47_808}
+    assert result.object.type == :binary_input
+    assert result.object.instance == 9
+    assert result.property == :object_name
+  end
+
   test "from_form IPv4 address path" do
     params = %{
       "locator" => "address",

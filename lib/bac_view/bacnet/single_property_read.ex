@@ -1,6 +1,10 @@
 defmodule BacView.BACnet.SinglePropertyRead do
   @moduledoc """
-  One-shot ReadProperty by device instance, transport address, or BACnet URI.
+  One-shot ReadProperty by device instance or transport address.
+
+  Call `from_form/2` with locator fields. `from_params/2` is an alias of
+  `from_form/2` (a BACnet URI in params is ignored). Use `from_uri/2` for a
+  programmatic read from a URI string.
   """
 
   alias BACnet.Protocol.ObjectIdentifier
@@ -36,13 +40,7 @@ defmodule BacView.BACnet.SinglePropertyRead do
 
   @spec from_params(map(), keyword()) :: {:ok, result()} | {:error, term()}
   def from_params(params, opts \\ []) when is_map(params) do
-    uri = params |> Map.get("uri", "") |> to_string() |> String.trim()
-
-    if uri != "" do
-      from_uri(uri, opts)
-    else
-      from_form(params, opts)
-    end
+    from_form(params, opts)
   end
 
   @spec from_uri(String.t(), keyword()) :: {:ok, result()} | {:error, term()}

@@ -34,8 +34,10 @@ defmodule BacViewWeb.ReadPropertyLive do
 
       state ->
         form_params = Map.get(params, "read_property", %{})
-        values = merge_values(form_values(state.form), form_params)
-        {values, uri_error} = maybe_autofill(values)
+        current = form_values(state.form)
+        values = merge_values(current, form_params)
+        this_device_id = socket.assigns[:device_id]
+        {values, uri_error} = apply_uri_and_sync(values, current["uri"], this_device_id)
 
         assign(socket, :read_property, %{
           state
@@ -57,10 +59,11 @@ defmodule BacViewWeb.ReadPropertyLive do
 
       state ->
         form_params = Map.get(params, "read_property", %{})
-        values = merge_values(form_values(state.form), form_params)
-        {values, uri_error} = maybe_autofill(values)
-        transport = Settings.transport()
+        current = form_values(state.form)
+        values = merge_values(current, form_params)
         this_device_id = socket.assigns[:device_id]
+        {values, uri_error} = apply_uri_and_sync(values, current["uri"], this_device_id)
+        transport = Settings.transport()
 
         socket
         |> assign(:read_property, %{
@@ -73,10 +76,7 @@ defmodule BacViewWeb.ReadPropertyLive do
             result: nil
         })
         |> start_async(:read_property, fn ->
-          SinglePropertyRead.from_params(values,
-            this_device_id: this_device_id,
-            transport: transport
-          )
+          SinglePropertyRead.from_form(values, transport: transport)
         end)
     end
   end
@@ -157,7 +157,21 @@ defmodule BacViewWeb.ReadPropertyLive do
   defp value_to_string(nil), do: ""
   defp value_to_string(value), do: to_string(value)
 
-  defp maybe_autofill(values) do
+  # URI is a paste helper: unpack only when the URI text itself changes.
+  # Afterwards the structured fields (including locator) are the source of truth.
+  defp apply_uri_and_sync(values, prev_uri, this_device_id) do
+    uri = String.trim(values["uri"] || "")
+    prev = String.trim(prev_uri || "")
+
+    if uri != prev do
+      maybe_autofill(values, this_device_id)
+    else
+      values = maybe_rewrite_uri(values)
+      {values, uri_status(values["uri"], this_device_id)}
+    end
+  end
+
+  defp maybe_autofill(values, this_device_id) do
     uri = String.trim(values["uri"] || "")
 
     if uri == "" do
@@ -165,7 +179,7 @@ defmodule BacViewWeb.ReadPropertyLive do
     else
       case BacnetUri.parse(uri) do
         {:ok, parsed} ->
-          {fill_from_uri(values, parsed), nil}
+          {fill_from_uri(values, parsed, this_device_id), uri_status(uri, this_device_id)}
 
         {:error, _reason} ->
           # Incomplete input ("bacnet:", "bacnet://123") should not flash an error
@@ -176,11 +190,11 @@ defmodule BacViewWeb.ReadPropertyLive do
     end
   end
 
-  defp fill_from_uri(values, parsed) do
+  defp fill_from_uri(values, parsed, this_device_id) do
     device_id =
-      case parsed.device_identifier do
-        %ObjectIdentifier{type: :device, instance: instance} -> Integer.to_string(instance)
-        _other -> values["device_id"]
+      case BacnetUri.device_instance(parsed, this_device_id) do
+        {:ok, instance} -> Integer.to_string(instance)
+        {:error, _reason} -> values["device_id"]
       end
 
     property =
@@ -196,12 +210,97 @@ defmodule BacViewWeb.ReadPropertyLive do
       end
 
     values
-    |> Map.put("locator", "device_id")
     |> Map.put("device_id", device_id)
     |> Map.put("object_type", identifier_to_form(parsed.object_identifier.type))
     |> Map.put("instance", Integer.to_string(parsed.object_identifier.instance))
     |> Map.put("property", property)
     |> Map.put("array_index", array_index)
+  end
+
+  defp maybe_rewrite_uri(values) do
+    uri = String.trim(values["uri"] || "")
+
+    if uri != "" and match?({:ok, _parsed}, BacnetUri.parse(uri)) do
+      case encode_uri_from_fields(values) do
+        {:ok, encoded} -> Map.put(values, "uri", encoded)
+        :skip -> values
+      end
+    else
+      values
+    end
+  end
+
+  defp encode_uri_from_fields(values) do
+    device_raw = String.trim(values["device_id"] || "")
+    type_str = String.trim(values["object_type"] || "")
+    instance_str = String.trim(values["instance"] || "")
+    prop_str = String.trim(values["property"] || "")
+    index_str = String.trim(values["array_index"] || "")
+
+    if device_raw == "" or type_str == "" or instance_str == "" do
+      :skip
+    else
+      encode_uri_string(device_raw, type_str, instance_str, prop_str, index_str)
+    end
+  end
+
+  defp encode_uri_string(device_raw, type_str, instance_str, prop_str, index_str) do
+    if invalid_uri_segment?(type_str) or invalid_uri_segment?(instance_str) or
+         invalid_uri_segment?(prop_str) do
+      :skip
+    else
+      uri = build_uri_string(device_raw, type_str, instance_str, prop_str, index_str)
+
+      case BacnetUri.parse(uri) do
+        {:ok, parsed} ->
+          case BacnetUri.encode(parsed) do
+            {:ok, encoded} -> {:ok, encoded}
+            {:error, _reason} -> :skip
+          end
+
+        {:error, _reason} ->
+          :skip
+      end
+    end
+  end
+
+  defp build_uri_string(device_raw, type_str, instance_str, prop_str, index_str) do
+    base = "bacnet://" <> device_raw <> "/" <> type_str <> "," <> instance_str
+
+    with_prop =
+      cond do
+        prop_str != "" -> base <> "/" <> prop_str
+        index_str != "" -> base <> "/present-value"
+        true -> base
+      end
+
+    if index_str == "" do
+      with_prop
+    else
+      with_prop <> "/" <> index_str
+    end
+  end
+
+  defp invalid_uri_segment?(value), do: String.contains?(value, "/")
+
+  defp uri_status(uri, this_device_id) do
+    trimmed = String.trim(uri || "")
+
+    if trimmed == "" do
+      nil
+    else
+      case BacnetUri.parse(trimmed) do
+        {:ok, parsed} ->
+          case BacnetUri.device_instance(parsed, this_device_id) do
+            {:ok, _instance} -> nil
+            {:error, :this_device_unknown} -> :this_device_unknown
+            {:error, _reason} -> nil
+          end
+
+        {:error, _reason} ->
+          if String.contains?(trimmed, ","), do: :invalid_bacnet_uri, else: nil
+      end
+    end
   end
 
   defp identifier_to_form(value) when is_atom(value) do

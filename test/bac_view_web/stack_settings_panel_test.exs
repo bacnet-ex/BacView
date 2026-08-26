@@ -53,6 +53,11 @@ defmodule BacViewWeb.StackSettingsPanelTest do
     assert html =~ ~s/id="stack-settings-restart-btn"/
     assert html =~ "Stack neu starten"
     assert html =~ "UDP-Port"
+    assert html =~ "APDU-Timeout (ms)"
+    assert html =~ "APDU-Wiederholungen"
+    assert html =~ "APDU-Segment-Timeout (ms)"
+    assert html =~ "Max. Segmente"
+    assert html =~ "Who-Is-Sonde"
     assert html =~ "COV-Inkrement"
     assert html =~ "COV-Lifetime (Sek.)"
     assert html =~ "Geräte scannen, wenn sie online gehen"
@@ -96,6 +101,10 @@ defmodule BacViewWeb.StackSettingsPanelTest do
       "scan_on_online" => "false",
       "network_number" => "0",
       "max_apdu_length" => "1476",
+      "apdu_timeout" => "3000",
+      "apdu_retries" => "3",
+      "apdu_segments_timeout" => "3000",
+      "max_segments" => "more_than_64",
       "mstp_local_address" => "127",
       "mstp_baud_rate" => "auto"
     }

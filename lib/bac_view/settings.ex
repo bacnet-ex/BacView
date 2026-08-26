@@ -13,6 +13,14 @@ defmodule BacView.Settings do
   @mstp_enabled Application.compile_env!(:bacview, :mstp_enabled)
   @supported_transports if @mstp_enabled, do: ~w(ipv4 mstp), else: ~w(ipv4)
 
+  @apdu_timeout_min 100
+  @apdu_timeout_max 60_000
+  @apdu_retries_min 0
+  @apdu_retries_max 16
+  @max_segments_values [2, 4, 8, 16, 32, 64]
+
+  @type max_segments :: 2 | 4 | 8 | 16 | 32 | 64 | :more_than_64
+
   @type t :: %{
           transport: String.t(),
           interface: String.t() | nil,
@@ -20,6 +28,10 @@ defmodule BacView.Settings do
           device_id: pos_integer(),
           network_number: non_neg_integer(),
           max_apdu_length: 50..1476,
+          apdu_timeout: pos_integer(),
+          apdu_retries: non_neg_integer(),
+          apdu_segments_timeout: pos_integer(),
+          max_segments: max_segments(),
           cov_lifetime_seconds: non_neg_integer(),
           cov_confirmed: boolean(),
           scan_on_online: boolean(),
@@ -69,6 +81,33 @@ defmodule BacView.Settings do
   @spec max_apdu_length() :: 50..1476
   def max_apdu_length(), do: get().max_apdu_length
 
+  @spec apdu_timeout() :: pos_integer()
+  def apdu_timeout(), do: get().apdu_timeout
+
+  @spec apdu_retries() :: non_neg_integer()
+  def apdu_retries(), do: get().apdu_retries
+
+  @spec apdu_segments_timeout() :: pos_integer()
+  def apdu_segments_timeout(), do: get().apdu_segments_timeout
+
+  @spec max_segments() :: max_segments()
+  def max_segments(), do: get().max_segments
+
+  @spec apdu_timeout_min() :: pos_integer()
+  def apdu_timeout_min(), do: @apdu_timeout_min
+
+  @spec apdu_timeout_max() :: pos_integer()
+  def apdu_timeout_max(), do: @apdu_timeout_max
+
+  @spec apdu_retries_min() :: non_neg_integer()
+  def apdu_retries_min(), do: @apdu_retries_min
+
+  @spec apdu_retries_max() :: non_neg_integer()
+  def apdu_retries_max(), do: @apdu_retries_max
+
+  @spec max_segments_values() :: [2 | 4 | 8 | 16 | 32 | 64]
+  def max_segments_values(), do: @max_segments_values
+
   @spec transport() :: String.t()
   def transport(), do: get().transport
 
@@ -84,6 +123,10 @@ defmodule BacView.Settings do
       device_id: 4_194_302,
       network_number: 0,
       max_apdu_length: 1476,
+      apdu_timeout: 3_000,
+      apdu_retries: 3,
+      apdu_segments_timeout: 3_000,
+      max_segments: :more_than_64,
       cov_lifetime_seconds: 3600,
       cov_confirmed: false,
       scan_on_online: false,
@@ -170,6 +213,24 @@ defmodule BacView.Settings do
 
       {:max_apdu_length, value}, {:ok, acc} when is_integer(value) and value in 50..1476 ->
         {:cont, {:ok, %{acc | max_apdu_length: value}}}
+
+      {:apdu_timeout, value}, {:ok, acc}
+      when is_integer(value) and value in @apdu_timeout_min..@apdu_timeout_max ->
+        {:cont, {:ok, %{acc | apdu_timeout: value}}}
+
+      {:apdu_retries, value}, {:ok, acc}
+      when is_integer(value) and value in @apdu_retries_min..@apdu_retries_max ->
+        {:cont, {:ok, %{acc | apdu_retries: value}}}
+
+      {:apdu_segments_timeout, value}, {:ok, acc}
+      when is_integer(value) and value in @apdu_timeout_min..@apdu_timeout_max ->
+        {:cont, {:ok, %{acc | apdu_segments_timeout: value}}}
+
+      {:max_segments, :more_than_64}, {:ok, acc} ->
+        {:cont, {:ok, %{acc | max_segments: :more_than_64}}}
+
+      {:max_segments, value}, {:ok, acc} when value in @max_segments_values ->
+        {:cont, {:ok, %{acc | max_segments: value}}}
 
       {:cov_lifetime_seconds, value}, {:ok, acc} when is_integer(value) and value >= 0 ->
         {:cont, {:ok, %{acc | cov_lifetime_seconds: value}}}
@@ -289,6 +350,10 @@ defmodule BacView.Settings do
     |> update_in([:bbmd_host], &empty_to_nil/1)
     |> update_in([:network_number], &normalize_network_number/1)
     |> update_in([:max_apdu_length], &normalize_max_apdu_length/1)
+    |> update_in([:apdu_timeout], &normalize_apdu_timeout/1)
+    |> update_in([:apdu_retries], &normalize_apdu_retries/1)
+    |> update_in([:apdu_segments_timeout], &normalize_apdu_timeout/1)
+    |> update_in([:max_segments], &normalize_max_segments/1)
     |> maybe_coerce_mstp_transport()
   end
 
@@ -313,6 +378,45 @@ defmodule BacView.Settings do
   end
 
   defp normalize_max_apdu_length(_value), do: 1476
+
+  defp normalize_apdu_timeout(value)
+       when is_integer(value) and value in @apdu_timeout_min..@apdu_timeout_max,
+       do: value
+
+  defp normalize_apdu_timeout(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> normalize_apdu_timeout(int)
+      _other -> 3_000
+    end
+  end
+
+  defp normalize_apdu_timeout(_value), do: 3_000
+
+  defp normalize_apdu_retries(value)
+       when is_integer(value) and value in @apdu_retries_min..@apdu_retries_max,
+       do: value
+
+  defp normalize_apdu_retries(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> normalize_apdu_retries(int)
+      _other -> 3
+    end
+  end
+
+  defp normalize_apdu_retries(_value), do: 3
+
+  defp normalize_max_segments(:more_than_64), do: :more_than_64
+  defp normalize_max_segments("more_than_64"), do: :more_than_64
+  defp normalize_max_segments(value) when value in @max_segments_values, do: value
+
+  defp normalize_max_segments(value) when is_binary(value) do
+    case Integer.parse(String.trim(value)) do
+      {int, ""} -> normalize_max_segments(int)
+      _other -> :more_than_64
+    end
+  end
+
+  defp normalize_max_segments(_value), do: :more_than_64
 
   if not @mstp_enabled do
     defp maybe_coerce_mstp_transport(%{transport: "mstp"} = settings) do

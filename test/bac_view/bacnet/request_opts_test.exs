@@ -6,6 +6,7 @@ defmodule BacView.BACnet.RequestOptsTest do
   alias BACnet.Protocol.Services.IAm
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.RequestOpts
+  alias BacView.Settings
 
   @table :bacview_devices
   @share_table :bacview_device_share
@@ -65,6 +66,28 @@ defmodule BacView.BACnet.RequestOptsTest do
     merged = RequestOpts.merge(device_id: 404)
     assert merged[:device_id] == 404
     assert is_integer(merged[:max_apdu])
+  end
+
+  test "merge injects integer max_segments from settings" do
+    previous = Settings.max_segments()
+    on_exit(fn -> _ = Settings.update(max_segments: previous) end)
+
+    assert {:ok, _} = Settings.update(max_segments: 16)
+    merged = RequestOpts.merge([])
+    assert merged[:max_segments] == 16
+
+    assert {:ok, _} = Settings.update(max_segments: :more_than_64)
+    unset = RequestOpts.merge([])
+    refute Keyword.has_key?(unset, :max_segments)
+  end
+
+  test "merge keeps an explicit max_segments" do
+    previous = Settings.max_segments()
+    on_exit(fn -> _ = Settings.update(max_segments: previous) end)
+
+    assert {:ok, _} = Settings.update(max_segments: 16)
+    merged = RequestOpts.merge(max_segments: 8)
+    assert merged[:max_segments] == 8
   end
 
   test "for_device adds npci destination and invoke device_id for a routed unique address" do

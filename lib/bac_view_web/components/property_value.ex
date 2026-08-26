@@ -230,7 +230,10 @@ defmodule BacViewWeb.PropertyValue do
   defp collapsible_block(assigns) do
     ~H"""
     <details id={@id} class={["bac-collapsible min-w-0", @class]}>
-      <summary class="bac-collapsible-summary min-w-0">
+      <summary
+        class="bac-collapsible-summary min-w-0"
+        title={t(@locale, @locale_version, "Strg+Klick: diese Ebene und alle Unterebenen ein-/ausklappen")}
+      >
         <.icon name="hero-chevron-right" class="bac-collapsible-icon size-3.5 shrink-0" />
         <span class="bac-mono text-sm text-[var(--bac-text)] truncate">{@summary}</span>
       </summary>

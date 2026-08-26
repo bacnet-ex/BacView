@@ -105,6 +105,15 @@ msgstr "24h format: HH:MM, HH:MM:SS or HH:MM:SS.hh (00:00–23:59:59.99)"
 msgid "50–1476. Bestätigt-Requests nutzen die nächstkleinere BACnet-Stufe (z. B. 1000 → 480); Segmentierung nutzt den effektiven Rohwert mit dem Gerät."
 msgstr "50–1476. Confirmed requests use the next smaller BACnet size (e.g. 1000 → 480); segmentation uses the effective raw value with the device."
 
+msgid "APDU-Segment-Timeout (ms)"
+msgstr "APDU segment timeout (ms)"
+
+msgid "APDU-Timeout (ms)"
+msgstr "APDU timeout (ms)"
+
+msgid "APDU-Wiederholungen"
+msgstr "APDU retries"
+
 msgid "Abbrechen"
 msgstr "Cancel"
 
@@ -570,6 +579,9 @@ msgstr "Service executed."
 msgid "Dienstfehler"
 msgstr "Service error"
 
+msgid "Diese Ebene und alle Unterebenen ein-/ausklappen"
+msgstr "Expand/collapse this level and all nested levels"
+
 msgid "Diese Eigenschaft unterstützt keine COV-Benachrichtigungen."
 msgstr "This property does not support COV notifications."
 
@@ -684,6 +696,9 @@ msgstr "A parameter is outside the allowed range."
 msgid "Ein unerwarteter Fehler ist aufgetreten."
 msgstr "An unexpected error occurred."
 
+msgid "Eine gültige URI füllt die Felder. Gelesen wird mit den Feldern unten, inklusive Ziel."
+msgstr "A valid URI fills the fields. The read uses the fields below, including the destination."
+
 msgid "Einheit"
 msgstr "Unit"
 
@@ -749,6 +764,9 @@ msgstr "Learned"
 
 msgid "Erneut abonnieren"
 msgstr "Resubscribe"
+
+msgid "Erneute Versuche für bestätigte Anfragen und ausgehende Segmente. Eingehende Segmente bleiben unverändert."
+msgstr "Retries for confirmed requests and outgoing segments. Incoming segments are unchanged."
 
 msgid "Erweitert"
 msgstr "Advanced"
@@ -1152,6 +1170,9 @@ msgstr "MS/TP MAC (0–254)"
 msgid "Max. APDU-Länge"
 msgstr "Max. APDU length"
 
+msgid "Max. Segmente"
+msgstr "Max. segments"
+
 msgid "Maximal nachlesen"
 msgstr "Maximum recovery read"
 
@@ -1160,6 +1181,12 @@ msgstr "Maximum recovery combines omitting invalid properties with skipping vali
 
 msgid "Maximale Lockerung angewendet"
 msgstr "maximum relaxation applied"
+
+msgid "Maximale Segmentanzahl für Anfragen, Segmentierung und den SegmentsStore."
+msgstr "Maximum segment count for requests, segmentation, and the segments store."
+
+msgid "Mehr als 64"
+msgstr "More than 64"
 
 msgid "Meldung"
 msgstr "Message"
@@ -1575,6 +1602,9 @@ msgstr "Status flags"
 msgid "Stream-Zugriff"
 msgstr "Stream access"
 
+msgid "Strg+Klick: diese Ebene und alle Unterebenen ein-/ausklappen"
+msgstr "Ctrl+click: expand/collapse this level and all nested levels"
+
 msgid "Strukturansichten verwenden"
 msgstr "Use structured views"
 
@@ -1851,6 +1881,12 @@ msgstr "Waiting for BACnet response…"
 msgid "Warte auf BBMD"
 msgstr "Waiting for BBMD"
 
+msgid "Wartezeit auf bestätigte Antworten. Wird auch für die Who-Is-Sonde verwendet."
+msgstr "Wait time for confirmed responses. Also used for the Who-Is probe."
+
+msgid "Wartezeit beim Senden und Empfangen segmentierter APDUs."
+msgstr "Wait time while sending and receiving segmented APDUs."
+
 msgid "Wert"
 msgstr "Value"
 
@@ -1922,6 +1958,9 @@ msgstr "Device communication timed out."
 
 msgid "Ziel"
 msgstr "Destination"
+
+msgid "Ziel ist die Adresse. Die URI beschreibt nur Objekt und Eigenschaft."
+msgstr "The destination is the address. The URI only describes the object and property."
 
 msgid "Ziel-IP (optional)"
 msgstr "Target IP (optional)"

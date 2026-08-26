@@ -50,6 +50,19 @@ TRANSLATIONS: dict[str, str] = {
     "Max. APDU-Länge": "Max. APDU length",
     "50–1476. Bestätigt-Requests nutzen die nächstkleinere BACnet-Stufe (z. B. 1000 → 480); Segmentierung nutzt den effektiven Rohwert mit dem Gerät.":
         "50–1476. Confirmed requests use the next smaller BACnet size (e.g. 1000 → 480); segmentation uses the effective raw value with the device.",
+    "APDU-Timeout (ms)": "APDU timeout (ms)",
+    "Wartezeit auf bestätigte Antworten. Wird auch für die Who-Is-Sonde verwendet.":
+        "Wait time for confirmed responses. Also used for the Who-Is probe.",
+    "APDU-Wiederholungen": "APDU retries",
+    "Erneute Versuche für bestätigte Anfragen und ausgehende Segmente. Eingehende Segmente bleiben unverändert.":
+        "Retries for confirmed requests and outgoing segments. Incoming segments are unchanged.",
+    "APDU-Segment-Timeout (ms)": "APDU segment timeout (ms)",
+    "Wartezeit beim Senden und Empfangen segmentierter APDUs.":
+        "Wait time while sending and receiving segmented APDUs.",
+    "Max. Segmente": "Max. segments",
+    "Mehr als 64": "More than 64",
+    "Maximale Segmentanzahl für Anfragen, Segmentierung und den SegmentsStore.":
+        "Maximum segment count for requests, segmentation, and the segments store.",
     "Protokolle": "Logs",
     "Stufe": "Level",
     "Leeren": "Clear",
@@ -245,6 +258,8 @@ TRANSLATIONS: dict[str, str] = {
     "Dauer (Minuten, leer = unbegrenzt)": "Duration (minutes, empty = indefinite)",
     "Diese Änderungen erfordern einen Neustart des BACnet-Stacks. Aktive COV-Abonnements werden neu aufgebaut.": "These changes require restarting the BACnet stack. Active COV subscriptions will be re-established.",
     "Diese Eigenschaft unterstützt keine COV-Benachrichtigungen.": "This property does not support COV notifications.",
+    "Diese Ebene und alle Unterebenen ein-/ausklappen":
+        "Expand/collapse this level and all nested levels",
     "Diese Hilfe ein-/ausblenden": "Toggle this help",
     "Doppelpunkt (:)": "Colon (:)",
     "Dieser Ordner ist leer.": "This folder is empty.",
@@ -555,6 +570,8 @@ TRANSLATIONS: dict[str, str] = {
     "Schreibgeschützt": "Read-only",
     "Stream-Zugriff": "Stream access",
     "Schreibzugriff verweigert.": "Write access denied.",
+    "Strg+Klick: diese Ebene und alle Unterebenen ein-/ausklappen":
+        "Ctrl+click: expand/collapse this level and all nested levels",
     "Strukturansichten verwenden": "Use structured views",
     "Stack-Einstellungen": "Stack settings",
     "Stack-Einstellungen gespeichert.": "Stack settings saved.",
@@ -710,6 +727,10 @@ TRANSLATIONS: dict[str, str] = {
     "BACnet-Dienst": "BACnet service",
     "BACnet-URI": "BACnet URI",
     "BACnet-URI kopieren": "Copy BACnet URI",
+    "Eine gültige URI füllt die Felder. Gelesen wird mit den Feldern unten, inklusive Ziel.":
+        "A valid URI fills the fields. The read uses the fields below, including the destination.",
+    "Ziel ist die Adresse. Die URI beschreibt nur Objekt und Eigenschaft.":
+        "The destination is the address. The URI only describes the object and property.",
     "URI": "URI",
     "Kopiert": "Copied",
     "Ziel": "Destination",

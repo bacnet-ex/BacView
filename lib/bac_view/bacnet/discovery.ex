@@ -239,7 +239,10 @@ defmodule BacView.BACnet.Discovery do
   # Unsolicited restart COV (or similar) for a device we have never listed.
   # Probe with a targeted Who-Is so vendor / max_apdu come from the real I-Am and
   # scan-panel filters can be applied before the device appears in the UI.
-  @who_is_probe_timeout_ms 3_000
+
+  @doc false
+  @spec who_is_probe_timeout_ms() :: pos_integer()
+  def who_is_probe_timeout_ms(), do: Settings.apdu_timeout()
 
   defp discover_unknown_device_via_who_is(instance, address) do
     filters = acceptance_filters()
@@ -296,7 +299,7 @@ defmodule BacView.BACnet.Discovery do
   defp default_broadcast_iam_probe(instance) do
     opts = [low_limit: instance, high_limit: instance]
 
-    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms,
+    case IAmCollector.collect_while(fn -> send_who_is(opts) end, who_is_probe_timeout_ms(),
            max_count: 1
          ) do
       {:ok, responses} ->
@@ -319,7 +322,7 @@ defmodule BacView.BACnet.Discovery do
       high_limit: instance
     ]
 
-    case IAmCollector.collect_while(fn -> send_who_is(opts) end, @who_is_probe_timeout_ms,
+    case IAmCollector.collect_while(fn -> send_who_is(opts) end, who_is_probe_timeout_ms(),
            max_count: 1
          ) do
       {:ok, responses} ->

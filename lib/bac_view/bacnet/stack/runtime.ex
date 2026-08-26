@@ -51,7 +51,7 @@ defmodule BacView.BACnet.Stack.Runtime do
   defp build_ipv4_children(settings) do
     {:ok, %{interface: interface}} = InterfaceSelection.resolve_ipv4(settings.interface)
     transport_opts = ipv4_transport_opts(interface, settings.ipv4_port)
-    {:ok, stack_children(IPv4, IPv4Transport, transport_opts)}
+    {:ok, stack_children(IPv4, IPv4Transport, transport_opts, settings)}
   end
 
   defp build_transport_children(settings, transport_module, transport_name) do
@@ -64,7 +64,8 @@ defmodule BacView.BACnet.Stack.Runtime do
            stack_children(
              transport_module,
              transport_module.stack_transport_module(),
-             transport_opts
+             transport_opts,
+             settings
            )}
         else
           {:error, {:transport_not_available, transport_name}}
@@ -75,19 +76,74 @@ defmodule BacView.BACnet.Stack.Runtime do
     end
   end
 
-  defp stack_children(transport_module, stack_transport, transport_opts) do
+  @doc false
+  @spec apply_apdu_settings(Settings.t()) :: :ok
+  def apply_apdu_settings(settings) do
+    configure_if_alive(@client, Client, client_opts(settings))
+    configure_if_alive(@segmentator, Segmentator, segmentator_opts(settings))
+    configure_if_alive(@segments_store, SegmentsStore, segments_store_opts(settings))
+    :ok
+  end
+
+  @doc false
+  @spec client_opts(Settings.t()) :: keyword()
+  def client_opts(settings) do
+    [apdu_timeout: settings.apdu_timeout, apdu_retries: settings.apdu_retries]
+  end
+
+  @doc false
+  @spec segmentator_opts(Settings.t()) :: keyword()
+  def segmentator_opts(settings) do
+    [apdu_timeout: settings.apdu_segments_timeout, apdu_retries: settings.apdu_retries]
+  end
+
+  # SegmentsStore apdu_retries is a bacstack test-only option and must stay at the
+  # default (4) for BACnet compliance.
+  @doc false
+  @spec segments_store_opts(Settings.t()) :: keyword()
+  def segments_store_opts(settings) do
+    [apdu_timeout: settings.apdu_segments_timeout, max_segments: settings.max_segments]
+  end
+
+  defp stack_children(transport_module, stack_transport, transport_opts, settings) do
     [
       {transport_module, [client: @client, transport_opts: transport_opts]},
-      {Segmentator, [name: @segmentator]},
-      {SegmentsStore, [name: @segments_store]},
+      {Segmentator,
+       [
+         name: @segmentator,
+         apdu_retries: settings.apdu_retries,
+         apdu_timeout: settings.apdu_segments_timeout
+       ]},
+      {SegmentsStore,
+       [
+         name: @segments_store,
+         apdu_timeout: settings.apdu_segments_timeout,
+         max_segments: settings.max_segments
+       ]},
       {Client,
        [
          name: @client,
          segmentator: @segmentator,
          segments_store: @segments_store,
-         transport: {stack_transport, @transport}
+         transport: {stack_transport, @transport},
+         apdu_retries: settings.apdu_retries,
+         apdu_timeout: settings.apdu_timeout
        ]}
     ]
+  end
+
+  defp configure_if_alive(name, module, opts) do
+    case Process.whereis(name) do
+      pid when is_pid(pid) ->
+        try do
+          module.configure(name, opts)
+        catch
+          :exit, _reason -> :ok
+        end
+
+      nil ->
+        :ok
+    end
   end
 
   defp transport_opts(settings, interface, "mstp") do

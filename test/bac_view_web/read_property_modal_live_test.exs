@@ -95,6 +95,8 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
     |> element("#open-read-property-btn")
     |> render_click()
 
+    assert has_element?(view, "#read-property-uri-hint")
+
     view
     |> form("#read-property-form", %{
       "read_property" => %{"uri" => "bacnet://42/analog-value,5/present-value"}
@@ -114,6 +116,162 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
     assert has_element?(
              view,
              "#read-property-form input[name='read_property[instance]'][value='5']"
+           )
+
+    assert has_element?(view, "#read-property-locator-device-id:checked")
+  end
+
+  test "editing fields after a URI paste keeps the change and updates the URI", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#open-read-property-btn")
+    |> render_click()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"uri" => "bacnet://42/analog-value,5/present-value"}
+    })
+    |> render_change()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"property" => "object-name", "instance" => "9"}
+    })
+    |> render_change()
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[property]'][value='object-name']"
+           )
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[instance]'][value='9']"
+           )
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[uri]'][value='bacnet://42/analog-value,9/object-name']"
+           )
+  end
+
+  test "switching to address after a URI paste keeps the address locator", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#open-read-property-btn")
+    |> render_click()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"uri" => "bacnet://42/analog-value,5/present-value"}
+    })
+    |> render_change()
+
+    refute has_element?(view, "#read-property-address-uri-hint")
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"locator" => "address", "address" => "10.0.0.1"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#read-property-locator-address:checked")
+    assert has_element?(view, "#read-property-address-uri-hint")
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[object_type]'][value='analog-value']"
+           )
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[instance]'][value='5']"
+           )
+  end
+
+  test "submit after a URI paste uses the address locator and edited fields", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#open-read-property-btn")
+    |> render_click()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"uri" => "bacnet://42/analog-value,5/present-value"}
+    })
+    |> render_change()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{
+        "locator" => "address",
+        "address" => "10.0.0.1",
+        "property" => "object-name"
+      }
+    })
+    |> render_submit()
+
+    render_async(view)
+    assert has_element?(view, "#read-property-result")
+    result = render(element(view, "#read-property-result"))
+    assert result =~ "10.0.0.1:47808"
+    assert result =~ "object-name"
+    refute result =~ "present-value"
+  end
+
+  test "pasting a URI while address is selected keeps the address locator", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#open-read-property-btn")
+    |> render_click()
+
+    view
+    |> form("#read-property-form", %{"read_property" => %{"locator" => "address"}})
+    |> render_change()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"uri" => "bacnet://42/analog-value,5/present-value"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#read-property-locator-address:checked")
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[device_id]'][value='42']"
+           )
+  end
+
+  test "pasting .this without a current device shows an error and still fills the object", %{
+    conn: conn
+  } do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#open-read-property-btn")
+    |> render_click()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{"uri" => "bacnet://.this/analog-value,1"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#read-property-uri-error")
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[object_type]'][value='analog-value']"
+           )
+
+    assert has_element?(
+             view,
+             "#read-property-form input[name='read_property[instance]'][value='1']"
            )
   end
 

@@ -5,6 +5,7 @@ defmodule BacView.BACnet.Stack do
   use Supervisor
 
   alias BacView.BACnet.Stack.Boot
+  alias BacView.BACnet.Stack.Runtime
 
   @client BacView.BACnet.ClientStack
   @transport BacView.BACnet.TransportLayer
@@ -48,6 +49,9 @@ defmodule BacView.BACnet.Stack do
       _pid -> Boot.restart()
     end
   end
+
+  @spec apply_apdu_settings(BacView.Settings.t()) :: :ok
+  def apply_apdu_settings(settings), do: Runtime.apply_apdu_settings(settings)
 
   @impl true
   def init(_opts) do

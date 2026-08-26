@@ -4,6 +4,7 @@ defmodule BacView.BACnet.RequestOpts do
   alias BACnet.Protocol.NpciTarget
   alias BacView.BACnet.ApduSize
   alias BacView.BACnet.Discovery
+  alias BacView.Settings
 
   @doc """
   Builds bacstack Client send-related opts for a known BacView device id.
@@ -16,6 +17,7 @@ defmodule BacView.BACnet.RequestOpts do
   | `device_id` | bacstack **invoke-id** partition key (only when routed and destination is unique) |
   | `destination` | NPCI destination `NpciTarget` learned from I-Am |
   | `max_apdu` / `max_apdu_length` | Effective APDU size: min(local setting, remote max) |
+  | `max_segments` | Local max segments (2/4/8/16/32/64) for request encode and outgoing segmentation |
 
   Callers should pass the BacView device instance as `:device_id` and/or
   `:remote_device_id` in `base` (aliases accepted for one transition window).
@@ -33,6 +35,7 @@ defmodule BacView.BACnet.RequestOpts do
   @doc """
   Merges routing opts when `base` carries `:device_id` or `:remote_device_id`.
   Always injects effective APDU size opts unless already present.
+  Injects `:max_segments` when the local setting is a BACnet integer count.
   """
   @spec merge(keyword()) :: keyword()
   def merge(opts) when is_list(opts) do
@@ -55,10 +58,33 @@ defmodule BacView.BACnet.RequestOpts do
   end
 
   defp put_apdu_opts(opts, device) do
+    opts
+    |> put_apdu_size_opts(device)
+    |> put_max_segments_opts()
+  end
+
+  defp put_apdu_size_opts(opts, device) do
     if Keyword.has_key?(opts, :max_apdu) or Keyword.has_key?(opts, :max_apdu_length) do
       opts
     else
       Keyword.merge(opts, ApduSize.to_opts(device))
+    end
+  end
+
+  # Client.send requires a positive integer. `:more_than_64` is valid for
+  # ConfirmedServiceRequest encode (bacstack default) but not for send opts /
+  # Segmentator, so it is left unset.
+  defp put_max_segments_opts(opts) do
+    if Keyword.has_key?(opts, :max_segments) do
+      opts
+    else
+      case Settings.max_segments() do
+        value when is_integer(value) ->
+          Keyword.put(opts, :max_segments, value)
+
+        _more_than_64 ->
+          opts
+      end
     end
   end
 

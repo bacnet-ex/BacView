@@ -1,4 +1,5 @@
 import {initAllResizableTables} from "./resizable_table"
+import {bindNestedCollapsible} from "./nested_collapsible"
 
 const SEARCH_INPUT_IDS = [
   "device-search",
@@ -157,6 +158,7 @@ const BacViewRoot = {
       })
     })
 
+    this.unbindNestedCollapsible = bindNestedCollapsible(this.el)
     this.initResizableTables()
   },
 
@@ -170,6 +172,7 @@ const BacViewRoot = {
 
   destroyed() {
     window.removeEventListener("keydown", this.keydownHandler)
+    this.unbindNestedCollapsible?.()
   },
 }
 

@@ -902,6 +902,10 @@ defmodule BacViewWeb.DashboardLive do
       "ipv4_port" => Integer.to_string(settings.ipv4_port),
       "network_number" => Integer.to_string(settings.network_number),
       "max_apdu_length" => Integer.to_string(settings.max_apdu_length),
+      "apdu_timeout" => Integer.to_string(settings.apdu_timeout),
+      "apdu_retries" => Integer.to_string(settings.apdu_retries),
+      "apdu_segments_timeout" => Integer.to_string(settings.apdu_segments_timeout),
+      "max_segments" => max_segments_form_value(settings.max_segments),
       "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
       "cov_increment" => cov_increment_form_value(settings.cov_increment),
       "cov_confirmed" => if(settings.cov_confirmed, do: "true", else: "false"),
@@ -919,6 +923,10 @@ defmodule BacViewWeb.DashboardLive do
       "ipv4_port" => form[:ipv4_port].value,
       "network_number" => form[:network_number].value,
       "max_apdu_length" => form[:max_apdu_length].value,
+      "apdu_timeout" => form[:apdu_timeout].value,
+      "apdu_retries" => form[:apdu_retries].value,
+      "apdu_segments_timeout" => form[:apdu_segments_timeout].value,
+      "max_segments" => form[:max_segments].value,
       "cov_lifetime_seconds" => form[:cov_lifetime_seconds].value,
       "cov_increment" => form[:cov_increment].value,
       "cov_confirmed" => form[:cov_confirmed].value,
@@ -944,10 +952,42 @@ defmodule BacViewWeb.DashboardLive do
     max_apdu_param =
       params["max_apdu_length"] || Integer.to_string(current_settings.max_apdu_length)
 
+    apdu_timeout_param =
+      params["apdu_timeout"] || Integer.to_string(current_settings.apdu_timeout)
+
+    apdu_retries_param =
+      params["apdu_retries"] || Integer.to_string(current_settings.apdu_retries)
+
+    apdu_segments_timeout_param =
+      params["apdu_segments_timeout"] ||
+        Integer.to_string(current_settings.apdu_segments_timeout)
+
+    max_segments_param =
+      params["max_segments"] || max_segments_form_value(current_settings.max_segments)
+
     with {:ok, device_id} <- parse_required_int(params["device_id"], 0, 4_194_303),
          {:ok, ipv4_port} <- parse_required_int(ipv4_port_param, 47_808, 65_535),
          {:ok, network_number} <- parse_required_int(params["network_number"], 0, 65_534),
          {:ok, max_apdu_length} <- parse_required_int(max_apdu_param, 50, 1476),
+         {:ok, apdu_timeout} <-
+           parse_required_int(
+             apdu_timeout_param,
+             Settings.apdu_timeout_min(),
+             Settings.apdu_timeout_max()
+           ),
+         {:ok, apdu_retries} <-
+           parse_required_int(
+             apdu_retries_param,
+             Settings.apdu_retries_min(),
+             Settings.apdu_retries_max()
+           ),
+         {:ok, apdu_segments_timeout} <-
+           parse_required_int(
+             apdu_segments_timeout_param,
+             Settings.apdu_timeout_min(),
+             Settings.apdu_timeout_max()
+           ),
+         {:ok, max_segments} <- parse_max_segments(max_segments_param),
          {:ok, cov_lifetime} <- parse_required_int(params["cov_lifetime_seconds"], 0, 864_000),
          {:ok, cov_increment} <- parse_cov_increment(params["cov_increment"]),
          {:ok, mstp_local_address} <-
@@ -962,6 +1002,10 @@ defmodule BacViewWeb.DashboardLive do
          device_id: device_id,
          network_number: network_number,
          max_apdu_length: max_apdu_length,
+         apdu_timeout: apdu_timeout,
+         apdu_retries: apdu_retries,
+         apdu_segments_timeout: apdu_segments_timeout,
+         max_segments: max_segments,
          cov_lifetime_seconds: cov_lifetime,
          cov_increment: cov_increment,
          cov_confirmed: form_checkbox?(params["cov_confirmed"]),
@@ -1013,6 +1057,27 @@ defmodule BacViewWeb.DashboardLive do
     end
   end
 
+  defp max_segments_form_value(:more_than_64), do: "more_than_64"
+  defp max_segments_form_value(value) when is_integer(value), do: Integer.to_string(value)
+  defp max_segments_form_value(value), do: to_string(value)
+
+  defp parse_max_segments(:more_than_64), do: {:ok, :more_than_64}
+  defp parse_max_segments("more_than_64"), do: {:ok, :more_than_64}
+
+  defp parse_max_segments(value) do
+    case Integer.parse(to_string(value || "")) do
+      {int, ""} ->
+        if int in Settings.max_segments_values() do
+          {:ok, int}
+        else
+          {:error, :invalid_settings}
+        end
+
+      _value ->
+        {:error, :invalid_settings}
+    end
+  end
+
   defp mstp_baud_rate_form_value(:auto), do: "auto"
   defp mstp_baud_rate_form_value(rate) when is_integer(rate), do: Integer.to_string(rate)
 
@@ -1061,6 +1126,7 @@ defmodule BacViewWeb.DashboardLive do
     case Settings.update(updates) do
       {:ok, settings} ->
         NetworkNumber.reload_from_settings()
+        Stack.apply_apdu_settings(settings)
 
         socket =
           socket

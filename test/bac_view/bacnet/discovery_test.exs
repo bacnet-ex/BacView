@@ -24,6 +24,16 @@ defmodule BacView.BACnet.DiscoveryTest do
     assert Discovery.normalize_device_name(nil) == nil
   end
 
+  test "who-is probe timeout uses configured APDU timeout" do
+    previous = Settings.apdu_timeout()
+    on_exit(fn -> _ = Settings.update(apdu_timeout: previous) end)
+
+    assert Discovery.who_is_probe_timeout_ms() == previous
+
+    assert {:ok, _} = Settings.update(apdu_timeout: 1_500)
+    assert Discovery.who_is_probe_timeout_ms() == 1_500
+  end
+
   test "normalize_device_description converts Latin-1 bytes to UTF-8" do
     latin1 = <<"K\xE4ltemaschine 1 / RHOSS FP ECO-E VFD TCAITE 1325 RH00376802">>
 

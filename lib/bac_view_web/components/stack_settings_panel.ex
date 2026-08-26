@@ -4,6 +4,7 @@ defmodule BacViewWeb.StackSettingsPanel do
   use BacViewWeb.LocaleAttrs
 
   alias BacView.BACnet.TransportResolver
+  alias BacView.Settings
 
   attr(:form, :map, required: true)
   attr(:settings, :map, required: true)
@@ -277,6 +278,81 @@ defmodule BacViewWeb.StackSettingsPanel do
                   )}
                 </p>
               </div>
+              <div>
+                <label class="bac-label" for={@form[:apdu_timeout].id}>
+                  {t(@locale, @locale_version, "APDU-Timeout (ms)")}
+                </label>
+                <.input
+                  field={@form[:apdu_timeout]}
+                  type="number"
+                  min="100"
+                  max="60000"
+                  class="bac-input bac-input-sm"
+                />
+                <p class="text-xs bac-text-faint mt-1">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "Wartezeit auf bestätigte Antworten. Wird auch für die Who-Is-Sonde verwendet."
+                  )}
+                </p>
+              </div>
+              <div>
+                <label class="bac-label" for={@form[:apdu_retries].id}>
+                  {t(@locale, @locale_version, "APDU-Wiederholungen")}
+                </label>
+                <.input
+                  field={@form[:apdu_retries]}
+                  type="number"
+                  min="0"
+                  max="16"
+                  class="bac-input bac-input-sm"
+                />
+                <p class="text-xs bac-text-faint mt-1">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "Erneute Versuche für bestätigte Anfragen und ausgehende Segmente. Eingehende Segmente bleiben unverändert."
+                  )}
+                </p>
+              </div>
+              <div>
+                <label class="bac-label" for={@form[:apdu_segments_timeout].id}>
+                  {t(@locale, @locale_version, "APDU-Segment-Timeout (ms)")}
+                </label>
+                <.input
+                  field={@form[:apdu_segments_timeout]}
+                  type="number"
+                  min="100"
+                  max="60000"
+                  class="bac-input bac-input-sm"
+                />
+                <p class="text-xs bac-text-faint mt-1">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "Wartezeit beim Senden und Empfangen segmentierter APDUs."
+                  )}
+                </p>
+              </div>
+              <div>
+                <label class="bac-label" for={@form[:max_segments].id}>
+                  {t(@locale, @locale_version, "Max. Segmente")}
+                </label>
+                <.input
+                  field={@form[:max_segments]}
+                  type="select"
+                  options={max_segments_options(@locale, @locale_version)}
+                  class="bac-input bac-input-sm"
+                />
+                <p class="text-xs bac-text-faint mt-1">
+                  {t(
+                    @locale,
+                    @locale_version,
+                    "Maximale Segmentanzahl für Anfragen, Segmentierung und den SegmentsStore."
+                  )}
+                </p>
+              </div>
             </div>
           </details>
 
@@ -376,6 +452,17 @@ defmodule BacViewWeb.StackSettingsPanel do
       end
 
     [auto | rates]
+  end
+
+  defp max_segments_options(locale, lv) do
+    counts =
+      for count <- Settings.max_segments_values() do
+        label = Integer.to_string(count)
+        {label, label}
+      end
+
+    # credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem
+    counts ++ [{t(locale, lv, "Mehr als 64"), "more_than_64"}]
   end
 
   defp mstp_transport?("mstp"), do: true

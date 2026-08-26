@@ -44,6 +44,11 @@ defmodule BacViewWeb.KeyboardShortcuts do
               desc={go_up_label(@context, @locale, @locale_version)}
             />
             <.shortcut_row keys="Esc" desc={t(@locale, @locale_version, "Hilfe schliessen")} />
+            <.shortcut_row
+              :if={@context == :object}
+              keys="Ctrl + Click"
+              desc={t(@locale, @locale_version, "Diese Ebene und alle Unterebenen ein-/ausklappen")}
+            />
           </ul>
 
           <.device_list_shortcuts

@@ -65,6 +65,24 @@ defmodule BacViewWeb.ReadPropertyModal do
                 data-autofocus
                 disabled={@state.busy}
               />
+              <p id="read-property-uri-hint" class="text-xs bac-text-faint">
+                {t(
+                  @locale,
+                  @locale_version,
+                  "Eine gültige URI füllt die Felder. Gelesen wird mit den Feldern unten, inklusive Ziel."
+                )}
+              </p>
+              <p
+                :if={locator(@state) == "address"}
+                id="read-property-address-uri-hint"
+                class="text-xs bac-text-faint"
+              >
+                {t(
+                  @locale,
+                  @locale_version,
+                  "Ziel ist die Adresse. Die URI beschreibt nur Objekt und Eigenschaft."
+                )}
+              </p>
               <p :if={@state.uri_error} id="read-property-uri-error" class="text-xs text-[var(--bac-rose)]">
                 {ErrorMessage.format_reason(@state.uri_error)}
               </p>
@@ -77,6 +95,7 @@ defmodule BacViewWeb.ReadPropertyModal do
               <label class="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="radio"
+                  id="read-property-locator-device-id"
                   name={@state.form[:locator].name}
                   value="device_id"
                   checked={locator(@state) == "device_id"}
@@ -88,6 +107,7 @@ defmodule BacViewWeb.ReadPropertyModal do
               <label class="flex items-center gap-2 text-sm cursor-pointer">
                 <input
                   type="radio"
+                  id="read-property-locator-address"
                   name={@state.form[:locator].name}
                   value="address"
                   checked={locator(@state) == "address"}

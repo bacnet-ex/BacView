@@ -12,7 +12,11 @@ defmodule BacViewWeb.DashboardLiveScanTest do
         interface: first_ipv4_interface(),
         ipv4_port: BacView.Settings.defaults().ipv4_port,
         mstp_local_address: BacView.Settings.defaults().mstp_local_address,
-        mstp_baud_rate: BacView.Settings.defaults().mstp_baud_rate
+        mstp_baud_rate: BacView.Settings.defaults().mstp_baud_rate,
+        apdu_timeout: BacView.Settings.defaults().apdu_timeout,
+        apdu_retries: BacView.Settings.defaults().apdu_retries,
+        apdu_segments_timeout: BacView.Settings.defaults().apdu_segments_timeout,
+        max_segments: BacView.Settings.defaults().max_segments
       )
 
     on_exit(fn ->
@@ -31,7 +35,11 @@ defmodule BacViewWeb.DashboardLiveScanTest do
           interface: first_ipv4_interface(),
           ipv4_port: BacView.Settings.defaults().ipv4_port,
           mstp_local_address: BacView.Settings.defaults().mstp_local_address,
-          mstp_baud_rate: BacView.Settings.defaults().mstp_baud_rate
+          mstp_baud_rate: BacView.Settings.defaults().mstp_baud_rate,
+          apdu_timeout: BacView.Settings.defaults().apdu_timeout,
+          apdu_retries: BacView.Settings.defaults().apdu_retries,
+          apdu_segments_timeout: BacView.Settings.defaults().apdu_segments_timeout,
+          max_segments: BacView.Settings.defaults().max_segments
         )
     end)
 
@@ -277,6 +285,38 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     |> render_submit()
 
     assert BacView.Settings.get().cov_increment == nil
+  end
+
+  test "stack settings save persists apdu timeout retries segments and max segments", %{
+    conn: conn
+  } do
+    {:ok, view, _html} = live(conn, ~p"/")
+    settings = BacView.Settings.get()
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "transport" => settings.transport,
+        "interface" => settings.interface,
+        "device_id" => Integer.to_string(settings.device_id),
+        "network_number" => Integer.to_string(settings.network_number),
+        "cov_lifetime_seconds" => Integer.to_string(settings.cov_lifetime_seconds),
+        "cov_confirmed" => "false",
+        "scan_on_online" => "false",
+        "apdu_timeout" => "4500",
+        "apdu_retries" => "2",
+        "apdu_segments_timeout" => "2500",
+        "max_segments" => "32"
+      }
+    })
+    |> render_submit()
+
+    saved = BacView.Settings.get()
+    assert saved.apdu_timeout == 4_500
+    assert saved.apdu_retries == 2
+    assert saved.apdu_segments_timeout == 2_500
+    assert saved.max_segments == 32
+    refute has_element?(view, "#stack-settings-confirm-btn")
   end
 
   test "stack settings save persists scan_on_online", %{conn: conn} do

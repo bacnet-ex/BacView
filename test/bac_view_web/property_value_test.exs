@@ -39,6 +39,7 @@ defmodule BacViewWeb.PropertyValueTest do
 
     assert html =~ ~s(<details)
     assert html =~ "2 Einträge"
+    assert html =~ "Strg+Klick: diese Ebene und alle Unterebenen ein-/ausklappen"
     refute html =~ ~s(<details open)
     assert html =~ "[1]"
     assert html =~ "scalar"
