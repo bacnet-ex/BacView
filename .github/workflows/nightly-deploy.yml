@@ -104,26 +104,27 @@ jobs:
 
       # We'll build the nightly with fresh dependencies,
       # not the ones we've locked for development
-      - name: Get Elixir dependencies
+      - name: Build Elixir mix release (Linux)
         run: |
           rm mix.lock || true
-          mix deps.get
-
-      - name: Set key base for prod build (Linux)
-        run: |
+          mix deps.get && mix deps.compile
           export SECRET_KEY_BASE=$(mix phx.gen.secret)
-        if: matrix.platform == 'linux'
 
-      - name: Set key base for prod build (Windows)
-        run: |
-          set SECRET_KEY_BASE=$(mix phx.gen.secret)
-        if: matrix.platform == 'windows'
-
-      - name: Build Elixir mix release
-        run: |
           mix setup
           mix desktop.setup
           mix desktop.prepare_release
+        if: matrix.platform == 'linux'
+
+      - name: Build Elixir mix release (Windows)
+        run: |
+          rm mix.lock || true
+          mix deps.get; mix deps.compile
+          $env:SECRET_KEY_BASE = $(mix phx.gen.secret)
+
+          mix setup
+          mix desktop.setup
+          mix desktop.prepare_release
+        if: matrix.platform == 'windows'
 
       - name: Build Tauri release
         run: cd src-tauri && cargo tauri build
