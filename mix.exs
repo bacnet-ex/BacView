@@ -146,7 +146,7 @@ defmodule BacView.MixProject do
         "assets.deploy",
         "compile --force",
         # Manual tzdata update (automatic is disabled -> readonly fs (i.e. appimage) may not like it)
-        "eval \":application.ensure_all_started(:hackney); Tzdata.EtsHolder.start_link([]); Tzdata.ReleaseUpdater.poll_for_update()\"",
+        "eval \":application.ensure_all_started(:hackney); Tzdata.EtsHolder.start_link([]); Tzdata.ReleaseUpdater.poll_for_update(); Process.sleep(100)\"",
         "release --overwrite --path src-tauri/target/rel"
       ],
       "desktop.installer": [
@@ -162,7 +162,7 @@ defmodule BacView.MixProject do
         "assets.deploy",
         "compile --force",
         # Manual tzdata update (automatic is disabled -> readonly fs (i.e. appimage) may not like it)
-        "eval \":application.ensure_all_started(:hackney); Tzdata.EtsHolder.start_link([]); Tzdata.ReleaseUpdater.poll_for_update()\"",
+        "eval \":application.ensure_all_started(:hackney); Tzdata.EtsHolder.start_link([]); Tzdata.ReleaseUpdater.poll_for_update(); Process.sleep(100)\"",
         "release --overwrite --path src-tauri/target/rel",
         &strip_release_gz_files/1,
         &ensure_host_matched_android_erts/1,
