@@ -126,7 +126,7 @@ defmodule BacView.Settings do
       apdu_timeout: 3_000,
       apdu_retries: 3,
       apdu_segments_timeout: 3_000,
-      max_segments: :more_than_64,
+      max_segments: 64,
       cov_lifetime_seconds: 3600,
       cov_confirmed: false,
       scan_on_online: false,

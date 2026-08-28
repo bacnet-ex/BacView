@@ -28,7 +28,7 @@ defmodule BacView.SettingsTest do
     assert defaults.apdu_timeout == 3_000
     assert defaults.apdu_retries == 3
     assert defaults.apdu_segments_timeout == 3_000
-    assert defaults.max_segments == :more_than_64
+    assert defaults.max_segments == 64
     assert defaults.scan_on_online == false
   end
 
