@@ -552,7 +552,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
     assert updated == %BACnetTime{hour: 0, minute: 0, second: 0, hundredth: 0}
 
     # Starting from :unspecified (blank date pattern / after kind switch), typing 0
-    # must parse as integer — not stay on the atom path.
+    # must parse as integer - not stay on the atom path.
     date = %BACnetDate{
       year: :unspecified,
       month: :unspecified,

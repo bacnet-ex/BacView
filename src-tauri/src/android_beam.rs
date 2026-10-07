@@ -59,7 +59,7 @@ pub fn start_release(release_root: &Path, env: ReleaseEnv) -> Result<(), String>
     cmd.env("ERL_ROOTDIR", &release_root);
     cmd.env("ROOTDIR", &release_root);
 
-    // Optional extra emulator flags (do not default to `+J false` — on OTP 27
+    // Optional extra emulator flags (do not default to `+J false` - on OTP 27
     // erlexec rejects that and beam.smp only prints Usage then exits 1).
     if let Ok(aflags) = std::env::var("BACVIEW_ERL_AFLAGS") {
         if !aflags.is_empty() {

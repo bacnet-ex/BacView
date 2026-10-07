@@ -21,7 +21,7 @@ defmodule BacView.BACnet.IAmCollector do
 
   When the BACnet client process is not running (stack not started, transport
   bind failure, etc.), returns `{:error, :stack_not_started}` without raising
-  or exiting — that situation is expected and must not crash callers.
+  or exiting - that situation is expected and must not crash callers.
 
   See `collect/2` for options (`:on_iam`, `:max_count`).
   """

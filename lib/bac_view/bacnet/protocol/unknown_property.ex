@@ -72,7 +72,7 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
           display_value: binary,
           formatted: formatted,
           string_value?: true,
-          # Bare binaries are treated as character text — no hex toggle.
+          # Bare binaries are treated as character text - no hex toggle.
           hex_toggle?: false,
           raw_binary: binary,
           primitive_editable?: true
@@ -144,7 +144,7 @@ defmodule BacView.BACnet.Protocol.UnknownProperty do
       display_value: inner,
       formatted: formatted,
       string_value?: true,
-      # Octet strings only — and only when default view differs from colon-hex.
+      # Octet strings only - and only when default view differs from colon-hex.
       hex_toggle?: PropertyFormatter.hex_display_differs?(formatted, inner),
       raw_binary: inner,
       primitive_editable?: encoding_primitive_editable?(encoding)

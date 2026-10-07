@@ -38,7 +38,7 @@ defmodule BacView.BACnet.Cache do
   Deletes every row from BACnet domain ETS tables (devices, objects, properties,
   subscriptions, events, skip modes, and related notification logs).
 
-  Does not stop `DeviceSession` processes — call
+  Does not stop `DeviceSession` processes - call
   `DeviceSessionSupervisor.stop_all/0` first so sessions cannot re-populate
   caches while a clear is in progress.
   """

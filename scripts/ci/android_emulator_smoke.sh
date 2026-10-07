@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Tier 2: install APK on an x86_64 emulator and wait for BEAM boot signals.
-# Intended for tag pipelines (and optional schedules — see docs/android_ci.md).
+# Intended for tag pipelines (and optional schedules - see docs/android_ci.md).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
@@ -119,7 +119,7 @@ while ((SECONDS <= deadline)); do
       echo "android_emulator_smoke: passed"
       exit 0
     fi
-    # Signal seen but process gone — still treat as soft success if extract/start logged
+    # Signal seen but process gone - still treat as soft success if extract/start logged
     if grep -qiE 'extracted release|elixirkit-style release start' "${LOGCAT_FILE}"; then
       ok "boot started (process may have exited after halt); treating as pass"
       echo "android_emulator_smoke: passed"

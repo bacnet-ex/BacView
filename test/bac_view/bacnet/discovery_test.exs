@@ -1,5 +1,5 @@
 defmodule BacView.BACnet.DiscoveryTest do
-  # Shared Discovery GenServer acceptance filters — not async-safe.
+  # Shared Discovery GenServer acceptance filters - not async-safe.
   use ExUnit.Case, async: false
 
   alias BACnet.Protocol.APDU.UnconfirmedServiceRequest
@@ -185,7 +185,7 @@ defmodule BacView.BACnet.DiscoveryTest do
 
       Application.put_env(:bacview, :property_read_concurrency_enable_shared_reduction, true)
 
-      # Create under BacnetEtsOwner — never :ets.new from the test process.
+      # Create under BacnetEtsOwner - never :ets.new from the test process.
       BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices, :bacview_device_share])
 
       Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
@@ -266,8 +266,11 @@ defmodule BacView.BACnet.DiscoveryTest do
       BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices])
 
       Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
+      previous_scan = Settings.get().scan_on_online
+      assert {:ok, _settings} = Settings.update(scan_on_online: false)
 
       on_exit(fn ->
+        _restore = Settings.update(scan_on_online: previous_scan)
         Discovery.set_acceptance_filters(low_limit: nil, high_limit: nil, vendor_id: nil)
         BacView.Test.BacnetEtsLock.reset_tables!([:bacview_devices])
       end)
@@ -394,6 +397,57 @@ defmodule BacView.BACnet.DiscoveryTest do
       assert {:ok, %{status: :discovered}} = Discovery.get_device(42)
     end
 
+    test "scan_on_online does not wait on a session that is already scanning", %{
+      iam: iam,
+      address: address
+    } do
+      previous = Settings.get().scan_on_online
+
+      on_exit(fn ->
+        _result = Settings.update(scan_on_online: previous)
+      end)
+
+      assert {:ok, _settings} = Settings.update(scan_on_online: true)
+
+      device_id = 3_000_000 + rem(System.unique_integer([:positive]), 100_000)
+      iam = %{iam | device: %{iam.device | instance: device_id}}
+      blocker = block_device_session(device_id)
+
+      task = Task.async(fn -> Discovery.upsert_iam_device(iam, address) end)
+
+      assert %{id: ^device_id, status: :discovered} = Task.await(task, 1_000)
+      assert_receive :loading_probed
+      assert {:ok, %{status: :discovered}} = Discovery.get_device(device_id)
+      send(blocker, :stop)
+    end
+
+    test "scan_on_online does not probe a session already marked loading", %{address: address} do
+      previous = Settings.get().scan_on_online
+
+      on_exit(fn ->
+        _result = Settings.update(scan_on_online: previous)
+      end)
+
+      assert {:ok, _settings} = Settings.update(scan_on_online: true)
+
+      device_id = 3_100_000 + rem(System.unique_integer([:positive]), 100_000)
+      blocker = block_device_session(device_id)
+
+      :ets.insert(:bacview_devices, {
+        device_id,
+        %{
+          id: device_id,
+          instance: device_id,
+          address: address,
+          status: :loading
+        }
+      })
+
+      assert :ok = Discovery.maybe_scan_device_online(device_id)
+      refute_receive :loading_probed, 0
+      send(blocker, :stop)
+    end
+
     test "ensure_discovered_device probes Who-Is/I-Am for unknown devices", %{
       address: address,
       iam: iam
@@ -421,7 +475,7 @@ defmodule BacView.BACnet.DiscoveryTest do
       object = %ObjectIdentifier{type: :device, instance: 88}
       new_address = {{10, 0, 0, 99}, 47_808}
 
-      # Known device — no Who-Is probe required.
+      # Known device - no Who-Is probe required.
       loaded_at = ~U[2026-01-15 12:00:00Z]
 
       :ets.insert(:bacview_devices, {
@@ -679,6 +733,40 @@ defmodule BacView.BACnet.DiscoveryTest do
     test "rejects invalid vendor ID" do
       assert Discovery.parse_scan_params(%{"vendor_id" => "70000"}) ==
                {:error, :invalid_vendor_id}
+    end
+  end
+
+  defp block_device_session(device_id) do
+    parent = self()
+
+    blocker =
+      spawn(fn ->
+        case Registry.register(BacView.BACnet.DeviceRegistry, device_id, nil) do
+          {:ok, _owner} ->
+            send(parent, :session_blocked)
+            block_device_session_loop(parent)
+
+          {:error, reason} ->
+            send(parent, {:session_register_failed, reason})
+        end
+      end)
+
+    on_exit(fn ->
+      if Process.alive?(blocker), do: send(blocker, :stop)
+    end)
+
+    assert_receive :session_blocked, 1_000
+    blocker
+  end
+
+  defp block_device_session_loop(parent) do
+    receive do
+      {:"$gen_call", _from, :loading?} ->
+        send(parent, :loading_probed)
+        block_device_session_loop(parent)
+
+      :stop ->
+        :ok
     end
   end
 

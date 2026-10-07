@@ -348,7 +348,7 @@ defmodule BacViewWeb.DeviceScanRecovery do
     end
   end
 
-  # Full device load failed on the device object — user must choose a recovery mode
+  # Full device load failed on the device object - user must choose a recovery mode
   # (or stop). Strict re-load without a mode stays available via the normal reload control.
   attr(:recovery, :map, default: nil)
   attr(:retrying?, :boolean, default: false)

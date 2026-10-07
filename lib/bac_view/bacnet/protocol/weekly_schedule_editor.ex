@@ -1042,7 +1042,7 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditor do
 
   defp kind_from_value(value), do: kind_from_tagged_value(value)
 
-  # NULL must not pin the schedule value kind — fall through to other sources.
+  # NULL must not pin the schedule value kind - fall through to other sources.
   defp kind_from_encoding_type(:null, _value), do: nil
   defp kind_from_encoding_type(:real, _value), do: :real
   defp kind_from_encoding_type(:double, _value), do: :double

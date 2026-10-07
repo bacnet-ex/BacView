@@ -452,7 +452,7 @@ defmodule BacView.BACnet.Protocol.WeeklyScheduleEditorTest do
                {:bitstring, 10}
              )
 
-    # Without bitstring kind, free text wrongly becomes character_string — the
+    # Without bitstring kind, free text wrongly becomes character_string - the
     # regression this test guards against is fixed via infer_value_kind above.
     refute WeeklyScheduleEditor.infer_value_kind(
              [

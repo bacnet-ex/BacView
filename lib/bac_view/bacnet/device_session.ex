@@ -40,26 +40,37 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   # Full device scans (especially non-RPM devices that fall back to per-property
-  # ReadProperty) can exceed several minutes. Callers such as DeviceLive already
-  # run load/reload off the LiveView process and receive progress via PubSub, so
-  # we must not cap the GenServer.call with a wall-clock timeout.
-  # We are currently keeping a timeout of 2mins.
-  # We may want to raise this or use :infinity, if needed.
+  # ReadProperty) can exceed several minutes. Interactive callers keep a 2 minute
+  # cap. Background callers (scan-on-online) pass `timeout: :infinity` so the
+  # call is not killed while the session is still scanning.
   @load_call_timeout 120_000
 
-  @spec load(integer()) :: {:ok, map()} | {:error, term()}
-  def load(device_id) do
+  # A session runs the whole device scan inside one handle_info and cannot
+  # answer calls until that returns. Probes must not use the default 5s
+  # GenServer.call timeout: the caller (network scan task, Discovery) would exit.
+  @loading_probe_timeout 200
+
+  @spec load(integer(), keyword()) :: {:ok, map()} | {:error, term()}
+  def load(device_id, opts \\ []) when is_integer(device_id) and is_list(opts) do
     with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-      GenServer.call(pid, :load, @load_call_timeout)
+      GenServer.call(pid, :load, load_call_timeout(opts))
     end
   end
 
-  @doc "Returns true when a full device load/reload is in progress."
+  @doc """
+  Returns true when a full device load/reload is in progress.
+
+  Uses the device cache when the session has already marked itself loading.
+  Otherwise probes the session with a short timeout. A timeout means the
+  session is inside the scan and cannot answer; it is reported as loading
+  instead of exiting the caller.
+  """
   @spec loading?(integer()) :: boolean()
-  def loading?(device_id) do
-    case DeviceSessionSupervisor.session_pid(device_id) do
-      nil -> false
-      pid -> GenServer.call(pid, :loading?)
+  def loading?(device_id) when is_integer(device_id) do
+    if device_marked_loading?(device_id) do
+      true
+    else
+      session_loading?(device_id)
     end
   end
 
@@ -67,9 +78,10 @@ defmodule BacView.BACnet.DeviceSession do
   Forces a fresh BACnet read even when the session is already loaded.
 
   Options:
-  - `:recovery_mode` — user-chosen recovery for the **device object** read only
+  - `:recovery_mode` - user-chosen recovery for the **device object** read only
     (`:value` | `true` | `:ignore_invalid` | `:skip_all_and_ignore_invalid`).
     Never applied automatically.
+  - `:timeout` - call timeout in milliseconds, or `:infinity` (default 120_000).
   """
   @spec reload(integer(), keyword()) :: {:ok, map()} | {:error, term()}
   def reload(device_id, opts \\ []) when is_list(opts) do
@@ -77,11 +89,33 @@ defmodule BacView.BACnet.DeviceSession do
 
     if is_nil(recovery_mode) or PropertyLoad.recovery_mode?(recovery_mode) do
       with {:ok, pid} <- DeviceSessionSupervisor.ensure_session(device_id) do
-        GenServer.call(pid, {:reload, recovery_mode}, @load_call_timeout)
+        GenServer.call(pid, {:reload, recovery_mode}, load_call_timeout(opts))
       end
     else
       {:error, :invalid_recovery_mode}
     end
+  end
+
+  defp load_call_timeout(opts) do
+    Keyword.get(opts, :timeout, @load_call_timeout)
+  end
+
+  defp device_marked_loading?(device_id) do
+    match?({:ok, %{status: :loading}}, Discovery.get_device(device_id))
+  end
+
+  defp session_loading?(device_id) do
+    case DeviceSessionSupervisor.session_pid(device_id) do
+      nil -> false
+      pid -> probe_loading?(pid)
+    end
+  end
+
+  defp probe_loading?(pid) do
+    GenServer.call(pid, :loading?, @loading_probe_timeout)
+  catch
+    :exit, {:timeout, _call} -> true
+    :exit, _reason -> false
   end
 
   @doc """
@@ -128,10 +162,10 @@ defmodule BacView.BACnet.DeviceSession do
   Re-reads a single object from a prior scan failure using a user-chosen recovery mode.
 
   Modes:
-  - `:value` — skip value validation only (`skip_property_validation_remote_object`)
-  - `true` — skip type and value validation
-  - `:ignore_invalid` — drop properties that fail cast/decode (`ignore_invalid_properties`)
-  - `:skip_all_and_ignore_invalid` — both full skip validation and ignore invalid
+  - `:value` - skip value validation only (`skip_property_validation_remote_object`)
+  - `true` - skip type and value validation
+  - `:ignore_invalid` - drop properties that fail cast/decode (`ignore_invalid_properties`)
+  - `:skip_all_and_ignore_invalid` - both full skip validation and ignore invalid
 
   Never applied automatically; only after the user picks a recovery action.
   """
@@ -171,7 +205,7 @@ defmodule BacView.BACnet.DeviceSession do
       # ObjectsMacro remote-object validation (skip_property_validation_remote_object).
       {:value_failed_property_validation, _property} -> true
       {:invalid_property_type, _property} -> true
-      # ObjectsUtility cast/decode — user may drop bad properties (ignore_invalid_properties).
+      # ObjectsUtility cast/decode - user may drop bad properties (ignore_invalid_properties).
       {:invalid_property_value, _detail} -> true
       {:missing_parse_fun, _property} -> true
       # Other failures (timeout, missing_optional_property, BACnet errors) stay non-recoverable.
@@ -661,7 +695,7 @@ defmodule BacView.BACnet.DeviceSession do
     with {:ok, device} <- read_device_object(address, device_obj, device_opts),
          {:ok, object_ids} <- read_object_list(address, device_obj, device_id),
          # The device object was already read above (possibly with recovery). Do not
-         # re-scan it strictly from object_list — that double-read re-fails the same
+         # re-scan it strictly from object_list - that double-read re-fails the same
          # cast/validation issue and re-surfaces recovery for an object we already have.
          scan_ids = object_ids_for_scan(object_ids, device_obj),
          {:ok, scanned, scan_errors, skipped_objects} <-

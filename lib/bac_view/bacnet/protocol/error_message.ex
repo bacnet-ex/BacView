@@ -24,6 +24,7 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
           | :fetch_events
           | :export_events
           | :export_ede
+          | :export_properties
           | :notification_class_recipient
           | :bbmd_register
           | :stack_restart
@@ -60,7 +61,8 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
              :load_device,
              :fetch_events,
              :export_events,
-             :export_ede
+             :export_ede,
+             :export_properties
            ] ->
         data_action_message(a, detail)
 
@@ -115,6 +117,9 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
 
   defp data_action_message(:export_ede, detail),
     do: gettext("EDE-Export fehlgeschlagen: %{detail}", detail: detail)
+
+  defp data_action_message(:export_properties, detail),
+    do: gettext("Eigenschaften-Export fehlgeschlagen: %{detail}", detail: detail)
 
   defp service_action_message(:notification_class_recipient, detail),
     do: gettext("Meldungsklassen-Empfängerliste fehlgeschlagen: %{detail}", detail: detail)
@@ -369,8 +374,17 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:no_objects),
     do: gettext("Keine exportierbaren Objekte geladen.")
 
+  def format_reason(:no_properties_selected),
+    do: gettext("Mindestens eine Eigenschaft muss ausgewählt sein.")
+
+  def format_reason(:invalid_export_format),
+    do: gettext("Das Exportformat ist ungültig.")
+
   def format_reason(:no_object_types_selected),
     do: gettext("Mindestens ein Objekttyp muss ausgewählt sein.")
+
+  def format_reason(:no_devices),
+    do: gettext("Mindestens ein geladenes Gerät muss ausgewählt sein.")
 
   def format_reason(:eacces),
     do: gettext("Zugriff auf den seriellen Port verweigert (Berechtigung fehlt).")
@@ -406,7 +420,7 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(%{__exception__: true} = exception),
     do: format_exception_message(exception)
 
-  # Tagged tuple we do not have a dedicated clause for — still show the tag.
+  # Tagged tuple we do not have a dedicated clause for - still show the tag.
   def format_reason({tag, _payload} = reason) when is_atom(tag) do
     gettext("Unerwarteter Fehler (%{code}): %{detail}",
       code: label(tag),

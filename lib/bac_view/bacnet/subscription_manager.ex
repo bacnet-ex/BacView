@@ -332,9 +332,9 @@ defmodule BacView.BACnet.SubscriptionManager do
   active COV subscriptions for that device.
 
   Options:
-  * `:async` (default `true`) — run ensure + scan + renew off the COV process
+  * `:async` (default `true`) - run ensure + scan + renew off the COV process
     (Who-Is wait must not block the SubscriptionManager mailbox)
-  * `:scan` (default `Settings.scan_on_online?()`) — force device reload/load
+  * `:scan` (default `Settings.scan_on_online?()`) - force device reload/load
   """
   @spec handle_device_restart_cov(UnconfirmedCovNotification.t(), term(), keyword()) :: :ok
   def handle_device_restart_cov(%UnconfirmedCovNotification{} = notification, source, opts \\ []) do

@@ -320,7 +320,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
     end)
   end
 
-  # Value-level multi-struct union (event_parameters, …) — path is just "kind".
+  # Value-level multi-struct union (event_parameters, …) - path is just "kind".
   defp current_choice_value(data, [key], %{value_union: %{discriminant_key: key} = choice}) do
     {:ok, ChoiceSchema.active_arm_id(data, choice)}
   end
@@ -1141,7 +1141,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
 
       # BACnetDate/Time components are integer | pattern atoms. When the current
       # value is `:unspecified` (or another pattern atom), numeric input like "0"
-      # must become integer 0 — not an atom path (hour 0 is midnight, not unspecified).
+      # must become integer 0 - not an atom path (hour 0 is midnight, not unspecified).
       date_time_component_value?(current) ->
         parse_date_time_component(trimmed)
 
@@ -1713,7 +1713,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   # `:array.sparse_to_list/1` (used by `BACnetArray.to_list/1` and thus write
   # casting via `reduce_while`) omits entries equal to the default. If the
   # default is the first existing item (or a blank template struct), any JSON
-  # entry that matches it is dropped — typically leaving only later items on
+  # entry that matches it is dropped - typically leaving only later items on
   # the wire (e.g. schedule list_of_object_property_references).
   defp rebuild_bacnet_array(items, %BACnetArray{fixed_size: nil}, _item_template) do
     {:ok, BACnetArray.from_list(items, false, :undefined)}

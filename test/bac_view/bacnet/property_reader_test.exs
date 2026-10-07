@@ -480,7 +480,7 @@ defmodule BacView.BACnet.Protocol.PropertyReaderTest do
       object = %ObjectIdentifier{type: :analog_input, instance: 197}
       previous_flag = Application.get_env(:bacview, :debug_log_property_reader)
 
-      # Module level only — never raise the global Logger level in async tests.
+      # Module level only - never raise the global Logger level in async tests.
       SilenceLogger.silence_for_test(PropertyReader, :debug)
 
       log =

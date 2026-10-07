@@ -37,3 +37,7 @@ bacview-*.tar
 /.expert/
 /.lexical/
 /.vscode/
+
+# Others
+/.codex/
+/plans/

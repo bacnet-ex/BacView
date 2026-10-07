@@ -8,13 +8,13 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
 
   ## Shapes
 
-  * **Tagged** — discriminant field of `{:literal, atom}` members plus matching
+  * **Tagged** - discriminant field of `{:literal, atom}` members plus matching
     optional payload fields (`CalendarEntry`, `Recipient`, `BACnetTimestamp`).
     Form path is the real key (usually `type`).
-  * **Inline** — optional (`payload | nil`) or multi-struct `type_list` on one field
+  * **Inline** - optional (`payload | nil`) or multi-struct `type_list` on one field
     (`NameValue.value`, `SpecialEvent.period`). Form path is synthetic:
     `value` → `value_kind`, `period` → `period_kind`, else `:"\#{field}_kind"`.
-  * **Union** — multi-struct `type_list` as the *value itself* (property-level or
+  * **Union** - multi-struct `type_list` as the *value itself* (property-level or
     collection element), e.g. `event_parameters` / `fault_parameters`. Built via
     `union_choice/1`. Form path is synthetic `kind`. Applying an arm replaces the
     whole value with a blank of the selected struct.
@@ -26,10 +26,10 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
 
   Arm *existence* always comes from BeamTypes. Module attributes only adjust polish:
 
-  * `@synthetic_discriminant_keys` — stable LiveView/test paths
-  * `@arm_id_overrides` — e.g. SpecialEvent `ObjectIdentifier` → `:calendar_reference`
-  * `@label_overrides` — display strings (`"Calendar Reference"`, `"Date Time"`)
-  * `special_blank/2` — domain blanks (Recipient device id, calendar reference)
+  * `@synthetic_discriminant_keys` - stable LiveView/test paths
+  * `@arm_id_overrides` - e.g. SpecialEvent `ObjectIdentifier` → `:calendar_reference`
+  * `@label_overrides` - display strings (`"Calendar Reference"`, `"Date Time"`)
+  * `special_blank/2` - domain blanks (Recipient device id, calendar reference)
 
   See `docs/choice_schema.md` for detection rules, apply/collect behaviour, and how
   to onboard a new bacstack CHOICE type.
@@ -623,7 +623,7 @@ defmodule BacView.BACnet.Protocol.ChoiceSchema do
     end
   end
 
-  # Optional absence arm (NameValue value_kind: none) — not EventParameters.None, which
+  # Optional absence arm (NameValue value_kind: none) - not EventParameters.None, which
   # is a real empty struct with payload_type {:struct, …}.
   defp blank_arm_payload!(_module, %{member: {:literal, nil}}), do: nil
   defp blank_arm_payload!(_module, %{payload_type: nil}), do: nil

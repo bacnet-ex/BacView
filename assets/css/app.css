@@ -1184,7 +1184,7 @@ body.bac-col-resizing * {
   color: var(--bac-accent);
 }
 
-/* Only rotate this details' own chevron — not nested collapsibles. */
+/* Only rotate this details' own chevron - not nested collapsibles. */
 .bac-collapsible[open] > .bac-collapsible-summary > .bac-collapsible-icon {
   transform: rotate(90deg);
 }
@@ -1538,6 +1538,15 @@ body.bac-col-resizing * {
 
 .bac-modal.bac-modal-lg {
   max-width: 32rem;
+}
+
+.bac-modal.bac-modal-xl {
+  width: min(72rem, calc(100% - 2rem));
+  max-width: min(72rem, calc(100% - 2rem));
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .bac-modal.bac-modal-constrain {

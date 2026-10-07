@@ -67,7 +67,7 @@ defmodule BacView.BACnet.IAmCollectorTest do
       is_network_message: false
     }
 
-    # Module level only — never raise the global Logger level in async tests
+    # Module level only - never raise the global Logger level in async tests
     # (that leaks Phoenix request logs from concurrent conn tests).
     Logger.put_module_level(IAmCollector, :info)
     on_exit(fn -> Logger.delete_module_level(IAmCollector) end)

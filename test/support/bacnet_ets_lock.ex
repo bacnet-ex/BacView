@@ -12,7 +12,7 @@ defmodule BacView.Test.BacnetEtsLock do
   Ensures the given named ETS tables exist (owned by `BacnetEtsOwner`), empties
   them, runs `fun`, then empties them again.
 
-  Tables are **not** created in the test process — ownership stays with the
+  Tables are **not** created in the test process - ownership stays with the
   suite-lifetime owner so async test process exits cannot drop tables mid-run
   for other tests.
 

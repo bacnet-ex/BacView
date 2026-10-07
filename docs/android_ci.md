@@ -11,7 +11,7 @@ in GitLab CI, and how to extend it.
 | **1** | `android-rust` | Android-related path changes only | `cargo check` + `clippy` for `aarch64-linux-android` and `x86_64-linux-android` |
 | **1** | `android-package` | Android-related path changes only | `BACVIEW_DESKTOP=1 mix mobile.prepare_release`, structural zip asserts, `mix mobile.android.build` (debug-key OK) |
 | **2** | `android-emulator` | **Tags** with Android path changes (+ schedule / force) | Install APK on x86_64 AVD, wait for Rust/BEAM boot log signals |
-| **3** | — | *Not implemented* | See [Future: Tier 3](#future-tier-3) |
+| **3** | - | *Not implemented* | See [Future: Tier 3](#future-tier-3) |
 
 ### Path filters (Tier 0+1)
 
@@ -36,19 +36,19 @@ Tier 0+1 so the APK exists for the emulator job.
 # Tier 0
 ./scripts/ci/android_static_check.sh
 
-# Tier 1 — Rust targets (needs NDK)
+# Tier 1 - Rust targets (needs NDK)
 export ANDROID_HOME=…   # or run scripts/ci/android_setup_sdk.sh
 source "${ANDROID_HOME}/ci-env.sh"   # written by android_setup_sdk.sh in CI
 ./scripts/ci/android_rust_check.sh
 
-# Tier 1 — prepare + assert + APK
+# Tier 1 - prepare + assert + APK
 export ANDROID_HOME=…
 export BACVIEW_DESKTOP=1 MIX_ENV=prod
 mix mobile.prepare_release
 ./scripts/ci/android_prepare_assert.sh
 mix mobile.android.build
 
-# Tier 2 — emulator smoke (needs KVM preferred, APK already built)
+# Tier 2 - emulator smoke (needs KVM preferred, APK already built)
 ANDROID_INSTALL_EMULATOR=1 ./scripts/ci/android_setup_sdk.sh
 source "${ANDROID_HOME}/ci-env.sh"
 ./scripts/ci/android_emulator_smoke.sh
@@ -123,9 +123,9 @@ Never commit `keystore.properties` or `.jks` files.
 
 Jobs cache under the project directory where practical:
 
-- `.android-sdk` — SDK/NDK (large; first run slow)
-- `.cargo` / `.rustup` — Rust toolchains and Android targets
-- `src-tauri/target` — Cargo build artifacts
+- `.android-sdk` - SDK/NDK (large; first run slow)
+- `.cargo` / `.rustup` - Rust toolchains and Android targets
+- `src-tauri/target` - Cargo build artifacts
 - Mix `_build` / `deps` for desktop/mobile prepare
 
 ## Future: Tier 3
@@ -143,7 +143,7 @@ Not implemented in the current pipeline. When you need them, extend
 Suggested rules for a future nightly OTP rebuild (sketch only):
 
 ```yaml
-# NOT active — Tier 3 sketch
+# NOT active - Tier 3 sketch
 # android-otp-rebuild:
 #   stage: build
 #   rules:
@@ -159,9 +159,9 @@ OTP on every pipeline.
 
 ## Related code
 
-- `mix.exs` — `mobile.prepare_release` / `mobile.android.*`
-- `lib/bac_view/mobile/android_erts.ex` — OTP major helper
-- `src-tauri/src/android_runtime.rs` — extract/merge ERTS
-- `src-tauri/src/android_beam.rs` — process boot
-- `src-tauri/build.rs` — stage ERTS zips + jniLibs helpers
-- `src-tauri/gen/android/` — Gradle project
+- `mix.exs` - `mobile.prepare_release` / `mobile.android.*`
+- `lib/bac_view/mobile/android_erts.ex` - OTP major helper
+- `src-tauri/src/android_runtime.rs` - extract/merge ERTS
+- `src-tauri/src/android_beam.rs` - process boot
+- `src-tauri/build.rs` - stage ERTS zips + jniLibs helpers
+- `src-tauri/gen/android/` - Gradle project

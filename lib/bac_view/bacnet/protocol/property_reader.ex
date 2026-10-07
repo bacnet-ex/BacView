@@ -5,7 +5,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   When `read_object` with `read_level: :all` succeeds, property rows are built
   from the decoded struct (no follow-up ReadPropertyMultiple / ReadProperty pass).
   **Heavy properties** (e.g. `object_list`, bindings) that arrived on this path
-  are kept and shown — they were already paid for by RPM and help debugging.
+  are kept and shown - they were already paid for by RPM and help debugging.
 
   The individual path (device `property_list` or schema fallback) skips heavy
   properties before ReadProperty, casts a remote object from successful reads
@@ -49,7 +49,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
 
   @trend_log_types [:trend_log, :trend_log_multiple]
 
-  # Large Device properties — skip only on individual ReadProperty streams
+  # Large Device properties - skip only on individual ReadProperty streams
   # (object_list alone can be thousands of entries and block the UI for minutes).
   # RPM `:all` already returned them; keep those rows for display/debug.
   @device_heavy_properties [
@@ -90,7 +90,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
     case fetch_bacnet_object(client, destination, object, read_opts) do
       {:ok, bacnet_object, :rpm} ->
         with {:ok, properties} <- property_list(bacnet_object) do
-          # RPM already fetched values (including heavy props) — show them all.
+          # RPM already fetched values (including heavy props) - show them all.
           results = ObjectsUtility.to_map(bacnet_object)
           result = build_read_result(properties, results, bacnet_object, object)
 
@@ -873,7 +873,7 @@ defmodule BacView.BACnet.Protocol.PropertyReader do
   #
   # Hex mode re-encodes `raw_binary` as colon-hex. Toggle is **octet strings only**,
   # and only when default view differs from colon-hex.
-  # `raw_binary` keeps the original bytes — never UTF-8-repair it.
+  # `raw_binary` keeps the original bytes - never UTF-8-repair it.
   defp binary_presentation(value, bac_type, property)
 
   defp binary_presentation(value, bac_type, property) when is_binary(value) do

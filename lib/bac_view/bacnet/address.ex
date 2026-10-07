@@ -27,8 +27,8 @@ defmodule BacView.BACnet.Address do
   @doc """
   Parses a user-entered destination for the active stack transport.
 
-  * `"ipv4"` — IPv4 host, optional `:port` (default #{@bacnet_port})
-  * `"mstp"` — unicast MS/TP MAC in `0..254` (255 is broadcast)
+  * `"ipv4"` - IPv4 host, optional `:port` (default #{@bacnet_port})
+  * `"mstp"` - unicast MS/TP MAC in `0..254` (255 is broadcast)
   """
   @spec parse_transport_destination(String.t(), String.t()) ::
           {:ok, {:inet.ip_address(), pos_integer()} | 0..254}

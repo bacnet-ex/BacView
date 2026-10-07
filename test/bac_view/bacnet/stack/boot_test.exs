@@ -6,6 +6,7 @@ defmodule BacView.BACnet.Stack.BootTest do
   alias BacView.BACnet.Stack
   alias BacView.BACnet.Stack.Boot
   alias BacView.Settings
+  alias BacView.Test.SerialPortGuard
 
   setup do
     on_exit(fn ->
@@ -38,8 +39,10 @@ defmodule BacView.BACnet.Stack.BootTest do
     parent = self()
 
     _log =
-      capture_log(fn ->
-        send(parent, {:result, Boot.start_runtime()})
+      SerialPortGuard.with_locked_port(fn ->
+        capture_log(fn ->
+          send(parent, {:result, Boot.start_runtime()})
+        end)
       end)
 
     assert_receive {:result, {:error, _result}}
@@ -61,9 +64,11 @@ defmodule BacView.BACnet.Stack.BootTest do
     parent = self()
 
     _log =
-      capture_log(fn ->
-        send(parent, {:first, Boot.start_runtime()})
-        send(parent, {:second, Boot.restart()})
+      SerialPortGuard.with_locked_port(fn ->
+        capture_log(fn ->
+          send(parent, {:first, Boot.start_runtime()})
+          send(parent, {:second, Boot.restart()})
+        end)
       end)
 
     assert_receive {:first, {:error, _first}}

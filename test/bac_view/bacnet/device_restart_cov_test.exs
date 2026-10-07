@@ -239,7 +239,7 @@ defmodule BacView.BACnet.DeviceRestartCovTest do
       ai = %ObjectIdentifier{type: :analog_input, instance: 3}
       gone = %ObjectIdentifier{type: :analog_input, instance: 99}
 
-      # Known device — restart path only refreshes address (no Who-Is).
+      # Known device - restart path only refreshes address (no Who-Is).
       :ets.insert(:bacview_devices, {
         55,
         %{

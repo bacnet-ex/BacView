@@ -103,7 +103,7 @@ defmodule BacView.Text do
     |> Map.update(:label, nil, &sanitize_utf8/1)
     |> Map.update!(:formatted, &sanitize_utf8/1)
     # Nested field values are domain data (e.g. RecipientAddress.address MAC octets).
-    # Never Latin-1-expand them — only presentation strings above are sanitized.
+    # Never Latin-1-expand them - only presentation strings above are sanitized.
     |> Map.update(:fields, [], &sanitize_fields/1)
     |> Map.update(:items, [], &sanitize_items/1)
   end

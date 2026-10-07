@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Create a local Android release keystore + keystore.properties for BacView.
-# For Play Store / production, keep this keystore backed up offline — losing it
+# For Play Store / production, keep this keystore backed up offline - losing it
 # means you cannot update the same applicationId.
 set -euo pipefail
 
@@ -12,7 +12,7 @@ ALIAS="${BACVIEW_ANDROID_KEY_ALIAS:-bacview}"
 VALIDITY_DAYS="${BACVIEW_ANDROID_KEY_VALIDITY_DAYS:-10000}"
 
 if [[ ! -d "$ANDROID_DIR" ]]; then
-  echo "Missing $ANDROID_DIR — run cargo tauri android init first." >&2
+  echo "Missing $ANDROID_DIR - run cargo tauri android init first." >&2
   exit 1
 fi
 

@@ -34,7 +34,7 @@ fn main() {
         // phx.digest writes both file and file.gz; Android's asset merger rejects those pairs.
         strip_gz_files(Path::new("target/rel"));
         strip_gz_files(Path::new("gen/android/app/src/main/assets/rel"));
-        // Process-based Android OTP (erts-*.zip) — no static liberlang link.
+        // Process-based Android OTP (erts-*.zip) - no static liberlang link.
         // Stage *all* ABIs: tauri.conf.json lists every erts-*.zip as a resource, and
         // universal APKs need them even when this cargo invocation is single-ABI.
         stage_android_erts_assets();
@@ -48,7 +48,7 @@ fn main() {
     ensure_erts_zip_placeholders();
 
     // Autogenerate allow-save-file / deny-save-file so the Phoenix webview
-    // (loaded as http://127.0.0.1 — a remote origin) can invoke save_file.
+    // (loaded as http://127.0.0.1 - a remote origin) can invoke save_file.
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .app_manifest(tauri_build::AppManifest::new().commands(&["save_file"])),
@@ -175,7 +175,7 @@ fn stage_android_erts_assets() {
     for abi in ANDROID_ERTS_ABIS {
         let Some(src) = android_erts_zip_src(abi) else {
             println!(
-                "cargo:warning=Android ERTS zip missing for host OTP {major} ABI={abi} — \
+                "cargo:warning=Android ERTS zip missing for host OTP {major} ABI={abi} - \
                  need priv/runtimes/android/otp{major}/erts-{abi}.zip \
                  (./scripts/build_android_otp.sh {major} {abi})"
             );
@@ -206,7 +206,7 @@ fn stage_android_erts_assets() {
 
     if staged == 0 {
         println!(
-            "cargo:warning=no Android ERTS zips staged for host OTP {major} — \
+            "cargo:warning=no Android ERTS zips staged for host OTP {major} - \
              APK first launch will fail. Build with: ./scripts/build_android_otp.sh {major}"
         );
     }
@@ -221,7 +221,7 @@ fn stage_android_erts_assets() {
 }
 
 /// Package ERTS executables as `lib__*.so` under jniLibs so Android 10+ allows exec
-/// (native library dir is executable; app-private data is not — W^X).
+/// (native library dir is executable; app-private data is not - W^X).
 ///
 /// At runtime we symlink `erts-*/bin/{name}` → `nativeLibraryDir/lib__{name}.so`.
 fn stage_erts_helpers_as_jni_libs() {

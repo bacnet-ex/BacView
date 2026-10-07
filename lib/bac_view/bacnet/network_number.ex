@@ -2,7 +2,7 @@ defmodule BacView.BACnet.NetworkNumber do
   @moduledoc """
   Manages local BACnet network number and Network Layer What-Is / Network-Number-Is.
 
-  * Configured `0`: unknown — learn from `Network-Number-Is`, and periodically
+  * Configured `0`: unknown - learn from `Network-Number-Is`, and periodically
     send `What-Is-Network-Number` if none is observed.
   * Configured `1..65534`: answer `What-Is-Network-Number` with
     `Network-Number-Is` after a delay if nobody else responds.

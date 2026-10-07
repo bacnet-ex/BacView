@@ -46,10 +46,10 @@ Covered today: **Recipient**, **CalendarEntry**, **BACnetTimestamp**.
 BeamTypes examples:
 
 ```elixir
-# NameValue — optional Encoding
+# NameValue - optional Encoding
 %{name: :octet_string, value: {:type_list, [struct: Encoding, literal: nil]}}
 
-# SpecialEvent — multi-struct period
+# SpecialEvent - multi-struct period
 %{
   period: {:type_list, [struct: CalendarEntry, struct: ObjectIdentifier]},
   list: ...,
@@ -78,7 +78,7 @@ Covered today: **NameValue** (`value`), **SpecialEvent** (`period`).
 
 ### Union (property- or item-level multi-struct type_list)
 
-The **value itself** is one of several structs — not a field inside a parent CHOICE.
+The **value itself** is one of several structs - not a field inside a parent CHOICE.
 
 BeamTypes example (`EventEnrollment.event_parameters`):
 
@@ -191,7 +191,7 @@ Do **not** hard-code arm lists in `ComplexPropertyEditor` for shapes ChoiceSchem
 ## Adding a new bacstack CHOICE type
 
 1. Ensure the typespec is a **tagged** or **inline** shape above.
-2. Open the write modal / run `ChoiceSchema.analyze(YourStruct)` in `iex` — arms should appear without editor edits.
+2. Open the write modal / run `ChoiceSchema.analyze(YourStruct)` in `iex` - arms should appear without editor edits.
 3. If option ids or labels must match existing UI, add an override.
 4. Add a unit case in `test/bac_view/bacnet/protocol/choice_schema_test.exs` (golden arm ids).
 5. If LiveView paths are new, cover collect + kind switch in `complex_property_editor_test.exs`.

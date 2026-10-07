@@ -43,7 +43,7 @@ defmodule BacView.BACnet.EdeExportTest do
     assert file.content =~ "PROJECT_NAME;TestProject"
     assert file.content =~ "VERSION_OF_REFERENCEFILE;2.0.0"
     assert file.content =~ "AUTHOR_OF_LAST_CHANGE;Tester"
-    assert file.content =~ "AI-Temp;42;AI-Temp;0;3;Room temperature"
+    assert file.content =~ "42_AI-Temp;42;AI-Temp;0;3;Room temperature"
     # object type 0 = analog_input, device instance 42, object instance 3
     assert file.content =~ ";Y;Y;"
     # settable true (priority_array), supports COV true
@@ -88,8 +88,8 @@ defmodule BacView.BACnet.EdeExportTest do
     assert state.filename == "TestProject_StateTexts.csv"
 
     # Both multistate share the same ref; binary gets its own
-    assert ede.content =~ "Mode;10;Mode;19;1"
-    assert ede.content =~ "Door;10;Door;3;2"
+    assert ede.content =~ "10_Mode;10;Mode;19;1"
+    assert ede.content =~ "10_Door;10;Door;3;2"
 
     # state-text-reference column values appear as numbers in object rows
     assert state.content =~ "Off"
@@ -143,13 +143,13 @@ defmodule BacView.BACnet.EdeExportTest do
       |> Enum.reject(&String.contains?(&1, "AUTHOR_"))
       |> Enum.reject(&String.contains?(&1, "VERSION_OF_LAYOUT"))
 
-    av_cells = Enum.find(data_rows, &String.starts_with?(&1, "AV;")) |> String.split(";")
-    ai_cells = Enum.find(data_rows, &String.starts_with?(&1, "AI;")) |> String.split(";")
-    iv_cells = Enum.find(data_rows, &String.starts_with?(&1, "IV;")) |> String.split(";")
-    piv_cells = Enum.find(data_rows, &String.starts_with?(&1, "PIV;")) |> String.split(";")
-    acc_cells = Enum.find(data_rows, &String.starts_with?(&1, "ACC;")) |> String.split(";")
-    pc_cells = Enum.find(data_rows, &String.starts_with?(&1, "PC;")) |> String.split(";")
-    bi_cells = Enum.find(data_rows, &String.starts_with?(&1, "BI;")) |> String.split(";")
+    av_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_AV;")) |> String.split(";")
+    ai_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_AI;")) |> String.split(";")
+    iv_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_IV;")) |> String.split(";")
+    piv_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_PIV;")) |> String.split(";")
+    acc_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_ACC;")) |> String.split(";")
+    pc_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_PC;")) |> String.split(";")
+    bi_cells = Enum.find(data_rows, &String.starts_with?(&1, "1_BI;")) |> String.split(";")
 
     # unit-code is second-to-last standard optional column (index 14)
     assert Enum.at(av_cells, 14) == "62"
@@ -288,8 +288,8 @@ defmodule BacView.BACnet.EdeExportTest do
     ]
 
     assert {:ok, %{files: [file]}} = EdeExport.export_from_scanned(scanned, 7, @meta)
-    assert file.content =~ "analog_input_1;7;analog_input_1;0;1"
-    assert file.content =~ "analog_input_1 (analog_input:2);7;analog_input_1;0;2"
+    assert file.content =~ "7_analog_input_1;7;analog_input_1;0;1"
+    assert file.content =~ "7_analog_input_1 (analog_input:2);7;analog_input_1;0;2"
   end
 
   test "skips unmapped object types" do
@@ -316,7 +316,7 @@ defmodule BacView.BACnet.EdeExportTest do
     ]
 
     assert {:ok, %{files: [file]}} = EdeExport.export_from_scanned(scanned, 1, @meta)
-    assert file.content =~ "AI;1;AI;0;1;;;0.0;50.0"
+    assert file.content =~ "1_AI;1;AI;0;1;;;0.0;50.0"
     assert file.content =~ ";40.0;10.0;"
   end
 
@@ -346,5 +346,52 @@ defmodule BacView.BACnet.EdeExportTest do
              )
 
     assert file.filename == "My_Project_Name_EDE.csv"
+  end
+
+  test "export_from_devices writes every device instance into one EDE file" do
+    groups = [
+      %{
+        device_instance: 10,
+        scanned: [
+          {%ObjectIdentifier{type: :analog_input, instance: 1}, %{object_name: "Temp"}},
+          {%ObjectIdentifier{type: :binary_value, instance: 2},
+           %{object_name: "Fan", inactive_text: "Off", active_text: "On"}}
+        ]
+      },
+      %{
+        device_instance: 20,
+        scanned: [
+          {%ObjectIdentifier{type: :analog_input, instance: 1}, %{object_name: "Temp"}},
+          {%ObjectIdentifier{type: :binary_value, instance: 2},
+           %{object_name: "Fan", inactive_text: "Off", active_text: "On"}}
+        ]
+      }
+    ]
+
+    assert {:ok, %{files: files}} =
+             EdeExport.export_from_devices(
+               groups,
+               Keyword.put(@meta, :include_state_texts, true)
+             )
+
+    ede = Enum.find(files, &String.ends_with?(&1.filename, "_EDE.csv"))
+    state = Enum.find(files, &String.ends_with?(&1.filename, "_StateTexts.csv"))
+
+    assert ede.content =~ "10_Temp;10;Temp;0;1"
+    assert ede.content =~ "20_Temp;20;Temp;0;1"
+    assert ede.content =~ "10_Fan;10;Fan;5;2"
+    assert ede.content =~ "20_Fan;20;Fan;5;2"
+    assert state.content =~ "Off"
+    assert state.content =~ "On"
+  end
+
+  test "export_many rejects a device that is not loaded" do
+    assert {:error, :no_devices} =
+             EdeExport.export_many([],
+               project_name: "P",
+               version: "1.0.0",
+               author: "A",
+               object_types: [:analog_input]
+             )
   end
 end

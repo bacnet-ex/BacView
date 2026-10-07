@@ -354,7 +354,7 @@ defmodule BacView.MixProject do
 
   # Host erts + host-arch NIFs must not ship in the Android Mix overlay; the
   # device uses Android OTP ERTS (beam.smp, erl_child_setup, crypto.so, …).
-  # Also drop host OTP system apps (kernel/stdlib/crypto/…) — replaced on device
+  # Also drop host OTP system apps (kernel/stdlib/crypto/…) - replaced on device
   # from erts-{abi}.zip. Runtime rewrites start_erl.data to the Android erts vsn.
   defp strip_host_erts_for_android(_args) do
     rel = Path.expand("src-tauri/target/rel")
@@ -376,7 +376,7 @@ defmodule BacView.MixProject do
       |> Path.wildcard()
       |> Enum.each(&File.rm/1)
 
-      # Host OTP system apps — Android ERTS zip supplies matching versions.
+      # Host OTP system apps - Android ERTS zip supplies matching versions.
       for app <- android_otp_app_names() do
         rel
         |> Path.join("lib/#{app}-*")

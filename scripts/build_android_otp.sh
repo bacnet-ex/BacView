@@ -187,7 +187,7 @@ mkdir -p "$WORK_DIR" "$OUT_DIR"
 SRC_DIR="$WORK_DIR/src"
 OTP_SRC="$SRC_DIR/otp"
 OPENSSL_SRC="$SRC_DIR/openssl"
-# OpenSSL is ABI-only — share across OTP majors under _build/android_otp/openssl
+# OpenSSL is ABI-only - share across OTP majors under _build/android_otp/openssl
 OPENSSL_SHARED="${OPENSSL_SHARED:-$ROOT/_build/android_otp/openssl}"
 mkdir -p "$SRC_DIR"
 

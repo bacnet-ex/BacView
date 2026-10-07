@@ -4,9 +4,9 @@ defmodule BacView.BACnet.Protocol.BeamTypesCache do
 
   Consumers:
 
-  * `BacView.BACnet.Protocol.ChoiceSchema` — CHOICE analysis
-  * `BacView.BACnet.Protocol.CollectionItemTemplate` — blank struct fields
-  * `BacView.BACnet.Protocol.StructFieldTypes` — enum type for form fields
+  * `BacView.BACnet.Protocol.ChoiceSchema` - CHOICE analysis
+  * `BacView.BACnet.Protocol.CollectionItemTemplate` - blank struct fields
+  * `BacView.BACnet.Protocol.StructFieldTypes` - enum type for form fields
 
   Results are stored in `:persistent_term` per module. Resolution failures yield `%{}`.
   """

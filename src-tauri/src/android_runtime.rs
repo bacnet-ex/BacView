@@ -1,8 +1,8 @@
 //! First-run extraction of Mix release + Android ERTS into app data.
 //!
 //! Assets:
-//! - `app-release.zip` — Mix release (`bin/bacview`, `lib/`, `releases/`) without host erts
-//! - `erts-{abi}.zip` — full Android OTP install (erts + OTP system apps + NIFs)
+//! - `app-release.zip` - Mix release (`bin/bacview`, `lib/`, `releases/`) without host erts
+//! - `erts-{abi}.zip` - full Android OTP install (erts + OTP system apps + NIFs)
 //!
 //! Merge: Mix release base → overlay Android `erts-*` and OTP system apps →
 //! symlink ERTS helpers from `nativeLibraryDir` (W^X) → refresh ERTS_BIN in scripts.
@@ -87,7 +87,7 @@ pub fn ensure_release_extracted(app: &tauri::AppHandle) -> Result<PathBuf, Strin
                 if release_looks_valid(&release_root)
                     && extracted_erts_matches(&release_root, &erts_meta.erts_vsn)
                 {
-                    // nativeLibraryDir can change after reinstall — refresh symlinks.
+                    // nativeLibraryDir can change after reinstall - refresh symlinks.
                     link_erts_helpers_from_native_libs(&release_root)?;
                     println!(
                         "[rust] reusing release at {} (stamp ok, erts-{})",
@@ -253,7 +253,7 @@ fn android_abi() -> &'static str {
         other => {
             eprintln!(
                 "[rust] unknown Android ARCH={other:?} (supported: aarch64→arm64-v8a, \
-                 arm→armeabi-v7a, x86_64→x86_64); defaulting to arm64-v8a — \
+                 arm→armeabi-v7a, x86_64→x86_64); defaulting to arm64-v8a - \
                  expected asset erts-arm64-v8a.zip"
             );
             "arm64-v8a"

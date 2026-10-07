@@ -6,7 +6,7 @@ const FilterMenu = {
     this._positioned = false
 
     this.reposition = (event) => {
-      // Ignore scrolls inside the menu (list scrollbar) — only re-anchor when
+      // Ignore scrolls inside the menu (list scrollbar) - only re-anchor when
       // the page or an ancestor scroller moves the trigger.
       if (event?.type === "scroll" && this.el.contains(event.target)) {
         return

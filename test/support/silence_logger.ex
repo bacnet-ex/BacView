@@ -43,8 +43,8 @@ defmodule BacView.Test.SilenceLogger do
   (e.g. another async test called `silence_for_test/2` on `Client`).
 
   Options:
-  * `:unsilence` — modules whose level overrides are replaced for the duration
-  * `:level` — level to apply while unsilenced (default `:all` so capture_log
+  * `:unsilence` - modules whose level overrides are replaced for the duration
+  * `:level` - level to apply while unsilenced (default `:all` so capture_log
     sees debug and warning even when the app logger level is `:warning`)
   """
   @spec with_logging((-> term()), keyword()) :: term()
@@ -85,7 +85,7 @@ defmodule BacView.Test.SilenceLogger do
   end
 
   # If silencers are still active (refcount > 0), put the module back to :error
-  # instead of deleting the override — otherwise concurrent PropertyReader tests
+  # instead of deleting the override - otherwise concurrent PropertyReader tests
   # lose their silence and Client log tests may briefly see the wrong level on
   # the next with_logging snapshot.
   defp restore_after_unsilence(mod) do

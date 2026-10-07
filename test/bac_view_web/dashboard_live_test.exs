@@ -205,8 +205,10 @@ defmodule BacViewWeb.DashboardLiveScanTest do
              )
 
     _log =
-      capture_log(fn ->
-        assert {:error, _} = Boot.start_runtime()
+      BacView.Test.SerialPortGuard.with_locked_port(fn ->
+        capture_log(fn ->
+          assert {:error, _} = Boot.start_runtime()
+        end)
       end)
 
     refute Stack.running?()
@@ -317,6 +319,101 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     assert saved.apdu_segments_timeout == 2_500
     assert saved.max_segments == 32
     refute has_element?(view, "#stack-settings-confirm-btn")
+  end
+
+  test "scan_on_online checkbox stays in sync across change and save", %{conn: conn} do
+    assert {:ok, _} = BacView.Settings.update(scan_on_online: false, cov_confirmed: true)
+
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{"scan_on_online" => "true"}
+    })
+    |> render_change()
+
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+
+    view
+    |> form("#stack-settings-form")
+    |> render_submit()
+
+    assert BacView.Settings.get().scan_on_online
+    assert BacView.Settings.get().cov_confirmed
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{"scan_on_online" => "false"}
+    })
+    |> render_change()
+
+    refute has_element?(view, "#stack_scan_on_online[checked]")
+
+    view
+    |> form("#stack-settings-form")
+    |> render_submit()
+
+    refute BacView.Settings.get().scan_on_online
+    assert BacView.Settings.get().cov_confirmed
+    refute has_element?(view, "#stack_scan_on_online[checked]")
+
+    render_change(view, "stack_settings_change", %{
+      "stack" => %{"scan_on_online" => ["false", "true"]}
+    })
+
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+
+    view
+    |> form("#stack-settings-form")
+    |> render_submit()
+
+    assert BacView.Settings.get().scan_on_online
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+  end
+
+  test "scan_on_online stays checked through restart and save", %{conn: conn} do
+    assert {:ok, settings} = BacView.Settings.update(scan_on_online: false)
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    port = if settings.ipv4_port == 47_809, do: 47_810, else: 47_809
+
+    view
+    |> form("#stack-settings-form", %{
+      "stack" => %{
+        "scan_on_online" => "true",
+        "ipv4_port" => Integer.to_string(port)
+      }
+    })
+    |> render_change()
+
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+
+    view
+    |> form("#stack-settings-form")
+    |> render_submit()
+
+    assert has_element?(view, "#stack-settings-confirm-btn")
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+
+    render_click(view, "stack_settings_confirm_restart")
+
+    assert BacView.Settings.get().scan_on_online
+    assert BacView.Settings.get().ipv4_port == port
+    assert has_element?(view, "#stack_scan_on_online[checked]")
+
+    html =
+      Enum.reduce_while(1..20, render(view), fn _attempt, html ->
+        if html =~ "BACnet-Stack neu gestartet" or html =~ "Stack-Neustart fehlgeschlagen" do
+          {:halt, html}
+        else
+          Process.sleep(50)
+          {:cont, render(view)}
+        end
+      end)
+
+    assert html =~ "BACnet-Stack neu gestartet" or html =~ "Stack-Neustart fehlgeschlagen"
+    assert has_element?(view, "#stack_scan_on_online[checked]")
   end
 
   test "stack settings save persists scan_on_online", %{conn: conn} do

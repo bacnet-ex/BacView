@@ -148,7 +148,7 @@ or
 
 The Mix release host and the packaged Android ERTS must share the same OTP
 **major** (`27`, `28`, or `29`). Exact patch versions should match,
-but it's not checked —
+but it's not checked -
 on device the runtime rewrites `start_erl.data` and `ERTS_BIN` to
 the Android `erts-*` tree.
 Cross-compile Android trees for the major you develop on:
@@ -166,7 +166,7 @@ Output: `priv/runtimes/android/otp{N}/erts-{abi}.zip`. Requires Android NDK
 minutes per ABI (OpenSSL + OTP).
 
 `mix mobile.prepare_release` **fails** if those zips are missing or the zip’s
-OTP major does not match the host major — run the matching build script first.
+OTP major does not match the host major - run the matching build script first.
 
 **CI**
 
@@ -353,7 +353,7 @@ Some properties are treated as **heavy**: large or expensive lists that can stal
 | Path | Heavy properties |
 |------|------------------|
 | **RPM success** (`read_object` / `:all`) | **Included** in the object property table. Values were already returned in the RPM response, so they are kept for display and debugging (e.g. `object_list`, bindings, COV subscription lists). |
-| **Any individual / fallback path** | **Not read at all** — removed from the candidate list *before* `ReadProperty` is issued. They do not appear in the UI and are not requested from the device. |
+| **Any individual / fallback path** | **Not read at all** - removed from the candidate list *before* `ReadProperty` is issued. They do not appear in the UI and are not requested from the device. |
 
 This applies to:
 
@@ -367,7 +367,7 @@ Examples of heavy identifiers (see `PropertyReader.heavy_properties_for/1` for t
 - **Trend Log / Trend Log Multiple:** `log_buffer` (and `property_list`)
 - **All other object types:** `property_list` only (used only to discover which properties exist; not shown as a row)
 
-**Practical effect:** if a device supports RPM well, open the Device object (or any object loaded via RPM) and heavy lists show up like any other property. If the device forces the individual path, those rows are simply missing — BacView is not hiding a value it already has; it never asked for them, so discovery and object loads stay usable on limited devices.
+**Practical effect:** if a device supports RPM well, open the Device object (or any object loaded via RPM) and heavy lists show up like any other property. If the device forces the individual path, those rows are simply missing - BacView is not hiding a value it already has; it never asked for them, so discovery and object loads stay usable on limited devices.
 
 ### ETS tables
 

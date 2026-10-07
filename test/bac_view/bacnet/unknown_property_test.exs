@@ -112,12 +112,12 @@ defmodule BacView.BACnet.Protocol.UnknownPropertyTest do
     printable = UnknownProperty.present(printable_octet)
     non_printable = UnknownProperty.present(non_printable_octet)
 
-    # Printable: text vs hex — toggle is useful
+    # Printable: text vs hex - toggle is useful
     assert printable.hex_toggle?
     assert printable.formatted == "ABCD"
     assert PropertyFormatter.format_binary_hex(printable.raw_binary) == "41:42:43:44"
 
-    # Already defaulting to hex — toggle would no-op, so hide it
+    # Already defaulting to hex - toggle would no-op, so hide it
     refute non_printable.hex_toggle?
     assert non_printable.formatted == "01:02:00:03"
   end

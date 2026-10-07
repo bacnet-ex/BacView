@@ -564,8 +564,8 @@ defmodule BacView.BACnet.Client do
   Logs a failed BACnet request at `:warning` by default.
 
   Options:
-  * `:level` — `:debug` | `:info` | `:warning` | `:error` (default `:warning`)
-  * `:device_id` / `:remote_device_id` — included in the message when present
+  * `:level` - `:debug` | `:info` | `:warning` | `:error` (default `:warning`)
+  * `:device_id` / `:remote_device_id` - included in the message when present
   """
   @spec log_request_error(
           atom(),

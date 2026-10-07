@@ -17,7 +17,13 @@ defmodule BacViewWeb.Router do
   scope "/", BacViewWeb do
     pipe_through(:browser)
 
-    live_session :default, on_mount: [BacViewWeb.LocaleHook, BacViewWeb.ReadPropertyHook] do
+    live_session :default,
+      on_mount: [
+        BacViewWeb.LocaleHook,
+        BacViewWeb.ReadPropertyHook,
+        BacViewWeb.MultiEdeExportHook,
+        BacViewWeb.PropertyExportHook
+      ] do
       live("/", DashboardLive)
       live("/devices/:device_id", DeviceLive)
       live("/devices/:device_id/objects/:type/:instance", ObjectLive)

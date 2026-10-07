@@ -19,7 +19,7 @@ defmodule BacView.Mobile.AndroidErtsTest do
     end
 
     test "allows host patch skew vs zip (policy documentation)" do
-      # Host 27.2.4 and Android zip 27.3.4.14 share major — prepare_release must allow this.
+      # Host 27.2.4 and Android zip 27.3.4.14 share major - prepare_release must allow this.
       host = "27.2.4"
       zip = "27.3.4.14"
       assert AndroidErts.otp_version_major(host) == AndroidErts.otp_version_major(zip)

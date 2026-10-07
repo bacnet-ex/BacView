@@ -3,11 +3,13 @@ defmodule BacViewWeb.Shortcuts do
 
   import Phoenix.LiveView, only: [push_event: 3]
 
+  alias BacViewWeb.MultiEdeExportLive
+  alias BacViewWeb.PropertyExportLive
   alias BacViewWeb.ReadPropertyLive
 
   @digit_codes ~w(Digit1 Digit2 Digit3 Digit4)
 
-  # Assigns that indicate a modal is open. Popups (alarm/COV badges) are not included —
+  # Assigns that indicate a modal is open. Popups (alarm/COV badges) are not included -
   # only full modals with `.bac-modal-backdrop` that steal typing intent.
   # Order is ESC close priority (first open match wins).
   @blocking_modal_closes [
@@ -17,6 +19,8 @@ defmodule BacViewWeb.Shortcuts do
     {:trend_chart_modal_open, "close_trend_chart_modal"},
     {:cov_chart_modal_open, "close_cov_chart_modal"},
     {:ede_export_modal_open, "close_ede_export_modal"},
+    {:multi_ede_export, "close_multi_ede_export"},
+    {:property_export, "close_property_export"},
     {:device_service_modal, "close_device_service_modal"},
     {:read_property, "close_read_property"},
     {:log_viewer_open, "close_log_viewer"},
@@ -65,9 +69,9 @@ defmodule BacViewWeb.Shortcuts do
   @doc """
   What Escape should do given current assigns.
 
-  * `{:event, name}` — LiveView should `handle_event(name, %{}, socket)`
-  * `:close_shortcuts` — close the shortcuts help overlay
-  * `:none` — no blocking modal open
+  * `{:event, name}` - LiveView should `handle_event(name, %{}, socket)`
+  * `:close_shortcuts` - close the shortcuts help overlay
+  * `:none` - no blocking modal open
   """
   @spec escape_close_action(map()) :: {:event, String.t()} | :close_shortcuts | :none
   def escape_close_action(assigns) when is_map(assigns) do
@@ -93,8 +97,9 @@ defmodule BacViewWeb.Shortcuts do
   `dispatch` is called with `(event_name, socket)` for LiveView close events
   (e.g. `"close_write_property_modal"`) so existing handlers run unchanged.
 
-  Hook-owned modals (ReadProperty) are closed here: the LiveViews dispatch via
-  `handle_event/3` on the view module, which does not run `on_mount` hooks.
+  Hook-owned modals (ReadProperty, multi-device EDE, property export) are closed
+  here: the LiveViews dispatch via `handle_event/3` on the view module, which does
+  not run `on_mount` hooks.
   """
   @spec apply_escape_close(Phoenix.LiveView.Socket.t(), (String.t(),
                                                          Phoenix.LiveView.Socket.t() ->
@@ -104,6 +109,12 @@ defmodule BacViewWeb.Shortcuts do
     case escape_close_action(socket.assigns) do
       {:event, "close_read_property"} ->
         {:noreply, ReadPropertyLive.close(socket)}
+
+      {:event, "close_multi_ede_export"} ->
+        {:noreply, MultiEdeExportLive.close(socket)}
+
+      {:event, "close_property_export"} ->
+        {:noreply, PropertyExportLive.close(socket)}
 
       {:event, event} ->
         dispatch.(event, socket)

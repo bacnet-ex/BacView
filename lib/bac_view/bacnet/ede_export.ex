@@ -37,6 +37,11 @@ defmodule BacView.BACnet.EdeExport do
   # MAJOR.MINOR.PATCH with optional pre-release / build metadata (SemVer 2.0.0)
   @semver_regex ~r/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?$/
 
+  @type device_group :: %{
+          device_instance: non_neg_integer(),
+          scanned: [{ObjectIdentifier.t(), map() | struct()}]
+        }
+
   @doc """
   Exports EDE CSV data for a loaded device.
 
@@ -56,6 +61,23 @@ defmodule BacView.BACnet.EdeExport do
     else
       [] -> {:error, :no_objects}
       {:error, _reason} = err -> err
+    end
+  end
+
+  @doc """
+  Exports one EDE file for several loaded devices.
+
+  Each selected device must be loaded (`Discovery` status `:loaded`). Objects keep
+  their own device instance. Key names stay unique across the whole project.
+  The same options as `export/2` apply to every device.
+  """
+  @spec export_many([integer() | String.t()], keyword()) ::
+          {:ok, %{files: [export_file()]}} | {:error, term()}
+  def export_many(device_ids, opts \\ []) when is_list(device_ids) and is_list(opts) do
+    with {:ok, ids} <- normalize_device_ids(device_ids),
+         {:ok, meta} <- normalize_meta(opts),
+         {:ok, groups} <- load_groups(ids) do
+      export_groups(groups, meta)
     end
   end
 
@@ -107,8 +129,40 @@ defmodule BacView.BACnet.EdeExport do
     end
   end
 
+  @doc """
+  Builds one EDE export from in-memory device groups (tests and `export_many/2`).
+
+  Each group is `%{device_instance: integer, scanned: [{object_id, object}]}`.
+  """
+  @spec export_from_devices([device_group()], keyword() | map()) ::
+          {:ok, %{files: [export_file()]}} | {:error, term()}
+  def export_from_devices(groups, meta) when is_list(groups) do
+    with {:ok, meta} <- normalize_meta(meta) do
+      export_groups(groups, meta)
+    end
+  end
+
+  defp export_groups(groups, meta) do
+    entries =
+      Enum.flat_map(groups, fn
+        %{device_instance: instance, scanned: scanned}
+        when is_integer(instance) and is_list(scanned) ->
+          Enum.map(scanned, fn entry -> {instance, entry} end)
+
+        _other ->
+          []
+      end)
+
+    do_export_entries(entries, meta)
+  end
+
   defp do_export(scanned, device_instance, meta) do
-    with {:ok, project, state_texts} <- build_project(scanned, device_instance, meta),
+    entries = Enum.map(scanned, fn entry -> {device_instance, entry} end)
+    do_export_entries(entries, meta)
+  end
+
+  defp do_export_entries(entries, meta) do
+    with {:ok, project, state_texts} <- build_entries(entries, meta),
          {:ok, ede_csv} <- BACnetEDE.to_binary(project) do
       prefix = filename_prefix(meta.project_name)
 
@@ -152,18 +206,18 @@ defmodule BacView.BACnet.EdeExport do
         ) :: {:ok, Project.t(), StateTexts.t()} | {:error, term()}
   def build_project(scanned, device_instance, meta)
       when is_list(scanned) and is_integer(device_instance) and is_map(meta) do
+    entries = Enum.map(scanned, fn entry -> {device_instance, entry} end)
+    build_entries(entries, meta)
+  end
+
+  defp build_entries(entries, meta) when is_list(entries) and is_map(meta) do
     allowed = MapSet.new(meta.object_types)
 
     {objects, state_texts_map} =
-      scanned
-      |> Enum.filter(fn entry ->
-        case entry_type(entry) do
-          nil -> false
-          type -> MapSet.member?(allowed, type)
-        end
-      end)
+      entries
+      |> included_entries(allowed)
       |> Enum.reduce({%{}, %{}, MapSet.new(), 1}, fn entry, acc ->
-        map_scanned_entry(entry, device_instance, meta.include_state_texts, acc)
+        map_scanned_entry(entry, meta.include_state_texts, acc)
       end)
       |> then(fn {objects, texts, _used_keys, _next_ref} -> {objects, texts} end)
 
@@ -268,6 +322,81 @@ defmodule BacView.BACnet.EdeExport do
 
   defp parse_object_type(_type), do: nil
 
+  defp included_entries(entries, allowed) do
+    Enum.flat_map(entries, fn
+      {device_instance, entry} = wrapped when is_integer(device_instance) ->
+        case entry_type(entry) do
+          nil -> []
+          type -> if(MapSet.member?(allowed, type), do: [wrapped], else: [])
+        end
+
+      _other ->
+        []
+    end)
+  end
+
+  defp normalize_device_ids(device_ids) do
+    ids =
+      device_ids
+      |> Enum.map(&normalize_device_id/1)
+      |> Enum.reject(&is_nil/1)
+      |> Enum.uniq()
+
+    if ids == [] do
+      {:error, :no_devices}
+    else
+      {:ok, ids}
+    end
+  end
+
+  defp normalize_device_id(id) when is_integer(id) and id >= 0, do: id
+
+  defp normalize_device_id(id) when is_binary(id) do
+    case Integer.parse(String.trim(id)) do
+      {int, ""} when int >= 0 -> int
+      _other -> nil
+    end
+  end
+
+  defp normalize_device_id(_id), do: nil
+
+  defp load_groups(ids) do
+    result =
+      Enum.reduce_while(ids, {:ok, []}, fn id, {:ok, acc} ->
+        case device_group(id) do
+          {:ok, group} -> {:cont, {:ok, [group | acc]}}
+          {:error, _reason} = err -> {:halt, err}
+        end
+      end)
+
+    case result do
+      {:ok, groups} -> {:ok, Enum.reverse(groups)}
+      {:error, _reason} = err -> err
+    end
+  end
+
+  defp device_group(device_id) do
+    case Discovery.get_device(device_id) do
+      {:ok, %{status: :loaded, instance: instance}} when is_integer(instance) ->
+        {:ok, %{device_instance: instance, scanned: scanned_objects(device_id)}}
+
+      {:ok, %{status: :loaded, object: %ObjectIdentifier{instance: instance}}}
+      when is_integer(instance) ->
+        {:ok, %{device_instance: instance, scanned: scanned_objects(device_id)}}
+
+      _other ->
+        {:error, :device_not_loaded}
+    end
+  rescue
+    ArgumentError -> {:error, :device_not_loaded}
+  end
+
+  defp scanned_objects(device_id) do
+    DeviceSession.scanned(device_id)
+  catch
+    :exit, _reason -> []
+  end
+
   defp entry_type({%ObjectIdentifier{type: type}, _obj}), do: type
   defp entry_type(%{type: type}), do: type
   defp entry_type(%{object_id: %ObjectIdentifier{type: type}}), do: type
@@ -289,19 +418,18 @@ defmodule BacView.BACnet.EdeExport do
   end
 
   defp map_scanned_entry(
-         {%ObjectIdentifier{} = oid, obj},
-         device_instance,
+         {device_instance, {%ObjectIdentifier{} = oid, obj}},
          include_state_texts,
          {objects, texts, used_keys, next_ref}
        )
-       when is_map(obj) do
+       when is_integer(device_instance) and is_map(obj) do
     case object_type_code(oid.type) do
       nil ->
         {objects, texts, used_keys, next_ref}
 
       type_code ->
         base_name = object_name(obj, oid)
-        keyname = unique_keyname(base_name, oid, used_keys)
+        keyname = unique_keyname(base_name, device_instance, oid, used_keys)
 
         {state_text_ref, texts, next_ref} =
           maybe_state_text(obj, oid, include_state_texts, texts, next_ref)
@@ -340,7 +468,7 @@ defmodule BacView.BACnet.EdeExport do
     end
   end
 
-  defp map_scanned_entry(_entry, _device_instance, _include, acc), do: acc
+  defp map_scanned_entry(_entry, _include, acc), do: acc
 
   defp object_type_code(type) when is_integer(type) and type >= 0, do: type
 
@@ -369,15 +497,16 @@ defmodule BacView.BACnet.EdeExport do
     name || "#{type}_#{instance}"
   end
 
-  defp unique_keyname(base_name, %ObjectIdentifier{type: type, instance: instance}, used_keys) do
-    if MapSet.member?(used_keys, base_name) do
-      candidate = "#{base_name} (#{type}:#{instance})"
+  defp unique_keyname(base_name, device_instance, %ObjectIdentifier{} = oid, used_keys) do
+    prefixed = "#{device_instance}_#{base_name}"
+    local = "#{prefixed} (#{oid.type}:#{oid.instance})"
+    with_device = "#{prefixed} (#{device_instance}/#{oid.type}:#{oid.instance})"
 
-      if MapSet.member?(used_keys, candidate),
-        do: "#{candidate}-#{System.unique_integer([:positive])}",
-        else: candidate
-    else
-      base_name
+    cond do
+      not MapSet.member?(used_keys, prefixed) -> prefixed
+      not MapSet.member?(used_keys, local) -> local
+      not MapSet.member?(used_keys, with_device) -> with_device
+      true -> "#{with_device}-#{System.unique_integer([:positive])}"
     end
   end
 

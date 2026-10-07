@@ -97,7 +97,7 @@ android {
                 println(
                     "WARNING: No release keystore configured " +
                         "(src-tauri/gen/android/keystore.properties or BACVIEW_ANDROID_*). " +
-                        "Signing release with the debug key — fine for emulator/sideload, " +
+                        "Signing release with the debug key - fine for emulator/sideload, " +
                         "not for Play Store. See keystore.properties.example."
                 )
                 signingConfigs.getByName("debug")

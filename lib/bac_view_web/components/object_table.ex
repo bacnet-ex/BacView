@@ -646,7 +646,7 @@ defmodule BacViewWeb.ObjectTable do
 
     if writable? do
       write_hint = t(locale, locale_version, "Klicken zum Schreiben")
-      "#{label} — #{write_hint}"
+      "#{label} - #{write_hint}"
     else
       label
     end

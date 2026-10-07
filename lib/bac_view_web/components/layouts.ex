@@ -6,6 +6,8 @@ defmodule BacViewWeb.Layouts do
   use BacViewWeb, :html
 
   alias BacView.BuildInfo
+  alias BacViewWeb.EdeExportModal
+  alias BacViewWeb.PropertyExportModal
   alias BacViewWeb.ReadPropertyModal
 
   # Embed all files in layouts/* within this module.
@@ -35,6 +37,8 @@ defmodule BacViewWeb.Layouts do
   attr(:show_shortcuts, :boolean, default: false)
   attr(:shortcuts_context, :atom, default: :dashboard)
   attr(:read_property, :map, default: nil)
+  attr(:multi_ede_export, :map, default: nil)
+  attr(:property_export, :map, default: nil)
 
   slot(:inner_block, required: true)
   slot(:topbar_end)
@@ -64,6 +68,26 @@ defmodule BacViewWeb.Layouts do
 
         <div class="flex items-center gap-2 overflow-visible">
           {render_slot(@topbar_end)}
+          <button
+            type="button"
+            id="open-multi-ede-export-btn"
+            phx-click="open_multi_ede_export"
+            class="bac-btn bac-btn-ghost bac-btn-xs"
+            title={t(@locale, @locale_version, "EDE für mehrere Geräte")}
+          >
+            <.icon name="hero-arrow-down-tray" class="size-3.5" />
+            <span class="hidden sm:inline">{t(@locale, @locale_version, "EDE exportieren")}</span>
+          </button>
+          <button
+            type="button"
+            id="open-property-export-btn"
+            phx-click="open_property_export"
+            class="bac-btn bac-btn-ghost bac-btn-xs"
+            title={t(@locale, @locale_version, "Eigenschaften exportieren")}
+          >
+            <.icon name="hero-table-cells" class="size-3.5" />
+            <span class="hidden sm:inline">{t(@locale, @locale_version, "Eigenschaften exportieren")}</span>
+          </button>
           <button
             type="button"
             id="open-read-property-btn"
@@ -116,6 +140,34 @@ defmodule BacViewWeb.Layouts do
         locale={@locale}
         locale_version={@locale_version}
       />
+      <%= if @multi_ede_export do %>
+        <EdeExportModal.modal
+          form={@multi_ede_export.form}
+          available_types={@multi_ede_export.available_types}
+          devices={@multi_ede_export.devices}
+          show_devices={true}
+          id_prefix="multi-ede-export"
+          close_event="close_multi_ede_export"
+          change_event="validate_multi_ede_export"
+          submit_event="export_multi_ede"
+          select_all_types_event="multi_ede_export_select_all_types"
+          select_default_types_event="multi_ede_export_select_default_types"
+          select_all_devices_event="multi_ede_export_select_all_devices"
+          select_no_devices_event="multi_ede_export_select_no_devices"
+          locale={@locale}
+          locale_version={@locale_version}
+        />
+      <% end %>
+      <%= if @property_export do %>
+        <PropertyExportModal.modal
+          form={@property_export.form}
+          devices={@property_export.devices}
+          objects={@property_export.objects}
+          available_properties={@property_export.available_properties}
+          locale={@locale}
+          locale_version={@locale_version}
+        />
+      <% end %>
       </div>
 
       <.flash_group flash={@flash} locale={@locale} locale_version={@locale_version} />

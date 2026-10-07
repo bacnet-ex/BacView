@@ -48,7 +48,7 @@ There is **no user auth / `current_scope`** in this app. Do not invent scope plu
 
 - **Pipe chains must start with a raw value**, not a function call result left in the pipe mid-expression (bind first when needed).
 - **`cond`**: needs at least two real branches besides `true`. For a single condition use `if`/`else`.
-- **List growth**: `list ++ [item]` is fine as a **one-off** (not inside a loop / reduce / recursive path). For a deliberate one-off append that Credo flags, disable the check on the preceding line, e.g. `# credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem`. When building many items, **do not** reverse on every append (`reverse ++ [item]` / reverse-take-reverse each time) — that is also O(n²). Prefer:
+- **List growth**: `list ++ [item]` is fine as a **one-off** (not inside a loop / reduce / recursive path). For a deliberate one-off append that Credo flags, disable the check on the preceding line, e.g. `# credo:disable-for-next-line Credo.Check.Refactor.AppendSingleItem`. When building many items, **do not** reverse on every append (`reverse ++ [item]` / reverse-take-reverse each time) - that is also O(n²). Prefer:
   - prepend with `[item | acc]` and **a single** `Enum.reverse/1` at the end when order matters, or
   - `:queue` (or similar) when you need efficient push/pop at both ends / a bounded ring buffer.
 - **`alias` groups**: keep aliases **alphabetically ordered** within each group (Credo will fail otherwise).

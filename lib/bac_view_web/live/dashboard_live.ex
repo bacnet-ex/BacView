@@ -77,10 +77,15 @@ defmodule BacViewWeb.DashboardLive do
 
   @impl true
   def handle_event("stack_settings_change", %{"stack" => params}, socket) do
-    form_values = Map.merge(stack_form_values(socket.assigns.stack_form), params)
+    form_values = merge_stack_form_params(socket.assigns.stack_form, params)
 
     {:noreply,
-     refresh_stack_interfaces(socket, form_values["transport"], form_values["interface"])}
+     refresh_stack_interfaces(
+       socket,
+       form_values["transport"],
+       form_values["interface"],
+       form_values
+     )}
   end
 
   @impl true
@@ -538,6 +543,8 @@ defmodule BacViewWeb.DashboardLive do
       show_shortcuts={@show_shortcuts}
       shortcuts_context={:dashboard}
       read_property={@read_property}
+      multi_ede_export={@multi_ede_export}
+      property_export={@property_export}
     >
       <:topbar_end>
         <%= for _ <- [@locale_version] do %>
@@ -842,15 +849,15 @@ defmodule BacViewWeb.DashboardLive do
   defp assign_stack_settings(socket, settings) do
     socket
     |> assign(:stack_settings, settings)
-    |> refresh_stack_interfaces(settings.transport, settings.interface)
+    |> refresh_stack_interfaces(
+      settings.transport,
+      settings.interface,
+      stack_settings_to_form(settings)
+    )
   end
 
-  defp refresh_stack_interfaces(socket, transport \\ nil, interface \\ nil) do
-    form_values =
-      case socket.assigns[:stack_form] do
-        %Phoenix.HTML.Form{} = form -> stack_form_values(form)
-        _socket -> stack_settings_to_form(socket.assigns.stack_settings)
-      end
+  defp refresh_stack_interfaces(socket, transport \\ nil, interface \\ nil, overrides \\ nil) do
+    form_values = stack_form_overrides(socket, overrides)
 
     transport = transport || form_values["transport"] || socket.assigns.stack_settings.transport
     interface = if is_nil(interface), do: form_values["interface"], else: interface
@@ -913,6 +920,40 @@ defmodule BacViewWeb.DashboardLive do
       "mstp_local_address" => Integer.to_string(settings.mstp_local_address),
       "mstp_baud_rate" => mstp_baud_rate_form_value(settings.mstp_baud_rate)
     }
+  end
+
+  defp stack_form_overrides(_socket, overrides) when is_map(overrides), do: overrides
+
+  defp stack_form_overrides(socket, _overrides) do
+    case socket.assigns[:stack_form] do
+      %Phoenix.HTML.Form{} = form -> stack_form_values(form)
+      _missing_form -> stack_settings_to_form(socket.assigns.stack_settings)
+    end
+  end
+
+  # Checkboxes submit a hidden "false" plus "true" when checked. Keep a single
+  # "true"/"false" so the re-render does not drop the user's click.
+  defp merge_stack_form_params(%Phoenix.HTML.Form{} = form, params) do
+    values = stack_form_values(form)
+
+    params
+    |> Map.drop(["_target"])
+    |> Enum.reduce(values, fn
+      {"_unused_" <> _field, _value}, acc ->
+        acc
+
+      {key, value}, acc when is_map_key(values, key) ->
+        Map.put(acc, key, value)
+
+      {_key, _value}, acc ->
+        acc
+    end)
+    |> Map.update!("cov_confirmed", &checkbox_form_value/1)
+    |> Map.update!("scan_on_online", &checkbox_form_value/1)
+  end
+
+  defp checkbox_form_value(value) do
+    if form_checkbox?(value), do: "true", else: "false"
   end
 
   defp stack_form_values(%Phoenix.HTML.Form{} = form) do
@@ -1023,7 +1064,7 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   defp form_checkbox?(value) when value in [true, "true", "on"], do: true
-  defp form_checkbox?(["false", "true"]), do: true
+  defp form_checkbox?(values) when is_list(values), do: Enum.any?(values, &form_checkbox?/1)
   defp form_checkbox?(_value), do: false
 
   defp cov_increment_form_value(nil), do: ""

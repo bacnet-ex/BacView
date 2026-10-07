@@ -860,14 +860,11 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp start_online_scan(device_id, mode) when mode in [:load, :reload] do
+    # Detached from the Who-Is task and from Discovery. `timeout: :infinity`
+    # because the session does not reply until the device scan finishes, which
+    # can outlast the interactive load cap.
     Task.start(fn ->
-      result =
-        case mode do
-          :load -> DeviceSession.load(device_id)
-          :reload -> DeviceSession.reload(device_id)
-        end
-
-      case result do
+      case online_scan_result(device_id, mode) do
         {:ok, _loaded} ->
           Logger.info("Scanned device #{device_id} as it came online (#{mode})")
 
@@ -879,6 +876,15 @@ defmodule BacView.BACnet.Discovery do
     end)
 
     :ok
+  end
+
+  defp online_scan_result(device_id, mode) when mode in [:load, :reload] do
+    case mode do
+      :load -> DeviceSession.load(device_id, timeout: :infinity)
+      :reload -> DeviceSession.reload(device_id, timeout: :infinity)
+    end
+  catch
+    :exit, reason -> {:error, {:exit, reason}}
   end
 
   defp new_discovered_device(incoming) do

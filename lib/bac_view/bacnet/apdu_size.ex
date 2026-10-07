@@ -4,7 +4,7 @@ defmodule BacView.BACnet.ApduSize do
 
   * **Settings** store a raw length in **50..1476**.
   * **`:max_apdu`** (ConfirmedServiceRequest encode) must be a BACnet constant
-    (`50 | 128 | 206 | 480 | 1024 | 1476`) — snap to the largest constant **≤**
+    (`50 | 128 | 206 | 480 | 1024 | 1476`) - snap to the largest constant **≤**
     the effective raw size.
   * **`:max_apdu_length`** (`Client.send` / segmentation) uses the **raw**
     effective size `min(local, remote)` without snapping. The peer can accept
@@ -94,8 +94,8 @@ defmodule BacView.BACnet.ApduSize do
   @doc """
   Keyword opts for bacstack:
 
-  * `:max_apdu` — snapped constant for service encode
-  * `:max_apdu_length` — raw effective length for `Client.send` / segments
+  * `:max_apdu` - snapped constant for service encode
+  * `:max_apdu_length` - raw effective length for `Client.send` / segments
   """
   @spec to_opts(pos_integer() | nil | map()) :: keyword()
   def to_opts(remote \\ nil) do

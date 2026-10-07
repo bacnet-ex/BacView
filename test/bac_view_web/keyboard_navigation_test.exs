@@ -161,6 +161,12 @@ defmodule BacViewWeb.KeyboardNavigationTest do
     assert Shortcuts.escape_close_action(%{read_property: %{busy: false}}) ==
              {:event, "close_read_property"}
 
+    assert Shortcuts.escape_close_action(%{multi_ede_export: %{form: %{}}}) ==
+             {:event, "close_multi_ede_export"}
+
+    assert Shortcuts.escape_close_action(%{property_export: %{form: %{}}}) ==
+             {:event, "close_property_export"}
+
     assert Shortcuts.escape_close_action(%{show_shortcuts: true}) == :close_shortcuts
     assert Shortcuts.escape_close_action(%{}) == :none
   end
@@ -191,6 +197,34 @@ defmodule BacViewWeb.KeyboardNavigationTest do
              end)
 
     assert closed.assigns.read_property == nil
+  end
+
+  test "apply_escape_close closes the multi-device EDE modal without dispatch" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> Phoenix.Component.assign(:multi_ede_export, %{form: %{}})
+      |> Phoenix.Component.assign(:show_shortcuts, false)
+
+    assert {:noreply, closed} =
+             Shortcuts.apply_escape_close(socket, fn _event, _sock ->
+               flunk("hook-owned modal must not dispatch to LiveView handle_event/3")
+             end)
+
+    assert closed.assigns.multi_ede_export == nil
+  end
+
+  test "apply_escape_close closes the property export modal without dispatch" do
+    socket =
+      %Phoenix.LiveView.Socket{}
+      |> Phoenix.Component.assign(:property_export, %{form: %{}})
+      |> Phoenix.Component.assign(:show_shortcuts, false)
+
+    assert {:noreply, closed} =
+             Shortcuts.apply_escape_close(socket, fn _event, _sock ->
+               flunk("hook-owned modal must not dispatch to LiveView handle_event/3")
+             end)
+
+    assert closed.assigns.property_export == nil
   end
 
   test "apply_escape_close closes shortcuts help without dispatch" do

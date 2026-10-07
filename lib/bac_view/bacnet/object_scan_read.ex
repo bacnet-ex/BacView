@@ -7,7 +7,7 @@ defmodule BacView.BACnet.ObjectScanRead do
   delegated to `PropertyReader.read_properties_map/4`.
 
   Cast/validation failures (`invalid_property_value`, `missing_optional_property`,
-  etc.) are **not** silently recovered here — they surface as scan errors so the
+  etc.) are **not** silently recovered here - they surface as scan errors so the
   UI can list them (and offer skip-mode retry when recoverable).
   """
 

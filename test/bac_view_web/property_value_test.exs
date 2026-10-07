@@ -87,7 +87,7 @@ defmodule BacViewWeb.PropertyValueTest do
     assert html =~ "1 Einträge"
     assert html =~ "[1] 2 Felder"
     assert html =~ ~s(id="bac-collapsible-row--array-item-1")
-    # Item collapsible opens fields directly — no intermediate "2 Felder" struct wrap.
+    # Item collapsible opens fields directly - no intermediate "2 Felder" struct wrap.
     refute html =~ ~s(id="bac-collapsible-row--struct")
     assert html =~ "Recipient"
     assert html =~ "Process Id"
@@ -137,7 +137,7 @@ defmodule BacViewWeb.PropertyValueTest do
     assert html =~ "1 Felder"
     assert html =~ ~s(id="bac-collapsible-row-recipient_list-field-recipient")
     assert html =~ "Recipient: 2 Felder"
-    # Nested field opens its fields directly — no second "2 Felder" struct wrap.
+    # Nested field opens its fields directly - no second "2 Felder" struct wrap.
     refute html =~ ~s(id="bac-collapsible-row-recipient_list-struct-")
     assert html =~ "Network"
     assert html =~ "Address"

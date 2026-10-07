@@ -1,5 +1,5 @@
 defmodule BacView.BACnet.DeviceSessionSupervisorTest do
-  # stop_all/0 touches the global DeviceSession supervisor — keep serial.
+  # stop_all/0 touches the global DeviceSession supervisor - keep serial.
   use ExUnit.Case, async: false
 
   alias BacView.BACnet.DeviceSessionSupervisor
