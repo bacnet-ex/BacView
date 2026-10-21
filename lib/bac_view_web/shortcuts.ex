@@ -16,6 +16,7 @@ defmodule BacViewWeb.Shortcuts do
     {:write_property_modal, "close_write_property_modal"},
     {:write_modal, "close_write_modal"},
     {:reset_priority_modal, "close_reset_priority_modal"},
+    {:bulk_write_property, "close_bulk_write_property"},
     {:trend_chart_modal_open, "close_trend_chart_modal"},
     {:cov_chart_modal_open, "close_cov_chart_modal"},
     {:ede_export_modal_open, "close_ede_export_modal"},

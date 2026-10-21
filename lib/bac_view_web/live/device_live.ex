@@ -26,6 +26,8 @@ defmodule BacViewWeb.DeviceLive do
   alias BacViewWeb.ActiveCovSubscriptionsAssigns
   alias BacViewWeb.ActiveCovSubscriptionsPopup
   alias BacViewWeb.AlarmsPanel
+  alias BacViewWeb.BulkWritePropertyLive
+  alias BacViewWeb.BulkWritePropertyModal
   alias BacViewWeb.CovNotificationChartLive
   alias BacViewWeb.CovNotificationChartModal
   alias BacViewWeb.DeviceLoadProgress
@@ -115,6 +117,7 @@ defmodule BacViewWeb.DeviceLive do
          |> assign(:bulk_priority_resetting, false)
          |> assign(:bulk_priority_reset_progress, %{done: 0, total: 0})
          |> assign(:reset_priority_modal, nil)
+         |> assign(:bulk_write_property, nil)
          |> assign(:alarm_view, "active_alarms")
          |> assign(:events, [])
          |> assign(:notifications, [])
@@ -453,6 +456,16 @@ defmodule BacViewWeb.DeviceLive do
      |> assign(:reset_priority_modal, nil)
      |> refresh_active_alarm_objects()
      |> put_flash(:info, priority_reset_flash(result))}
+  end
+
+  @impl true
+  def handle_info({:bulk_property_write_row, update}, socket) when is_map(update) do
+    {:noreply, BulkWritePropertyLive.apply_row(socket, update)}
+  end
+
+  @impl true
+  def handle_info({:bulk_property_write_done, result}, socket) when is_map(result) do
+    {:noreply, BulkWritePropertyLive.finish(socket)}
   end
 
   @impl true
@@ -1085,6 +1098,17 @@ defmodule BacViewWeb.DeviceLive do
      socket
      |> assign(:selected_subscription_keys, MapSet.new())
      |> start_cov_bulk(:unsubscribe, targets, action: :unsubscribe_selected)}
+  end
+
+  @impl true
+  def handle_event(event, params, socket)
+      when event in [
+             "open_bulk_write_property",
+             "close_bulk_write_property",
+             "change_bulk_write_property",
+             "submit_bulk_write_property"
+           ] do
+    BulkWritePropertyLive.handle_event(event, params, socket)
   end
 
   @impl true
@@ -2673,6 +2697,13 @@ defmodule BacViewWeb.DeviceLive do
     )
   end
 
+  defp bulk_selection_busy?(priority_resetting, subscribing, modal) do
+    priority_resetting || subscribing || bulk_write_busy?(modal)
+  end
+
+  defp bulk_write_busy?(%{busy: true}), do: true
+  defp bulk_write_busy?(_modal), do: false
+
   defp commandable_selected_objects(socket) do
     selected = socket.assigns.selected_object_keys
 
@@ -3356,7 +3387,13 @@ defmodule BacViewWeb.DeviceLive do
               }
               count={MapSet.size(@selected_object_keys)}
               write_priority={@write_priority}
-              bulk_resetting={@bulk_priority_resetting || @bulk_subscribing}
+              bulk_resetting={
+                bulk_selection_busy?(
+                  @bulk_priority_resetting,
+                  @bulk_subscribing,
+                  @bulk_write_property
+                )
+              }
               locale={@locale}
               locale_version={@locale_version}
             />
@@ -3483,6 +3520,13 @@ defmodule BacViewWeb.DeviceLive do
         :if={@reset_priority_modal}
         modal={@reset_priority_modal}
         busy={@bulk_priority_resetting}
+        locale={@locale}
+        locale_version={@locale_version}
+      />
+
+      <BulkWritePropertyModal.modal
+        :if={@bulk_write_property}
+        modal={@bulk_write_property}
         locale={@locale}
         locale_version={@locale_version}
       />

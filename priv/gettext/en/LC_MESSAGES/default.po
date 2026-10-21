@@ -36,6 +36,9 @@ msgstr "%{count} notification classes enrolled."
 msgid "%{count} Meldungsklassen noch eingetragen."
 msgstr "%{count} notification classes still enrolled."
 
+msgid "%{count} Objekte"
+msgstr "%{count} objects"
+
 msgid "%{count} Objekte erfolgreich nachgelesen (%{mode})."
 msgstr "%{count} objects re-read successfully (%{mode})."
 
@@ -74,6 +77,9 @@ msgstr "%{count} skipped"
 
 msgid "%{done} / %{total}"
 msgstr "%{done} / %{total}"
+
+msgid "%{ok} geschrieben, %{failed} fehlgeschlagen."
+msgstr "%{ok} written, %{failed} failed."
 
 msgid "%{sec}s"
 msgstr "%{sec}s"
@@ -378,6 +384,9 @@ msgstr "Edit"
 msgid "Befehlsfehler"
 msgstr "Command error"
 
+msgid "Bereit"
+msgstr "Ready"
+
 msgid "Beschreibung"
 msgstr "Description"
 
@@ -413,6 +422,9 @@ msgstr "Please choose device ID or address."
 
 msgid "Bitte eine Adresse angeben."
 msgstr "Please enter an address."
+
+msgid "Bitte eine Eigenschaft wählen."
+msgstr "Select a property."
 
 msgid "Bitte eine Geräte-ID angeben."
 msgstr "Please enter a device ID."
@@ -582,6 +594,9 @@ msgstr "The request contains invalid parameters."
 msgid "Die Anfrage war für das Gerät zu gross."
 msgstr "The request was too large for the device."
 
+msgid "Die Auswahl hat keine gemeinsame schreibbare Eigenschaft."
+msgstr "The selection has no shared writable property."
+
 msgid "Die Eigenschaft ist dem Gerät nicht bekannt (%{property})."
 msgstr "The property is unknown to the device (%{property})."
 
@@ -602,6 +617,9 @@ msgstr "Service error"
 
 msgid "Diese Ebene und alle Unterebenen ein-/ausklappen"
 msgstr "Expand/collapse this level and all nested levels"
+
+msgid "Diese Eigenschaft kann nicht als Text geschrieben werden."
+msgstr "This property cannot be written as text."
 
 msgid "Diese Eigenschaft unterstützt keine COV-Benachrichtigungen."
 msgstr "This property does not support COV notifications."
@@ -825,6 +843,9 @@ msgstr "Also creates a StateTexts CSV and links binary/multistate objects."
 msgid "Exportieren"
 msgstr "Export"
 
+msgid "Fehler"
+msgstr "Error"
+
 msgid "Fehlerprotokoll (%{count})"
 msgstr "Error log (%{count})"
 
@@ -846,6 +867,9 @@ msgstr "Format"
 msgid "Freitag"
 msgstr "Friday"
 
+msgid "Für Present Value setzt null den Prioritäts-Slot zurück."
+msgstr "For present value, null relinquishes the priority slot."
+
 msgid "Ganzzahl ≥ 0"
 msgstr "Integer ≥ 0"
 
@@ -854,6 +878,9 @@ msgstr "Loaded"
 
 msgid "Gelesen: %{size} Bytes"
 msgstr "Read: %{size} bytes"
+
+msgid "Gemeinsame Eigenschaften der ausgewählten Objekttypen."
+msgstr "Properties shared by the selected object types."
 
 msgid "Gerät %{id}"
 msgstr "Device %{id}"
@@ -959,6 +986,9 @@ msgstr "Device scan completed."
 
 msgid "Gerätescan gestartet."
 msgstr "Device scan started."
+
+msgid "Geschrieben"
+msgstr "Written"
 
 msgid "Geschriebener Wert weicht vom gelesenen Present Value ab: %{value}"
 msgstr "Written value differs from the read present value: %{value}"
@@ -1256,6 +1286,9 @@ msgstr "Maximum segment count for requests, segmentation, and the segments store
 
 msgid "Mehr als 64"
 msgstr "More than 64"
+
+msgid "Mehrauswahl"
+msgstr "Multi-selection"
 
 msgid "Meldung"
 msgstr "Message"
@@ -1620,6 +1653,9 @@ msgstr "Write OK, but read-back failed: %{detail}"
 msgid "Schreiben fehlgeschlagen: %{detail}"
 msgstr "Write failed: %{detail}"
 
+msgid "Schreiben…"
+msgstr "Writing…"
+
 msgid "Schreibgeschützt"
 msgstr "Read-only"
 
@@ -1980,6 +2016,9 @@ msgstr "Waiting for BACnet response…"
 msgid "Warte auf BBMD"
 msgstr "Waiting for BBMD"
 
+msgid "Wartet"
+msgstr "Waiting"
+
 msgid "Wartezeit auf bestätigte Antworten. Wird auch für die Who-Is-Sonde verwendet."
 msgstr "Wait time for confirmed responses. Also used for the Who-Is probe."
 
@@ -2006,6 +2045,9 @@ msgstr "End restore"
 
 msgid "Wiederherstellung starten"
 msgstr "Start restore"
+
+msgid "Wird bei commandable Objekten mitgeschrieben."
+msgstr "Included for commandable objects."
 
 msgid "Wird geladen"
 msgstr "Loading"
@@ -2120,6 +2162,9 @@ msgstr "active"
 
 msgid "close"
 msgstr "close"
+
+msgid "erwartet Aufzählungswert"
+msgstr "expected an enumeration value"
 
 msgid "erwartet Bitstring (0/1)"
 msgstr "expected bitstring (0/1)"

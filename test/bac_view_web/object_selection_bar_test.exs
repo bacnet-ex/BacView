@@ -22,6 +22,9 @@ defmodule BacViewWeb.ObjectSelectionBarTest do
     assert html =~ "phx-click=\"open_reset_priority_confirm\""
     assert html =~ "phx-click=\"open_reset_priority_choose\""
     assert html =~ "phx-click=\"subscribe_selected_cov\""
+    assert html =~ ~s/id="open-bulk-write-property"/
+    assert html =~ "phx-click=\"open_bulk_write_property\""
+    assert html =~ "Eigenschaft schreiben"
     assert html =~ "Priorität 8 zurücksetzen"
     assert html =~ "Andere Priorität"
     assert html =~ "bac-btn-split-start"
@@ -54,6 +57,7 @@ defmodule BacViewWeb.ObjectSelectionBarTest do
 
     assert html =~ ~r/id="reset-selected-priority"[^>]*disabled/
     assert html =~ ~r/id="reset-selected-priority-other"[^>]*disabled/
+    assert html =~ ~r/id="open-bulk-write-property"[^>]*disabled/
   end
 
   test "cov_present_value_keys keeps objects with present_value and skips the rest" do

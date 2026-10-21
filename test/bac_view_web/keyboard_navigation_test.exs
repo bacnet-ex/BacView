@@ -116,6 +116,7 @@ defmodule BacViewWeb.KeyboardNavigationTest do
     assert Shortcuts.blocking_modal_open?(%{write_property_modal: %{property: :present_value}})
     assert Shortcuts.blocking_modal_open?(%{write_modal: %{type: :analog_value}})
     assert Shortcuts.blocking_modal_open?(%{reset_priority_modal: %{mode: :confirm, priority: 8}})
+    assert Shortcuts.blocking_modal_open?(%{bulk_write_property: %{busy: false}})
     assert Shortcuts.blocking_modal_open?(%{show_shortcuts: true})
     assert Shortcuts.blocking_modal_open?(%{log_viewer_open: true})
     assert Shortcuts.blocking_modal_open?(%{read_property: %{busy: false}})
@@ -155,6 +156,9 @@ defmodule BacViewWeb.KeyboardNavigationTest do
 
     assert Shortcuts.escape_close_action(%{write_modal: %{type: :analog_value}}) ==
              {:event, "close_write_modal"}
+
+    assert Shortcuts.escape_close_action(%{bulk_write_property: %{busy: false}}) ==
+             {:event, "close_bulk_write_property"}
 
     assert Shortcuts.escape_close_action(%{log_viewer_open: true}) == {:event, "close_log_viewer"}
 

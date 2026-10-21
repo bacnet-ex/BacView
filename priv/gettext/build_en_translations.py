@@ -272,6 +272,24 @@ TRANSLATIONS: dict[str, str] = {
     "Eigenschaft erfolgreich geschrieben.": "Property written successfully.",
     "Eigenschaft nicht gefunden.": "Property not found.",
     "Eigenschaft schreiben": "Write property",
+    "Die Auswahl hat keine gemeinsame schreibbare Eigenschaft.":
+        "The selection has no shared writable property.",
+    "Gemeinsame Eigenschaften der ausgewählten Objekttypen.":
+        "Properties shared by the selected object types.",
+    "Für Present Value setzt null den Prioritäts-Slot zurück.":
+        "For present value, null relinquishes the priority slot.",
+    "Wird bei commandable Objekten mitgeschrieben.": "Included for commandable objects.",
+    "%{ok} geschrieben, %{failed} fehlgeschlagen.": "%{ok} written, %{failed} failed.",
+    "Bereit": "Ready",
+    "Wartet": "Waiting",
+    "Schreiben…": "Writing…",
+    "Geschrieben": "Written",
+    "Fehler": "Error",
+    "Mehrauswahl": "Multi-selection",
+    "Bitte eine Eigenschaft wählen.": "Select a property.",
+    "erwartet Aufzählungswert": "expected an enumeration value",
+    "Diese Eigenschaft kann nicht als Text geschrieben werden.":
+        "This property cannot be written as text.",
     "Eigenschaften": "Properties",
     "Eigenschaften aktualisieren fehlgeschlagen: %{detail}": "Failed to refresh properties: %{detail}",
     "Eigenschaften laden fehlgeschlagen: %{detail}": "Failed to load properties: %{detail}",

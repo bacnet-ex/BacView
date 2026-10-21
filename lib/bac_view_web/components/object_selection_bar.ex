@@ -34,6 +34,16 @@ defmodule BacViewWeb.ObjectSelectionBar do
         >
           {t(@locale, @locale_version, "COV kündigen")}
         </button>
+        <button
+          type="button"
+          id="open-bulk-write-property"
+          phx-click="open_bulk_write_property"
+          disabled={@bulk_resetting}
+          class="bac-btn bac-btn-ghost bac-btn-sm"
+        >
+          <.icon name="hero-pencil-square" class="size-4" />
+          {t(@locale, @locale_version, "Eigenschaft schreiben")}
+        </button>
         <div class="bac-btn-split">
           <button
             type="button"
