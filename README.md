@@ -104,6 +104,24 @@ or
 
 Windows also has a batch with ending `.bat`.
 
+### Automated desktop builds
+
+GitHub Actions uses the shared `Desktop Build` workflow to package Linux amd64/arm64
+and Windows amd64 installers:
+
+- **Latest Release** runs on pushes to `master` or manually on `master`. After all
+  platforms succeed, it creates or updates the rolling `latest` prerelease, moves the
+  tag to the built commit, and replaces its assets. Builds use the checked-in
+  `mix.lock`.
+- **Nightly Deploy/Build** is triggered externally via `workflow_dispatch` and
+  resolves fresh Mix dependencies before building. It publishes the `nightly`
+  prerelease, including available installers when only some platforms succeed.
+- **Desktop Release Build** runs manually or on `v*` tags and uploads installers
+  as workflow artifacts using the checked-in `mix.lock`.
+
+Release publishing uses the workflow's `GITHUB_TOKEN` with `contents: write`;
+no additional release secret is required.
+
 Desktop notes:
 
 - Settings persist under `~/.config/bacview/runtime_settings.json`

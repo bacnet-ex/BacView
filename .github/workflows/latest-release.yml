@@ -1,0 +1,112 @@
+name: Latest Release
+
+on:
+  push:
+    branches:
+      - master
+  workflow_dispatch:
+
+# Serialize the entire workflow so overlapping runs cannot mix release assets.
+concurrency:
+  group: latest-release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: github.ref == 'refs/heads/master'
+    uses: ./.github/workflows/desktop-build.yml
+
+  release:
+    name: Latest Release
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          pattern: bacview-*
+          merge-multiple: false
+
+      - name: Collect release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-assets
+          count=0
+
+          while IFS= read -r -d '' file; do
+            base="$(basename "$file")"
+            artifact_root="$(printf '%s\n' "$file" | cut -d/ -f2)"
+            dest="release-assets/${base}"
+            if [ -e "$dest" ]; then
+              dest="release-assets/${artifact_root}-${base}"
+            fi
+            cp -v "$file" "$dest"
+            count=$((count + 1))
+          done < <(find artifacts -type f \
+            \( -name '*.AppImage' -o -name '*.deb' -o -name '*.rpm' \
+               -o -name '*.exe' -o -name '*.msi' -o -name '*.dmg' \
+               -o -name '*.app.tar.gz' \) -print0)
+
+          echo "Collected ${count} installer asset(s)"
+          if [ "$count" -eq 0 ]; then
+            echo "No installer assets found under artifacts/" >&2
+            exit 1
+          fi
+
+      - name: Create or update latest release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          TAG="latest"
+          TITLE="Latest Build"
+          BUILT_AT="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+          cat > release-notes.md <<EOF
+          Rolling desktop prerelease from master, using the checked-in Mix lockfile.
+
+          | | |
+          |---|---|
+          | **Commit** | \`${GITHUB_SHA}\` |
+          | **Branch** | \`${GITHUB_REF_NAME}\` |
+          | **Workflow run** | [${GITHUB_RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}) |
+          | **Built at** | ${BUILT_AT} |
+
+          Assets are replaced after all platforms build successfully.
+          EOF
+
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" --clobber
+
+            # Remove old versioned filenames only after the new uploads succeed.
+            gh release view "$TAG" --repo "$GITHUB_REPOSITORY" \
+              --json assets --jq '.assets[].name' > previous-assets.txt
+            while IFS= read -r asset; do
+              if [ ! -f "release-assets/$asset" ]; then
+                gh release delete-asset "$TAG" "$asset" \
+                  --repo "$GITHUB_REPOSITORY" --yes
+              fi
+            done < previous-assets.txt
+          else
+            gh release create "$TAG" release-assets/* \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "$TITLE" --notes-file release-notes.md \
+              --target "$GITHUB_SHA" --prerelease --latest=false
+          fi
+
+          # --target only creates missing tags; explicitly move an existing tag.
+          gh api --method PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+            -f sha="$GITHUB_SHA" -F force=true --silent
+
+          gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --title "$TITLE" --notes-file release-notes.md \
+            --draft=false --prerelease --latest=false
