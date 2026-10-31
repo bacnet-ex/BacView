@@ -7,6 +7,10 @@ on:
         description: Resolve fresh Mix dependencies for nightly builds
         type: boolean
         default: false
+      asset-version-suffix:
+        description: Suffix added after the version in installer filenames
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -145,6 +149,33 @@ jobs:
 
       - name: Build Tauri release
         run: cd src-tauri && cargo tauri build
+
+      - name: Add release asset version suffix
+        if: inputs.asset-version-suffix != ''
+        shell: bash
+        env:
+          ASSET_VERSION_SUFFIX: ${{ inputs.asset-version-suffix }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          version = json.loads(Path("src-tauri/tauri.conf.json").read_text())["version"]
+          suffix = os.environ["ASSET_VERSION_SUFFIX"]
+          extensions = (".AppImage", ".deb", ".rpm", ".exe", ".msi", ".dmg", ".app.tar.gz")
+
+          for asset in Path("src-tauri/target/release/bundle").rglob("*"):
+              if not asset.is_file() or not asset.name.endswith(extensions):
+                  continue
+              if version not in asset.name:
+                  raise ValueError(f"Missing version {version!r} in installer filename: {asset}")
+              renamed = asset.with_name(asset.name.replace(version, f"{version}-{suffix}", 1))
+              if renamed.exists():
+                  raise FileExistsError(renamed)
+              asset.rename(renamed)
+              print(f"{asset.name} -> {renamed.name}")
+          PY
 
       - name: Upload desktop artifacts
         uses: actions/upload-artifact@v4

@@ -119,6 +119,10 @@ and Windows amd64 installers:
 - **Desktop Release Build** runs manually or on `v*` tags and uploads installers
   as workflow artifacts using the checked-in `mix.lock`.
 
+Rolling release installer filenames include the channel after the version, e.g.
+`bacview_0.1.0-latest_amd64.deb` and `bacview_0.1.0-nightly_amd64.deb`.
+This filename suffix applies to all installer formats; package versions are unchanged.
+
 Release publishing uses the workflow's `GITHUB_TOKEN` with `contents: write`;
 no additional release secret is required.
 
