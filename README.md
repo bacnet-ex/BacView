@@ -17,12 +17,15 @@ This project has been built with Grok Build (formerly with the Composer 2.5 Fast
 - **Device load & scan** - full device object list scan with progress banner; scan recovery for validation failures (relaxed value/type skip modes)
 - **Hierarchies** - Structured View tree with search and “reveal in flat list”; optional **name-based hierarchy** built from object-name separators when no Structured View exists
 - **Object explorer** - property table with RPM (ReadPropertyMultiple) first, individual ReadProperty fallback, live load progress, status-flag icons, and COV badges
+- **Explicit property read** - header modal for one-shot ReadProperty by device instance or transport address, with BACnet URI field fill and optional array index
 - **Property writes** - Present_Value (with priority where applicable), generic property write, and weekly schedule editor
+- **Bulk property writes** - write one scalar property to selected objects of a device, with per-object parsing and results
 - **COV subscriptions** - per-property or bulk Present_Value subscribe, auto-renewal, active-subscription overview, notification log, and COV history charts (CSV/JSON export)
 - **Alarms & events** - GetAlarmSummary polling, live Confirmed/UnconfirmedEventNotification handling, active-alarm popups, notification-class recipient enrollment, JSON/CSV event export
 - **Trend logs** - chart viewer for log buffer data, time-range navigation, CSV/JSON export
 - **File objects** - AtomicReadFile / AtomicWriteFile transfer UI
-- **EDE export** - generate BACnet Engineering Data Exchange files from a scanned device (`bacnet_ede`)
+- **Property export** - CSV/JSON for selected properties and objects across loaded devices, using cached scanned data
+- **EDE export** - generate BACnet Engineering Data Exchange files from one or several scanned devices (`bacnet_ede`)
 - **Device services** - time synchronization, DeviceCommunicationControl, and ReinitializeDevice
 - **i18n** - German (default) and English via Gettext; locale switcher persisted in `localStorage` (desktop: OS locale on first launch)
 - **Keyboard shortcuts** - press `?` for help (`/`, `r`, `1`–`4`, `0` / Escape on device pages)
@@ -49,7 +52,7 @@ To discover devices on a **remote BACnet/IP network**, register BacView as a For
 
 **Stack settings** (transport, network interface, device instance, COV options, BBMD) are configured in the dashboard sidebar and persisted to `priv/runtime_settings.json`.
 
-Copy `.env.example` to `.env` and adjust as needed (optional in dev).
+For the read/write and export behavior, see [docs/property_operations.md](docs/property_operations.md).
 
 ## Desktop app -experimental- (optional)
 
@@ -58,7 +61,7 @@ BacView can also run as a native desktop app via [ElixirKit](https://hex.pm/pack
 Desktop mode is selected at **compile time** with `BACVIEW_DESKTOP=1`. Run `mix clean` when switching between web and desktop builds.
 The environment variable ensures that we only pull desktop dependencies when we need them and otherwise keep it clean.
 
-**Requirements:** Some system packages are required for Tauri.
+**Requirements:** A Rust toolchain (`rustc` / `cargo`) and Tauri system packages.
 
 For recent Debian-based installations:
 ```bash
@@ -112,7 +115,7 @@ and Windows amd64 installers:
 - **Latest Release** runs on pushes to `master` or manually on `master`. After all
   platforms succeed, it creates or updates the rolling `latest` prerelease, moves the
   tag to the built commit, and replaces its assets. Builds use the checked-in
-  `mix.lock`.
+  `mix.lock`. Superseded runs skip publishing if `master` has advanced during the build.
 - **Nightly Deploy/Build** is triggered externally via `workflow_dispatch` and
   resolves fresh Mix dependencies before building. It publishes the `nightly`
   prerelease, including available installers when only some platforms succeed.
@@ -169,8 +172,7 @@ or
 **Android OTP ERTS (host major)**
 
 The Mix release host and the packaged Android ERTS must share the same OTP
-**major** (`27`, `28`, or `29`). Exact patch versions should match,
-but it's not checked -
+**major** (`27`, `28`, or `29`). Exact patch equality is not required;
 on device the runtime rewrites `start_erl.data` and `ERTS_BIN` to
 the Android `erts-*` tree.
 Cross-compile Android trees for the major you develop on:
@@ -193,7 +195,8 @@ OTP major does not match the host major - run the matching build script first.
 **CI**
 
 See [docs/android_ci.md](docs/android_ci.md) for GitLab jobs (static checks,
-Android Rust targets, prepare/APK every pipeline; emulator smoke on tags).
+Android Rust targets, prepare/APK on Android-related path changes; emulator
+smoke on tags with those changes, or explicit force/schedule settings).
 
 **Release signing**
 
@@ -245,29 +248,34 @@ sideloading still works; do not use that for Play Store uploads.
 | `BACVIEW_LOG_PATH` | `~/.config/bacview/bacview.log` on desktop, `tmp/bacview.log` otherwise | Location of the Logger logfile |
 | `BACVIEW_PROPERTY_READ_CONCURRENCY` | `8` | Max parallel individual `ReadProperty` requests when loading object properties / scan fallback - lower (e.g. `1`) if old devices are overwhelmed |
 | `BACVIEW_READ_CONCUR_ENABLE_SHARED_RED` | - | Cap property-read concurrency to 1 when multiple devices share a transport address (e.g. router) (`1` / `true`) |
-| `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` | Optional override for persisted stack settings |
+| `BACVIEW_SETTINGS_PATH` | `priv/runtime_settings.json` in web mode | Settings path override when `:runtime_settings_path` is unset; desktop/mobile configure that application key and take precedence |
 | `BACVIEW_TIMEZONE` | `Europe/Zurich` | IANA timezone for BACnet wall-clock timestamps, bacstack, and UI display |
 
 ## Production release
 
 ```bash
-mix assets.deploy
-SECRET_KEY_BASE=$(mix phx.gen.secret) mix release
+export SECRET_KEY_BASE="$(mix phx.gen.secret)"
+MIX_ENV=prod mix assets.deploy
+MIX_ENV=prod mix release
 ```
 
 Start the release:
 
 ```bash
-PHX_SERVER=true PORT=4000 ./_build/bacview/rel/bacview/bin/server
+PHX_SERVER=true PORT=4000 ./_build/prod/rel/bacview/bin/server
 ```
 
 Or use the release binary directly:
 
 ```bash
-PHX_SERVER=true ./_build/bacview/rel/bacview/bin/bacview start
+PHX_SERVER=true ./_build/prod/rel/bacview/bin/bacview start
 ```
 
-Place a `.env` file next to the release root to load environment variables at startup (see `rel/env.sh.eex`).
+Keep the same `SECRET_KEY_BASE` available at runtime. The release startup script
+loads `$RELEASE_ROOT/.env` only when `SECRET_KEY_BASE` is unset (see
+`rel/env.sh.eex`); development commands do not load `.env` automatically.
+The production HTTP listener binds to `127.0.0.1`; `PHX_HOST` changes the URL host,
+not the bind address (see `config/runtime.exs`).
 
 ## Architecture
 
@@ -336,14 +344,15 @@ Notes:
 | Network layer | `NetworkNumber` | Local network number, What-Is-Network-Number / Network-Number-Is |
 | Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list + share ETS |
 | Per-device session | `DeviceSession`, `DeviceSessionSupervisor`, `DeviceRegistry` | Load/scan device, object cache, property read/write, scan recovery |
-| Property IO | `PropertyLoad`, `Protocol.PropertyReader` / `PropertyWriter`, `ObjectScanRead` | RPM first, individual ReadProperty fallback, writes, scan fallback |
+| Property IO | `PropertyLoad`, `Protocol.PropertyReader` / `PropertyWriter`, `ObjectScanRead`, `SinglePropertyRead`, `BulkPropertyWrite` | RPM first, individual fallback, one-shot reads, single/bulk writes |
 | Validation recovery | `ValidationSkipStore` | Persist skip modes after scan recovery |
 | Subscriptions / COV | `SubscriptionManager`, `Subscription` | COV subscribe, auto-renew, notification log |
 | Alarms / events | `AlarmEvent`, `ActiveAlarms`, `NotificationClassRecipient` | Poll + live events, active lists, NC recipient enrollment |
 | Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `NameHierarchyCache`, `HierarchySplit` | Structured View + name-split trees |
 | Device services / files | `DeviceServices`, `FileTransfer`, `EdeExport` | Time sync, DCC, reinit, AtomicRead/WriteFile, EDE |
+| Property export | `PropertyExport` | Selected cached object properties as CSV/JSON |
 | Protocol helpers | `Protocol.*` (formatters, charts, trend log, schedules, …) | Display, export, chart payloads |
-| Web | `BacViewWeb.Live.*`, components, helpers | LiveViews, tables, popups, charts |
+| Web | `BacViewWeb.*Live`, components, hooks, helpers | LiveViews, tables, popups, charts; primary LiveViews under `lib/bac_view_web/live/` |
 
 Primary UI routes:
 
@@ -408,6 +417,9 @@ Created by other processes (still cleared with device data via `Cache.clear_all_
 | `:bacview_nc_recipients` | `NotificationClassRecipient` |
 
 Web code must not open subscription ETS directly - use `SubscriptionManager` APIs.
+For a full clear, use `Discovery.clear_devices/0`: it stops device sessions before
+clearing tables and broadcasts the changes, preventing in-flight loads from
+repopulating cleared caches.
 
 ### Transports
 
@@ -422,10 +434,19 @@ Transport selection and network interface are configured in the dashboard sideba
 ## Tests
 
 ```bash
-mix precommit   # unlock unused deps, compile -Werror, format, credo, dialyzer, test
+mix precommit
 ```
 
 BACnet is disabled in test (`config/test.exs`: `start_bacnet: false`) to avoid UDP port conflicts.
+Settings use a temporary file per test run. Tests sharing named BACnet ETS tables
+use `BacView.Test.BacnetEtsLock` and the suite-lifetime `BacnetEtsOwner`.
+
+`mix precommit` runs in the test environment: unlock unused dependencies, compile
+with warnings as errors, check formatting, strict Credo, Dialyzer, and ExUnit,
+then `cargo fmt --check`, `cargo clippy --all-targets`, and `cargo test --all-targets`
+in `src-tauri`. It requires Rust/Cargo and the platform's Tauri system dependencies
+listed in the desktop section, including for a web checkout. Android target and
+emulator checks are separate; see [docs/android_ci.md](docs/android_ci.md).
 
 ## License
 

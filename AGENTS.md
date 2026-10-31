@@ -24,6 +24,13 @@ There is **no user auth / `current_scope`** in this app. Do not invent scope plu
       credo --strict --all
       dialyzer
       test --warnings-as-errors
+      cmd --shell cd src-tauri && cargo fmt --check
+      cmd --shell cd src-tauri && cargo clippy --all-targets
+      cmd --shell cd src-tauri && cargo test --all-targets
+
+  The alias selects `MIX_ENV=test` and also checks the Tauri shell. Rust/Cargo
+  and the platform's Tauri build dependencies are therefore needed even for a
+  web checkout. See the desktop requirements in `README.md`.
 
 - Use the included **`:req` (`Req`)** library for HTTP. **Avoid** `:httpoison`, `:tesla`, and `:httpc`.
 - Prefer **existing modules** over new layers. Domain BACnet logic lives under `lib/bac_view/bacnet/`; UI under `lib/bac_view_web/`.
@@ -74,7 +81,7 @@ Important keys (see `config/config.exs`, `config/runtime.exs`, `README.md`):
 
 | Key / env | Role |
 |-----------|------|
-| `BACVIEW_DESKTOP=1` | **Compile-time** desktop build (`elixir-desktop`); `mix clean` when switching web ↔ desktop |
+| `BACVIEW_DESKTOP=1` | **Compile-time** desktop build (ElixirKit + Tauri); `mix clean` when switching web ↔ desktop |
 | `BACVIEW_TIMEZONE` | IANA timezone (default `Europe/Zurich`) |
 | `BACVIEW_PROPERTY_READ_CONCURRENCY` | Max parallel individual `ReadProperty` (default **8**). Set **1** if old devices are overwhelmed |
 | `BACVIEW_READ_CONCUR_ENABLE_SHARED_RED` | Cap concurrency to **1** when multiple devices share a transport address (router). **Off** by default (`1` / `true` to enable) |
@@ -96,19 +103,42 @@ Important keys (see `config/config.exs`, `config/runtime.exs`, `README.md`):
 | Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list ETS |
 | Per-device session | `DeviceSession` (+ supervisor) | Load/scan device, object cache, property reads/writes |
 | Property IO | `PropertyLoad`, `PropertyReader`, `ObjectScanRead` | Full object property load, RPM vs individual, scan fallback |
+| Explicit reads / bulk writes | `SinglePropertyRead`, `BulkPropertyWrite`, `Protocol.PropertyWriter` | One-shot reads, schema-derived scalar candidates, per-object write results |
+| Exports | `PropertyExport`, `EdeExport` | Selected properties as CSV/JSON and single-/multi-device EDE from scanned objects |
 | Validation recovery | `ValidationSkipStore` | Persist skip modes after scan recovery |
 | Subscriptions / COV | `SubscriptionManager` | COV subscribe, notification log, pruning |
 | Alarms | `AlarmEvent`, `ActiveAlarms` | Event state, active-alarm lists/counts |
 | Hierarchy | `HierarchyBuilder`, `NameHierarchyBuilder`, `HierarchySplit` | Structured View + name-split trees |
 | Complex property forms | `ComplexPropertyEditor`, `ChoiceSchema`, `CollectionItemTemplate` | Write-modal fields; CHOICE kinds from BeamTypes |
-| Web | `BacViewWeb.Live.*`, components | LiveViews, tables, popups, charts |
+| Web | `BacViewWeb.*Live`, components, hooks | LiveViews, tables, popups, charts; primary LiveViews are in `lib/bac_view_web/live/` |
 
 ### ETS tables (`BacView.BACnet.Cache`)
 
-Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`, `:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`.
+Named tables include: `:bacview_devices`, `:bacview_device_share`, `:bacview_objects`, `:bacview_properties`, `:bacview_subscriptions`, `:bacview_hierarchy`, `:bacview_name_hierarchy`, `:bacview_events`, `:bacview_validation_skip_modes`.
 
 - **Web code must not** open subscription ETS directly - use `SubscriptionManager.list_active/0` (and related APIs).
 - Tests that touch named tables should use `BacView.Test.BacnetEtsLock.with_tables/2` when concurrent tests share global ETS.
+- The suite-lifetime `BacView.Test.BacnetEtsOwner` owns shared test tables. Do not
+  create or delete those tables in short-lived test processes; use the lock helpers.
+- A full device clear must stop sessions before clearing ETS, otherwise in-flight
+  loads can repopulate it. Use `Discovery.clear_devices/0`, which coordinates
+  `DeviceSessionSupervisor.stop_all/0`, `Cache.clear_all_device_data/0`, and UI broadcasts.
+
+### Stack lifecycle and request options
+
+- `Stack.Boot` starts the transport/client runtime after the application supervisor
+  is running. Invalid transport settings leave the UI available with BACnet offline.
+- Use `StackLifecycle.restart/0` for a settings-driven restart. Besides restarting
+  the runtime, it cancels discovery, clears learned network numbers, reattaches
+  COV/alarm clients, resubscribes active COV subscriptions, and re-registers the BBMD.
+  `Stack.restart/0` alone only handles the runtime.
+- Keep device routing/APDU options in `RequestOpts` / `ApduSize`. `:remote_device_id`
+  is remote object metadata; bacstack `:device_id` is also an invoke-id partition
+  key. NPCI routing and shared-address handling must follow these helpers rather
+  than treating the two keys as interchangeable.
+- `ClientResult` normalizes bacstack errors into `:bacnet_error`, `:bacnet_reject`,
+  and `:bacnet_abort` tuples. Preserve these shapes for error display and fallback
+  classification.
 
 ### Device load vs object property load
 
@@ -133,6 +163,20 @@ Named tables include: `:bacview_devices`, `:bacview_objects`, `:bacview_properti
   `{:object_properties_progress, object_id, progress}`.
 - `ObjectLive` subscribes and drives `@properties_progress` in `ObjectDetail` (banner + bar). Clear progress when load finishes.
 - **Do not** send progress callbacks into bacstack client opts; strip via `client_opts/1` (never pass `:on_property_progress` to bacstack).
+
+### Explicit property operations and exports
+
+- `SinglePropertyRead` is a separate one-shot path, including explicit heavy-property
+  reads. `from_form/2` uses structured locator fields; `from_uri/2` parses a URI.
+  The ReadProperty modal treats a pasted URI as a field-fill helper, then executes
+  the structured fields. Do not let a stale URI override edited fields.
+- Bulk writes use `BulkPropertyWrite` through `DeviceSession.write_property/5`.
+  Keep scalar candidates schema-derived and writes sequential with per-object
+  results. Priority options come from `PropertyWriter.write_opts/3`.
+- Property and EDE exports consume `DeviceSession.scanned/1`; they do not refresh
+  properties over BACnet. Preserve numeric unknown properties in property exports
+  and full device/type/instance keys for multi-device object selection.
+- Details and focused tests: [`docs/property_operations.md`](docs/property_operations.md).
 
 ### Complex property CHOICE forms
 
@@ -172,6 +216,12 @@ option lists in the editor.
 
 - LiveViews: `DashboardLive`, `DeviceLive`, `ObjectLive` under `lib/bac_view_web/live/`.
 - Prefer **extracted helpers** over growing LiveViews further (`DeviceUrl`, `*Assigns`, `ChartEventPayload`, `CovNotificationChartLive`, badge/count modules). `DeviceLive` / `ObjectLive` are already very large - extract rather than add bulk.
+- Global ReadProperty, multi-device EDE, and property-export modals are initialized
+  by `on_mount` hooks in the router's default `live_session`. Keep their event/async
+  handling in the existing hooks/helpers and pass `@read_property`,
+  `@multi_ede_export`, and `@property_export` to `Layouts.app` on every primary route.
+- Browser downloads use `push_event("download_file", payload)` and the `BacViewRoot`
+  hook in `assets/js/hooks/bac_view_root.js`; reuse that path for exports.
 - Charts: shared JS hook `TrendLogChart` + `ChartEventPayload`; COV chart lifecycle via `CovNotificationChartLive`.
 - Icons: **always** `<.icon name="hero-…">` from `CoreComponents`, never Heroicons modules.
 - CSS: Tailwind v4 + custom `bac-*` classes in `assets/css/app.css`. daisyUI is vendored for theme tokens - **prefer existing BacView components and `bac-*` utilities**; do not expand daisyUI component-driven UI as the primary design system.
@@ -183,11 +233,16 @@ option lists in the editor.
 - BACnet unit tests often use fake **client modules** (function-exported `read_object` / `read_property`) rather than real UDP.
 - After localization changes, always run locale tests or full `mix precommit`.
 - Do not leave the suite red for flaky env pollution (e.g. transport port tests); fix isolation if you touch that area.
+- Tests disable BACnet startup and use a per-run temporary settings file. Restore
+  changed application env values in `on_exit`, and use temporary paths for settings
+  tests so they cannot overwrite a developer's stack configuration.
 
 ### Desktop (optional)
 
-- Compile with `BACVIEW_DESKTOP=1` (`mix desktop.server`, `mix desktop_installer`).
-- Web workflow remains the default. See README for wx/desktop requirements.
+- Compile with `BACVIEW_DESKTOP=1` (`mix desktop.server`, `mix desktop.installer`).
+- Web workflow remains the default. See README for Rust/Tauri system requirements.
+- Desktop/mobile releases strip local `priv/runtime_settings.json` from the bundle.
+  Keep machine-specific stack settings out of distributable packages.
 
 ### Android (optional, experimental)
 
@@ -384,7 +439,7 @@ option lists in the editor.
 - **Always** use LiveView streams for collections for assigning regular lists to avoid memory ballooning and runtime termination with the following operations:
   - basic append of N items - `stream(socket, :messages, [new_msg])`
   - resetting stream with new items - `stream(socket, :messages, [new_msg], reset: true)` (e.g. for filtering items)
-  - prepend to stream - `stream(socket, :messages, [new_msg], at: -1)`
+  - prepend to stream - `stream(socket, :messages, [new_msg], at: 0)`
   - deleting items - `stream_delete(socket, :messages, msg)`
 
 - When using the `stream/3` interfaces in the LiveView, the LiveView template must 1) always set `phx-update="stream"` on the parent element, with a DOM id on the parent element like `id="messages"` and 2) consume the `@streams.stream_name` collection and use the id as the DOM id for each child. For a call like `stream(socket, :messages, [new_msg])` in the LiveView, the template would be:
@@ -411,13 +466,13 @@ option lists in the editor.
 - LiveView streams *do not support counting or empty states*. If you need to display a count, you must track it using a separate assign. For empty states, you can use Tailwind classes:
 
       <div id="tasks" phx-update="stream">
-        <div class="hidden only:block">No tasks yet</div>
-        <div :for={{id, task} <- @stream.tasks} id={id}>
+        <div id="tasks-empty" class="hidden only:block">No tasks yet</div>
+        <div :for={{id, task} <- @streams.tasks} id={id}>
           {task.name}
         </div>
       </div>
 
-  The above only works if the empty state is the only HTML block alongside the stream for-comprehension.
+  The above only works if the empty state is the only HTML block alongside the stream for-comprehension. Non-stream children also need unique DOM IDs so subsequent patches can track them.
 
 - **Never** use the deprecated `phx-update="append"` or `phx-update="prepend"` for collections
 

@@ -6,10 +6,9 @@ on:
       - master
   workflow_dispatch:
 
-# Serialize the entire workflow so overlapping runs cannot mix release assets.
 concurrency:
   group: latest-release
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -69,6 +68,16 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
+          # The branch may advance during the matrix build. Besides being stale,
+          # tagging an older SHA with different workflow files can require
+          # workflows:write, which GITHUB_TOKEN cannot be granted.
+          HEAD_SHA="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/${GITHUB_REF_NAME}" \
+            --jq '.object.sha')"
+          if [ "$HEAD_SHA" != "$GITHUB_SHA" ]; then
+            echo "::notice::Skipping superseded build ${GITHUB_SHA}; ${GITHUB_REF_NAME} is now at ${HEAD_SHA}."
+            exit 0
+          fi
+
           TAG="latest"
           TITLE="Latest Build"
           BUILT_AT="$(date -u +'%Y-%m-%d %H:%M:%S UTC')"
