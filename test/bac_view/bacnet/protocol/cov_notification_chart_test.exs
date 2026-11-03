@@ -3,12 +3,37 @@ defmodule BacView.BACnet.Protocol.CovNotificationChartTest do
 
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Protocol.CovNotificationChart
+  alias BacView.Timezone
 
   test "trendable_property? accepts boolean and numeric types" do
     assert CovNotificationChart.trendable_property?(%{type: "BOOLEAN", value: true})
     assert CovNotificationChart.trendable_property?(%{type: "REAL", value: 12.5})
     assert CovNotificationChart.trendable_property?(%{bac_type: :unsigned_integer, value: nil})
     refute CovNotificationChart.trendable_property?(%{type: "CHARACTER STRING", value: "x"})
+  end
+
+  test "build keeps the absolute instant of a notification in the fallback overlap" do
+    assert Timezone.name() == "Europe/Zurich"
+
+    object_id = %ObjectIdentifier{type: :analog_input, instance: 1}
+    subscription = %{object_id: object_id, property: :present_value}
+
+    {:ambiguous, _earlier, later} =
+      DateTime.from_naive(~N[2026-10-25 02:00:00.910000], Timezone.name())
+
+    notifications = [
+      %{
+        object_id: object_id,
+        property: :present_value,
+        value: 9.0,
+        received_at: later
+      }
+    ]
+
+    data = CovNotificationChart.build(notifications, subscription)
+
+    ms = DateTime.to_unix(later, :millisecond)
+    assert [%{t: ^ms, v: 9.0}] = hd(data.series).points
   end
 
   test "build creates chart points from matching notifications" do

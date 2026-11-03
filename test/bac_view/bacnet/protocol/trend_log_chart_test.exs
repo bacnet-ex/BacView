@@ -12,11 +12,15 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
   alias BacView.BACnet.Protocol.{TrendLogChart, TrendLogReader}
   alias BacView.Timezone
 
-  defp datetime(year, month, day, hour, minute, second) do
+  defp datetime(year, month, day, hour, minute, second, hundredth \\ 0) do
     %BACnetDateTime{
       date: %BACnetDate{year: year, month: month, day: day, weekday: 6},
-      time: %BACnetTime{hour: hour, minute: minute, second: second, hundredth: 0}
+      time: %BACnetTime{hour: hour, minute: minute, second: second, hundredth: hundredth}
     }
+  end
+
+  defp log_record(timestamp, datum) do
+    %{type: :log_record, timestamp: timestamp, datum: datum, status_flags: nil}
   end
 
   test "build creates single series for trend log" do
@@ -253,6 +257,96 @@ defmodule BacView.BACnet.Protocol.TrendLogChartTest do
 
     assert TrendLogChart.to_form_value(naive) == "2025-03-15T18:28"
     assert {:ok, ^naive} = TrendLogChart.parse_form_value("2025-03-15T18:28")
+  end
+
+  test "build places the repeated fallback hour on the later instant" do
+    assert Timezone.name() == "Europe/Zurich"
+
+    records = [
+      log_record(datetime(2026, 10, 25, 1, 30, 0), 1.0),
+      log_record(datetime(2026, 10, 25, 2, 0, 0, 91), 2.0),
+      log_record(datetime(2026, 10, 25, 2, 30, 0), 3.0),
+      log_record(datetime(2026, 10, 25, 2, 0, 0), 4.0),
+      log_record(datetime(2026, 10, 25, 2, 30, 0), 5.0),
+      log_record(datetime(2026, 10, 25, 3, 15, 0), 6.0)
+    ]
+
+    object_id = %ObjectIdentifier{type: :trend_log, instance: 1}
+
+    data =
+      TrendLogChart.build(records, object_id,
+        property_refs: [],
+        object_units: :degrees_celsius,
+        start_dt: ~N[2026-10-25 02:00:00.910000],
+        end_dt: ~N[2026-10-25 04:00:00]
+      )
+
+    assert [series] = data.series
+    assert Enum.map(series.points, & &1.v) == [1.0, 2.0, 3.0, 4.0, 5.0, 6.0]
+
+    times = Enum.map(series.points, & &1.t)
+    assert times == Enum.sort(times)
+    assert Enum.uniq(times) == times
+
+    {:ambiguous, first_half_hour, second_half_hour} =
+      DateTime.from_naive(~N[2026-10-25 02:30:00], Timezone.name())
+
+    assert Enum.at(times, 2) == DateTime.to_unix(first_half_hour, :millisecond)
+    assert Enum.at(times, 4) == DateTime.to_unix(second_half_hour, :millisecond)
+    assert Enum.at(times, 4) - Enum.at(times, 2) == 3_600_000
+
+    {:ambiguous, range_start, _range_start_later} =
+      DateTime.from_naive(~N[2026-10-25 02:00:00.910000], Timezone.name())
+
+    assert Enum.at(times, 1) == DateTime.to_unix(range_start, :millisecond)
+    assert data.range.start == DateTime.to_unix(range_start, :millisecond)
+  end
+
+  test "build uses the later fallback instant after a backward time change" do
+    assert Timezone.name() == "Europe/Zurich"
+
+    records = [
+      log_record(datetime(2026, 10, 25, 2, 0, 0), {:time_change, -3600.0}),
+      log_record(datetime(2026, 10, 25, 2, 15, 0), 7.5)
+    ]
+
+    object_id = %ObjectIdentifier{type: :trend_log, instance: 1}
+
+    data =
+      TrendLogChart.build(records, object_id,
+        property_refs: [],
+        object_units: :degrees_celsius
+      )
+
+    {:ambiguous, _earlier_change, later_change} =
+      DateTime.from_naive(~N[2026-10-25 02:00:00], Timezone.name())
+
+    {:ambiguous, _earlier_sample, later_sample} =
+      DateTime.from_naive(~N[2026-10-25 02:15:00], Timezone.name())
+
+    assert [%{kind: :time_change, t: change_ms}] = data.markers
+    assert change_ms == DateTime.to_unix(later_change, :millisecond)
+    assert [%{t: sample_ms, v: 7.5}] = hd(data.series).points
+    assert sample_ms == DateTime.to_unix(later_sample, :millisecond)
+  end
+
+  test "build keeps a spring-forward gap timestamp on the first valid instant" do
+    assert Timezone.name() == "Europe/Zurich"
+
+    records = [log_record(datetime(2026, 3, 29, 2, 30, 0), 4.0)]
+    object_id = %ObjectIdentifier{type: :trend_log, instance: 1}
+
+    data =
+      TrendLogChart.build(records, object_id,
+        property_refs: [],
+        object_units: :degrees_celsius
+      )
+
+    {:gap, _just_before, just_after} =
+      DateTime.from_naive(~N[2026-03-29 02:30:00], Timezone.name())
+
+    assert [%{t: ms, v: 4.0}] = hd(data.series).points
+    assert ms == DateTime.to_unix(just_after, :millisecond)
   end
 
   test "build anchors BACnet wall clock timestamps to configured timezone chart epochs" do

@@ -74,9 +74,13 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
 
     series_defs = series_definitions(type, refs, objects, units)
 
+    resolved = resolve_log_times(records)
+
     {series, markers} =
-      Enum.reduce(records, {init_series(series_defs), []}, fn record, {series_acc, markers_acc} ->
-        accumulate_record(record, series_defs, series_acc, markers_acc)
+      records
+      |> Enum.zip(resolved)
+      |> Enum.reduce({init_series(series_defs), []}, fn {record, at}, {series_acc, markers_acc} ->
+        accumulate_record(record, at, series_acc, markers_acc)
       end)
 
     series =
@@ -163,72 +167,69 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
   end
 
   defp accumulate_record(
-         %{type: :log_record, timestamp: timestamp, datum: datum},
-         _series_defs,
+         %{type: :log_record, datum: datum},
+         {:ok, at},
          series_acc,
          markers_acc
        ) do
-    case datetime_to_ms(timestamp) do
-      {:ok, at} ->
-        case {Map.get(series_acc, "s0"), TrendLogReader.numeric_value(datum)} do
-          {series, {:ok, value}} when not is_nil(series) ->
-            point = build_chart_point(at, value, Map.get(series, :enum_object))
+    case {Map.get(series_acc, "s0"), TrendLogReader.numeric_value(datum)} do
+      {series, {:ok, value}} when not is_nil(series) ->
+        point = build_chart_point(at, value, Map.get(series, :enum_object))
 
-            {Map.update!(
-               series_acc,
-               "s0",
-               &Map.update!(&1, :points, fn pts -> [point | pts] end)
-             ), maybe_marker(markers_acc, at, datum)}
+        {Map.update!(
+           series_acc,
+           "s0",
+           &Map.update!(&1, :points, fn pts -> [point | pts] end)
+         ), maybe_marker(markers_acc, at, datum)}
 
-          _record ->
-            {series_acc, maybe_marker(markers_acc, at, datum)}
-        end
-
-      _timestamp ->
-        {series_acc, markers_acc}
+      _record ->
+        {series_acc, maybe_marker(markers_acc, at, datum)}
     end
   end
 
   defp accumulate_record(
-         %{type: :log_multiple_record, timestamp: timestamp, data: data},
-         _series_defs,
+         %{type: :log_multiple_record, data: data},
+         {:ok, at},
          series_acc,
          markers_acc
        )
        when is_list(data) do
-    case datetime_to_ms(timestamp) do
-      {:ok, at} ->
-        {updated_series, updated_markers} =
-          data
-          |> Enum.with_index()
-          |> Enum.reduce({series_acc, markers_acc}, fn {datum, index}, {s_acc, m_acc} ->
-            id = "s#{index}"
+    {updated_series, updated_markers} =
+      data
+      |> Enum.with_index()
+      |> Enum.reduce({series_acc, markers_acc}, fn {datum, index}, {s_acc, m_acc} ->
+        id = "s#{index}"
 
-            case {Map.get(s_acc, id), TrendLogReader.numeric_value(datum)} do
-              {series, {:ok, value}} when not is_nil(series) ->
-                point = build_chart_point(at, value, Map.get(series, :enum_object))
+        case {Map.get(s_acc, id), TrendLogReader.numeric_value(datum)} do
+          {series, {:ok, value}} when not is_nil(series) ->
+            point = build_chart_point(at, value, Map.get(series, :enum_object))
 
-                {Map.update!(s_acc, id, &Map.update!(&1, :points, fn pts -> [point | pts] end)),
-                 m_acc}
+            {Map.update!(s_acc, id, &Map.update!(&1, :points, fn pts -> [point | pts] end)),
+             m_acc}
 
-              _record ->
-                {s_acc, maybe_marker(m_acc, at, datum)}
-            end
-          end)
+          _record ->
+            {s_acc, maybe_marker(m_acc, at, datum)}
+        end
+      end)
 
-        marker =
-          if Enum.all?(data, &(TrendLogReader.marker_kind(&1) != nil)),
-            do: maybe_marker(updated_markers, at, List.first(data)),
-            else: updated_markers
+    marker =
+      if Enum.all?(data, &(TrendLogReader.marker_kind(&1) != nil)),
+        do: maybe_marker(updated_markers, at, List.first(data)),
+        else: updated_markers
 
-        {updated_series, marker}
-
-      _record ->
-        {series_acc, markers_acc}
-    end
+    {updated_series, marker}
   end
 
-  defp accumulate_record(_record, _series_defs, series_acc, markers_acc),
+  defp accumulate_record(
+         %{type: :log_multiple_record, data: data},
+         {:ok, at},
+         series_acc,
+         markers_acc
+       ) do
+    {series_acc, maybe_marker(markers_acc, at, data)}
+  end
+
+  defp accumulate_record(_record, _at, series_acc, markers_acc),
     do: {series_acc, markers_acc}
 
   defp maybe_marker(markers, at, datum) do
@@ -424,10 +425,76 @@ defmodule BacView.BACnet.Protocol.TrendLogChart do
 
   defp unwrap_refs(_ref), do: []
 
-  defp datetime_to_ms(%BACnetDateTime{} = dt) do
+  # Log buffers are oldest first. A repeated wall time is the earlier overlap
+  # instant until the clock steps back by at least a second, or the record is a
+  # negative BACnet time-change. Later samples in that overlap then use the second
+  # instant, until the wall time is unambiguous again.
+  defp resolve_log_times(records) do
+    {resolved, _clock} =
+      Enum.map_reduce(records, initial_clock(), fn record, clock ->
+        resolve_log_time(record, clock)
+      end)
+
+    resolved
+  end
+
+  defp initial_clock(), do: %{later?: false, previous: nil}
+
+  defp resolve_log_time(%{timestamp: timestamp} = record, clock) do
+    case bacnet_naive(timestamp) do
+      {:ok, naive} ->
+        case place_wall_time(naive, record, clock) do
+          {:ok, ms, next_clock} -> {{:ok, ms}, next_clock}
+          {:error, next_clock} -> {:error, next_clock}
+        end
+
+      :error ->
+        {:error, clock}
+    end
+  end
+
+  defp resolve_log_time(_record, clock), do: {:error, clock}
+
+  defp place_wall_time(naive, record, clock) do
+    setback? = negative_time_change?(record)
+
+    case Timezone.wall_instants(naive) do
+      {:ok, ms} ->
+        {:ok, ms, %{later?: setback?, previous: naive}}
+
+      {:ambiguous, earlier_ms, later_ms} ->
+        later? = clock.later? or setback? or jumped_back?(clock.previous, naive)
+        ms = if(later?, do: later_ms, else: earlier_ms)
+        {:ok, ms, %{later?: later?, previous: naive}}
+
+      {:gap, ms} ->
+        {:ok, ms, %{later?: setback?, previous: naive}}
+
+      {:error, _reason} ->
+        {:error, %{clock | previous: naive}}
+    end
+  end
+
+  defp jumped_back?(%NaiveDateTime{} = previous, %NaiveDateTime{} = naive) do
+    NaiveDateTime.diff(previous, naive, :millisecond) >= 1_000
+  end
+
+  defp jumped_back?(_previous, _naive), do: false
+
+  defp negative_time_change?(%{datum: datum}), do: negative_change?(datum)
+  defp negative_time_change?(%{data: data}), do: negative_change?(data)
+  defp negative_time_change?(_record), do: false
+
+  defp negative_change?({:time_change, seconds}) when is_number(seconds), do: seconds < 0
+  defp negative_change?(data) when is_list(data), do: Enum.any?(data, &negative_change?/1)
+  defp negative_change?(_datum), do: false
+
+  defp bacnet_naive(%BACnetDateTime{} = dt) do
     case BACnetDateTime.to_naive_datetime(dt) do
-      {:ok, naive} -> {:ok, naive_to_unix_ms(naive)}
+      {:ok, %NaiveDateTime{} = naive} -> {:ok, naive}
       _dt -> :error
     end
   end
+
+  defp bacnet_naive(_dt), do: :error
 end
