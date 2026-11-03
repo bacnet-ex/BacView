@@ -30,6 +30,25 @@ defmodule BacView.BACnet.ClientResultTest do
     assert ClientResult.normalize({:error, abort}) == {:error, {:bacnet_abort, abort}}
   end
 
+  test "turns Client.send {:ok, response APDU} into an error" do
+    error = %APDU.Error{
+      invoke_id: 4,
+      service: :reinitialize_device,
+      class: :security,
+      code: :password_failure,
+      payload: []
+    }
+
+    reject = %APDU.Reject{invoke_id: 4, reason: :unrecognized_service}
+    abort = %APDU.Abort{sent_by_server: true, invoke_id: 4, reason: :buffer_overflow}
+    simple_ack = %APDU.SimpleACK{invoke_id: 4, service: :atomic_write_file}
+
+    assert ClientResult.normalize({:ok, error}) == {:error, {:bacnet_error, error}}
+    assert ClientResult.normalize({:ok, reject}) == {:error, {:bacnet_reject, reject}}
+    assert ClientResult.normalize({:ok, abort}) == {:error, {:bacnet_abort, abort}}
+    assert ClientResult.normalize({:ok, simple_ack}) == {:error, simple_ack}
+  end
+
   test "wraps bare APDU values once (write/COV helper shapes)" do
     error = %APDU.Error{
       invoke_id: 2,
