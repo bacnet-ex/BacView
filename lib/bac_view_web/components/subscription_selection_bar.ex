@@ -35,6 +35,50 @@ defmodule BacViewWeb.SubscriptionSelectionBar do
           <.icon name="hero-signal-slash" class="size-4" />
           {t(@locale, @locale_version, "Ausgewählte kündigen")}
         </button>
+        <div class="bac-btn-split">
+          <button
+            type="button"
+            id="export-selected-subscriptions-csv"
+            phx-click="export_selected_subscriptions"
+            phx-value-format="csv"
+            disabled={@disabled}
+            class="bac-btn bac-btn-ghost bac-btn-sm bac-btn-split-start"
+            title={t(@locale, @locale_version, "COV-Meldungen der Auswahl als CSV exportieren")}
+          >
+            <.icon name="hero-arrow-down-tray" class="size-4" />
+            {t(@locale, @locale_version, "Als CSV exportieren")}
+          </button>
+          <details
+            id="export-selected-subscriptions-menu"
+            phx-hook="DetailsOutsideClose"
+            class={[
+              "bac-btn-split-details",
+              @disabled && "pointer-events-none opacity-45"
+            ]}
+          >
+            <summary
+              class="bac-btn bac-btn-ghost bac-btn-sm bac-btn-split-end bac-btn-split-toggle"
+              title={t(@locale, @locale_version, "Anderes Exportformat wählen")}
+              aria-label={t(@locale, @locale_version, "Anderes Exportformat wählen")}
+            >
+              <.icon name="hero-chevron-down" class="size-3.5 opacity-70" />
+            </summary>
+            <div class="bac-btn-split-menu" role="menu">
+              <button
+                type="button"
+                id="export-selected-subscriptions-json"
+                role="menuitem"
+                phx-click="export_selected_subscriptions"
+                phx-value-format="json"
+                disabled={@disabled}
+                class="bac-btn-split-menu-item"
+                title={t(@locale, @locale_version, "COV-Meldungen der Auswahl als JSON exportieren")}
+              >
+                {t(@locale, @locale_version, "Als JSON exportieren")}
+              </button>
+            </div>
+          </details>
+        </div>
         <button
           type="button"
           phx-click="clear_subscription_selection"

@@ -18,6 +18,13 @@ defmodule BacViewWeb.SubscriptionSelectionBarTest do
     assert html =~ "phx-click=\"unsubscribe_selected_subscriptions\""
     assert html =~ "Erneut abonnieren"
     assert html =~ "Ausgewählte kündigen"
+    assert html =~ ~s/id="export-selected-subscriptions-csv"/
+    assert html =~ "phx-click=\"export_selected_subscriptions\""
+    assert html =~ "phx-value-format=\"csv\""
+    assert html =~ "Als CSV exportieren"
+    assert html =~ ~s/id="export-selected-subscriptions-json"/
+    assert html =~ "phx-value-format=\"json\""
+    assert html =~ "Als JSON exportieren"
   end
 
   test "disables actions while bulk COV is running" do
@@ -30,5 +37,7 @@ defmodule BacViewWeb.SubscriptionSelectionBarTest do
       )
 
     assert html =~ ~r/id="resubscribe-selected-subscriptions"[^>]*disabled/
+    assert html =~ ~r/id="export-selected-subscriptions-csv"[^>]*disabled/
+    assert html =~ ~r/id="export-selected-subscriptions-json"[^>]*disabled/
   end
 end

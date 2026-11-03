@@ -239,6 +239,14 @@ defmodule BacView.BACnet.PropertyExport do
 
   def export(_groups, _keys, _property_ids, _format), do: {:error, :invalid_export_format}
 
+  @doc false
+  @spec json_term(term()) :: term()
+  def json_term(value), do: json_value(value)
+
+  @doc false
+  @spec value_text(term()) :: String.t()
+  def value_text(value), do: csv_value(value, nil)
+
   defp entry(
          device,
          device_id,

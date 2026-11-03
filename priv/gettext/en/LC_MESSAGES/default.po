@@ -252,11 +252,17 @@ msgstr "All: skip validation"
 msgid "Alle: Wertvalidierung überspringen"
 msgstr "All: skip value validation"
 
+msgid "Als CSV exportieren"
+msgstr "Export as CSV"
+
 msgid "Als Eingabe"
 msgstr "As input"
 
 msgid "Als Hex"
 msgstr "As hex"
+
+msgid "Als JSON exportieren"
+msgstr "Export as JSON"
 
 msgid "Als Liste"
 msgstr "As list"
@@ -269,6 +275,9 @@ msgstr "Choose another priority and reset"
 
 msgid "Andere Priorität…"
 msgstr "Other priority…"
+
+msgid "Anderes Exportformat wählen"
+msgstr "Choose another export format"
 
 msgid "Ansicht"
 msgstr "View"
@@ -494,6 +503,12 @@ msgstr "COV increment"
 
 msgid "COV-Lifetime (Sek.)"
 msgstr "COV lifetime (sec.)"
+
+msgid "COV-Meldungen der Auswahl als CSV exportieren"
+msgstr "Export the selection's COV notifications as CSV"
+
+msgid "COV-Meldungen der Auswahl als JSON exportieren"
+msgstr "Export the selection's COV notifications as JSON"
 
 msgid "COV-Verlauf"
 msgstr "COV history"
@@ -1088,6 +1103,9 @@ msgstr "None"
 
 msgid "Keine Berechtigung für den seriellen Port."
 msgstr "No permission for the serial port."
+
+msgid "Keine COV-Meldungen für die Auswahl."
+msgstr "No COV notifications for the selection."
 
 msgid "Keine Datei zum Herunterladen."
 msgstr "No file available to download."

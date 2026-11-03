@@ -110,6 +110,10 @@ TRANSLATIONS: dict[str, str] = {
     "Als Text": "As text",
     "Als Liste": "As list",
     "Als Eingabe": "As input",
+    "Als CSV exportieren": "Export as CSV",
+    "Als JSON exportieren": "Export as JSON",
+    "COV-Meldungen der Auswahl als CSV exportieren": "Export the selection's COV notifications as CSV",
+    "COV-Meldungen der Auswahl als JSON exportieren": "Export the selection's COV notifications as JSON",
     "Ganzzahl ≥ 0": "Integer ≥ 0",
     "Aktiv": "Active",
     "aktiv": "active",
@@ -201,6 +205,7 @@ TRANSLATIONS: dict[str, str] = {
     "COV-Verlauf": "COV history",
     "Aus empfangenen COV-Meldungen": "From received COV notifications",
     "Keine plottbaren COV-Meldungen im gewählten Zeitraum.": "No plottable COV notifications in the selected time range.",
+    "Keine COV-Meldungen für die Auswahl.": "No COV notifications for the selection.",
     "Keine plottbaren Datensätze im gewählten Zeitraum.": "No plottable records in the selected time range.",
     "In Alarm": "In alarm",
     "Inaktiv": "Inactive",
@@ -582,6 +587,7 @@ TRANSLATIONS: dict[str, str] = {
     "Priorität zurücksetzen: %{done} / %{total}": "Resetting priority: %{done} / %{total}",
     "Andere Priorität…": "Other priority…",
     "Andere Priorität wählen und zurücksetzen": "Choose another priority and reset",
+    "Anderes Exportformat wählen": "Choose another export format",
     "NULL an Present Value schreiben und Prioritäts-Slot freigeben für %{count} commandable Objekt(e).":
         "Write NULL to present value and release the priority slot for %{count} commandable object(s).",
     "%{count} ausgewählte Objekt(e) sind nicht commandable und werden übersprungen.":

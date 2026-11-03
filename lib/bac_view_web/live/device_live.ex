@@ -17,6 +17,7 @@ defmodule BacViewWeb.DeviceLive do
   alias BacView.BACnet.NotificationClassRecipient
   alias BacView.BACnet.SubscriptionManager
 
+  alias BacView.BACnet.Protocol.CovNotificationExport
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Protocol.PropertyWriter
   alias BacView.BACnet.Protocol.StatusFlagsParser
@@ -1098,6 +1099,19 @@ defmodule BacViewWeb.DeviceLive do
      socket
      |> assign(:selected_subscription_keys, MapSet.new())
      |> start_cov_bulk(:unsubscribe, targets, action: :unsubscribe_selected)}
+  end
+
+  @impl true
+  def handle_event("export_selected_subscriptions", params, socket) do
+    format = subscription_export_format(params["format"])
+    keys = socket.assigns.selected_subscription_keys
+    rows = CovNotificationExport.select(socket.assigns.cov_notifications, keys)
+
+    if rows == [] do
+      {:noreply, put_flash(socket, :error, gt("Keine COV-Meldungen für die Auswahl."))}
+    else
+      {:noreply, push_subscription_export(socket, rows, keys, format)}
+    end
   end
 
   @impl true
@@ -2286,6 +2300,30 @@ defmodule BacViewWeb.DeviceLive do
     Enum.filter(subscriptions, fn sub ->
       MapSet.member?(selected_keys, subscription_key(sub))
     end)
+  end
+
+  defp subscription_export_format("json"), do: :json
+  defp subscription_export_format(_format), do: :csv
+
+  defp push_subscription_export(socket, rows, keys, format) do
+    opts = [objects: socket.assigns.objects, device_id: socket.assigns.device_id]
+
+    {content, mime, ext} =
+      case format do
+        :json ->
+          {CovNotificationExport.to_json(rows, opts), "application/json; charset=utf-8", "json"}
+
+        :csv ->
+          {CovNotificationExport.to_csv(rows, opts), "text/csv; charset=utf-8", "csv"}
+      end
+
+    filename = CovNotificationExport.filename(socket.assigns.device_id, keys, ext)
+
+    push_event(socket, "download_file", %{
+      content: content,
+      filename: filename,
+      mime: mime
+    })
   end
 
   defp filtered_subscription_keys(socket) do
