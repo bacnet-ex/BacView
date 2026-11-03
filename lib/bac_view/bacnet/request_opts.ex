@@ -14,15 +14,18 @@ defmodule BacView.BACnet.RequestOpts do
   | Key | Meaning |
   |-----|---------|
   | `remote_device_id` | Object cast / remote object metadata (device instance) |
-  | `device_id` | bacstack **invoke-id** partition key (only when routed and destination is unique) |
+  | `device_id` | Caller alias for the BacView device instance. Not a `Client.send` option. |
+  | `npci_id` | Routed `NpciTarget` invoke-id pool key for `Client.send` |
   | `destination` | NPCI destination `NpciTarget` learned from I-Am |
   | `max_apdu` / `max_apdu_length` | Effective APDU size: min(local setting, remote max) |
   | `max_segments` | Local max segments (2/4/8/16/32/64) for request encode and outgoing segmentation |
 
   Callers should pass the BacView device instance as `:device_id` and/or
-  `:remote_device_id` in `base` (aliases accepted for one transition window).
-  Sharing is resolved from discovery flags (`shared_destination?` / share index),
-  not by scanning all devices on every request.
+  `:remote_device_id` in `base`.
+  `:npci_id` copies `:destination` only for a routed remote station whose
+  transport address is not shared. Otherwise those devices share one invoke-id
+  pool. Sharing is resolved from discovery flags (`shared_destination?` /
+  share index), not by scanning all devices on every request.
   """
   @spec for_device(integer(), keyword()) :: keyword()
   def for_device(device_id, base \\ []) when is_integer(device_id) and is_list(base) do
@@ -53,7 +56,7 @@ defmodule BacView.BACnet.RequestOpts do
     opts
     |> Keyword.put_new(:remote_device_id, device_id)
     |> maybe_put_npci_destination(device)
-    |> maybe_put_invoke_device_id(device_id, device)
+    |> maybe_put_npci_id(device)
     |> put_apdu_opts(device)
   end
 
@@ -93,15 +96,19 @@ defmodule BacView.BACnet.RequestOpts do
 
   defp maybe_put_npci_destination(opts, _device), do: opts
 
-  defp maybe_put_invoke_device_id(opts, device_id, %{npci_source: %NpciTarget{}} = device) do
+  # Client.send scopes invoke IDs with `:npci_id` (`NpciTarget` or nil), not an
+  # integer device instance. A remote broadcast has no station address, so it
+  # stays on the transport destination's shared pool.
+  defp maybe_put_npci_id(opts, %{npci_source: %NpciTarget{address: address} = source} = device)
+       when not is_nil(address) do
     if shared_destination_device?(device) do
       opts
     else
-      Keyword.put(opts, :device_id, device_id)
+      Keyword.put(opts, :npci_id, source)
     end
   end
 
-  defp maybe_put_invoke_device_id(opts, _device_id, _device), do: opts
+  defp maybe_put_npci_id(opts, _device), do: opts
 
   defp shared_destination_device?(%{shared_destination?: true}), do: true
 

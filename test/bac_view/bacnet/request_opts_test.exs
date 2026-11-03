@@ -57,6 +57,7 @@ defmodule BacView.BACnet.RequestOptsTest do
     merged = RequestOpts.for_device(100, [])
     assert merged[:remote_device_id] == 100
     refute Keyword.has_key?(merged, :device_id)
+    refute Keyword.has_key?(merged, :npci_id)
     refute Keyword.has_key?(merged, :destination)
     assert is_integer(merged[:max_apdu])
     assert merged[:max_apdu] == merged[:max_apdu_length]
@@ -65,6 +66,7 @@ defmodule BacView.BACnet.RequestOptsTest do
   test "merge injects apdu opts when device is unknown" do
     merged = RequestOpts.merge(device_id: 404)
     assert merged[:device_id] == 404
+    refute Keyword.has_key?(merged, :npci_id)
     assert is_integer(merged[:max_apdu])
   end
 
@@ -90,15 +92,26 @@ defmodule BacView.BACnet.RequestOptsTest do
     assert merged[:max_segments] == 8
   end
 
-  test "for_device adds npci destination and invoke device_id for a routed unique address" do
+  test "for_device adds npci destination and npci_id for a routed unique address" do
     npci_source = %NpciTarget{net: 3, address: 200}
 
     store(200, npci_source)
 
-    merged = RequestOpts.for_device(200, [])
+    merged = RequestOpts.for_device(200, device_id: 200)
     assert merged[:device_id] == 200
     assert merged[:remote_device_id] == 200
     assert merged[:destination] == npci_source
+    assert merged[:npci_id] == npci_source
+  end
+
+  test "for_device omits npci_id when the routed target has no station address" do
+    npci_source = %NpciTarget{net: 3, address: nil}
+
+    store(200, npci_source)
+
+    merged = RequestOpts.for_device(200, [])
+    assert merged[:destination] == npci_source
+    refute Keyword.has_key?(merged, :npci_id)
   end
 
   describe "with shared reduction disabled (default)" do
@@ -122,7 +135,7 @@ defmodule BacView.BACnet.RequestOptsTest do
       refute RequestOpts.shared_address?(@address)
     end
 
-    test "for_device adds invoke device_id for routed device on shared gateway" do
+    test "for_device adds npci_id for routed device on shared gateway" do
       npci_source = %NpciTarget{net: 3, address: 200}
 
       store(100)
@@ -131,7 +144,8 @@ defmodule BacView.BACnet.RequestOptsTest do
       merged = RequestOpts.for_device(200, remote_device_id: 200)
       assert merged[:remote_device_id] == 200
       assert merged[:destination] == npci_source
-      assert merged[:device_id] == 200
+      assert merged[:npci_id] == npci_source
+      refute Keyword.has_key?(merged, :device_id)
     end
   end
 
@@ -156,25 +170,27 @@ defmodule BacView.BACnet.RequestOptsTest do
       assert RequestOpts.shared_address?(@address)
     end
 
-    test "for_device adds npci destination but not invoke device_id on shared addresses" do
+    test "for_device adds npci destination but not npci_id on shared addresses" do
       npci_source = %NpciTarget{net: 3, address: 200}
 
       store(100)
       store(200, npci_source)
 
-      merged = RequestOpts.for_device(200, remote_device_id: 200)
+      merged = RequestOpts.for_device(200, device_id: 200)
+      assert merged[:device_id] == 200
       assert merged[:remote_device_id] == 200
       assert merged[:destination] == npci_source
-      refute Keyword.has_key?(merged, :device_id)
+      refute Keyword.has_key?(merged, :npci_id)
     end
 
-    test "merge omits npci destination and invoke device_id without npci source on shared addresses" do
+    test "merge omits npci destination and npci_id without npci source on shared addresses" do
       store(100)
       store(200)
 
       merged = RequestOpts.merge(remote_device_id: 200)
       assert merged[:remote_device_id] == 200
       refute Keyword.has_key?(merged, :device_id)
+      refute Keyword.has_key?(merged, :npci_id)
       refute Keyword.has_key?(merged, :destination)
     end
   end

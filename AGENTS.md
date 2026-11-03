@@ -133,9 +133,11 @@ Named tables include: `:bacview_devices`, `:bacview_device_share`, `:bacview_obj
   COV/alarm clients, resubscribes active COV subscriptions, and re-registers the BBMD.
   `Stack.restart/0` alone only handles the runtime.
 - Keep device routing/APDU options in `RequestOpts` / `ApduSize`. `:remote_device_id`
-  is remote object metadata; bacstack `:device_id` is also an invoke-id partition
-  key. NPCI routing and shared-address handling must follow these helpers rather
-  than treating the two keys as interchangeable.
+  is remote object metadata. bacstack `Client.send` scopes invoke IDs with
+  `:npci_id`, an `NpciTarget` (the routed network and address), only when that
+  destination is unique. `:device_id` stays the BacView device instance and is
+  not that key. NPCI routing and shared-address handling must follow these
+  helpers rather than treating the keys as interchangeable.
 - `ClientResult` normalizes bacstack errors into `:bacnet_error`, `:bacnet_reject`,
   and `:bacnet_abort` tuples. Preserve these shapes for error display and fallback
   classification.
