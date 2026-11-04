@@ -612,6 +612,9 @@ msgstr "The request was too large for the device."
 msgid "Die Auswahl hat keine gemeinsame schreibbare Eigenschaft."
 msgstr "The selection has no shared writable property."
 
+msgid "Die Eigenschaft %{property} kann nicht einzeln gelesen werden. all (%{all}), optional (%{optional}) und required (%{required}) gelten nur für ReadPropertyMultiple."
+msgstr "Property %{property} cannot be read individually. all (%{all}), optional (%{optional}), and required (%{required}) are valid only for ReadPropertyMultiple."
+
 msgid "Die Eigenschaft ist dem Gerät nicht bekannt (%{property})."
 msgstr "The property is unknown to the device (%{property})."
 

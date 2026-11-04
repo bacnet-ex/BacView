@@ -815,6 +815,8 @@ TRANSLATIONS: dict[str, str] = {
     "Ungültiger Objekttyp.": "Invalid object type.",
     "Ungültige Objektinstanz.": "Invalid object instance.",
     "Ungültige Eigenschaft.": "Invalid property.",
+    "Die Eigenschaft %{property} kann nicht einzeln gelesen werden. all (%{all}), optional (%{optional}) und required (%{required}) gelten nur für ReadPropertyMultiple.":
+        "Property %{property} cannot be read individually. all (%{all}), optional (%{optional}), and required (%{required}) are valid only for ReadPropertyMultiple.",
     "Ungültiger Array-Index.": "Invalid array index.",
     "Bitte Geräte-ID oder Adresse wählen.": "Please choose device ID or address.",
     "Ungültige MS/TP-Adresse (0–254).": "Invalid MS/TP address (0–254).",

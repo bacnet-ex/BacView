@@ -6,40 +6,11 @@ defmodule BacView.BuildInfo do
   @built_at System.get_env("BACVIEW_BUILD_TIME") ||
               DateTime.utc_now() |> DateTime.truncate(:second) |> DateTime.to_iso8601()
 
-  @git_suffix (
-                on_tag? =
-                  try do
-                    case System.cmd("git", ["describe", "--exact-match", "--tags"],
-                           stderr_to_stdout: true
-                         ) do
-                      {_out, 0} -> true
-                      _other -> false
-                    end
-                  rescue
-                    _other -> false
-                  end
+  @git_suffix BacView.Application.get_git_suffix()
 
-                if on_tag? do
-                  ""
-                else
-                  try do
-                    case System.cmd("git", ["rev-parse", "--short", "HEAD"],
-                           stderr_to_stdout: true
-                         ) do
-                      {out, 0} ->
-                        case String.trim(out) do
-                          "" -> ""
-                          sha -> "+" <> sha
-                        end
-
-                      _other ->
-                        ""
-                    end
-                  rescue
-                    _other -> ""
-                  end
-                end
-              )
+  def __mix_recompile__?() do
+    @git_suffix != BacView.Application.get_git_suffix()
+  end
 
   @doc """
   Base version string from the running application (e.g. `"0.1.0"`).

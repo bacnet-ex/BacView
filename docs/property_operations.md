@@ -18,6 +18,9 @@ The application header opens a ReadProperty modal on all three primary routes.
 - Object types and properties accept names or numeric identifiers. An omitted
   property defaults to `present_value`; an optional array index is forwarded to
   the client, including index `0` for an array's length.
+- `all` (8), `optional` (80), and `required` (105) are ReadPropertyMultiple
+  selectors. A one-shot read rejects them with `{:rpm_only_property, property}`
+  and does not call the stack.
 - A file object with no property refers to file content and is rejected by this
   ReadProperty path. Use the File object's transfer panel for AtomicReadFile.
 - `:unsupported_object_type` triggers a retry with `raw: true`.

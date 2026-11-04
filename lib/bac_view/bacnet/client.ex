@@ -8,6 +8,7 @@ defmodule BacView.BACnet.Client do
   alias BACnet.Protocol.APDU
   alias BACnet.Protocol.ApplicationTags
   alias BACnet.Protocol.ApplicationTags.Encoding
+  alias BACnet.Protocol.Constants
   alias BACnet.Protocol.Destination
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.Services
@@ -18,6 +19,15 @@ defmodule BacView.BACnet.Client do
   alias BacView.BACnet.ClientResult
   alias BacView.BACnet.Protocol.ErrorMessage
   alias BacView.BACnet.RequestOpts
+
+  require Constants
+
+  # ReadPropertyMultiple selectors. ClientHelper.read_property/6 has no clause for these.
+  @rpm_selectors [
+    all: Constants.macro_by_name(:property_identifier, :all),
+    optional: Constants.macro_by_name(:property_identifier, :optional),
+    required: Constants.macro_by_name(:property_identifier, :required)
+  ]
 
   @type destination :: term()
   @type read_result :: {:ok, term()} | {:error, term()}
@@ -43,9 +53,30 @@ defmodule BacView.BACnet.Client do
     end
   end
 
+  @doc """
+  True for the ReadPropertyMultiple selectors `:all`, `:optional`, and `:required`
+  (property identifiers 8, 80, and 105), including those numeric identifiers.
+  """
+  @spec rpm_selector?(term()) :: boolean()
+  def rpm_selector?(property) when is_atom(property),
+    do: Keyword.has_key?(@rpm_selectors, property)
+
+  def rpm_selector?(property) when is_integer(property) and property >= 0,
+    do: property in Keyword.values(@rpm_selectors)
+
+  def rpm_selector?(_property), do: false
+
   @spec read_property(destination(), ObjectIdentifier.t(), atom() | integer(), keyword()) ::
           read_result
   def read_property(destination, object, property, opts \\ []) do
+    if rpm_selector?(property) do
+      {:error, {:rpm_only_property, property}}
+    else
+      read_property_on_stack(destination, object, property, opts)
+    end
+  end
+
+  defp read_property_on_stack(destination, object, property, opts) do
     opts = merge_request_opts(opts)
     array_index = Keyword.get(opts, :array_index)
     read_opts = Keyword.delete(opts, :array_index)

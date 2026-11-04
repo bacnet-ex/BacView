@@ -207,6 +207,48 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
     assert result.property == :present_value
   end
 
+  test "from_form rejects ReadPropertyMultiple selectors without calling the client" do
+    for property <- ["105", "required", "8", "all", "80", "optional"] do
+      params = %{
+        "locator" => "address",
+        "address" => "10.130.1.148",
+        "object_type" => "analog-value",
+        "instance" => "449",
+        "property" => property
+      }
+
+      assert {:error, {:rpm_only_property, name}} =
+               SinglePropertyRead.from_form(params, client: FakeClient, transport: "ipv4")
+
+      assert name in [:all, :optional, :required]
+      refute_received {:read_property, _destination, _object, _property, _opts}
+    end
+  end
+
+  test "run rejects numeric ReadPropertyMultiple selectors" do
+    assert {:error, {:rpm_only_property, 105}} =
+             SinglePropertyRead.run(
+               %{
+                 destination: {:address, {{10, 130, 1, 148}, 47_808}},
+                 object: %ObjectIdentifier{type: :analog_value, instance: 449},
+                 property: 105,
+                 array_index: nil
+               },
+               client: FakeClient
+             )
+
+    refute_received {:read_property, _destination, _object, _property, _opts}
+  end
+
+  test "from_uri rejects property 105" do
+    assert {:error, {:rpm_only_property, :required}} =
+             SinglePropertyRead.from_uri("bacnet://10221/analog-value,449/105",
+               client: FakeClient
+             )
+
+    refute_received {:read_property, _destination, _object, _property, _opts}
+  end
+
   test "unknown device id returns error" do
     BacnetEtsLock.with_tables(@tables, fn ->
       assert {:error, :unknown_device} =

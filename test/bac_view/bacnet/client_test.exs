@@ -102,6 +102,20 @@ defmodule BacView.BACnet.ClientTest do
     refute log =~ "[warning]"
   end
 
+  test "read_property rejects ReadPropertyMultiple selectors before calling the stack" do
+    object = %ObjectIdentifier{type: :analog_value, instance: 449}
+    destination = {{10, 130, 1, 148}, 47_808}
+
+    for property <- [:all, :optional, :required, 8, 80, 105] do
+      assert {:error, {:rpm_only_property, ^property}} =
+               Client.read_property(destination, object, property)
+    end
+
+    refute Client.rpm_selector?(:present_value)
+    refute Client.rpm_selector?(85)
+    refute Client.rpm_selector?(512)
+  end
+
   test "read_error_message formats destination, object, and property" do
     object = %ObjectIdentifier{type: :analog_input, instance: 1}
     destination = {{10, 0, 0, 5}, 47_808}

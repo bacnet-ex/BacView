@@ -298,6 +298,32 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
     assert has_element?(view, "#read-property-error")
   end
 
+  test "property 105 shows an error instead of crashing the read", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> element("#open-read-property-btn")
+    |> render_click()
+
+    view
+    |> form("#read-property-form", %{
+      "read_property" => %{
+        "locator" => "address",
+        "address" => "10.130.1.148",
+        "object_type" => "analog-value",
+        "instance" => "449",
+        "property" => "105"
+      }
+    })
+    |> render_submit()
+
+    html = render_async(view)
+    assert has_element?(view, "#read-property-error")
+    assert html =~ "required (105)"
+    assert html =~ "ReadPropertyMultiple"
+    refute has_element?(view, "#read-property-result")
+  end
+
   test "reads a property by IPv4 address", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 

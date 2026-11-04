@@ -94,6 +94,16 @@ defmodule BacView.BACnet.SinglePropertyRead do
       )
       when (is_atom(property) or (is_integer(property) and property >= 0)) and
              (is_nil(array_index) or (is_integer(array_index) and array_index >= 0)) do
+    if Client.rpm_selector?(property) do
+      {:error, {:rpm_only_property, property}}
+    else
+      read_resolved(destination, object, property, array_index, opts)
+    end
+  end
+
+  def run(_request, _opts), do: {:error, :invalid_params}
+
+  defp read_resolved(destination, object, property, array_index, opts) do
     client = client(opts)
 
     with {:ok, wire_dest, read_opts} <- resolve(destination, object, property, array_index) do
@@ -113,8 +123,6 @@ defmodule BacView.BACnet.SinglePropertyRead do
       end
     end
   end
-
-  def run(_request, _opts), do: {:error, :invalid_params}
 
   defp client(opts) do
     Keyword.get(opts, :client) ||

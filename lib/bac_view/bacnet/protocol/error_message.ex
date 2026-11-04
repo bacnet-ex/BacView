@@ -294,6 +294,17 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:invalid_object), do: gettext("Ungültiges Objekt.")
   def format_reason(:invalid_object_type), do: gettext("Ungültiger Objekttyp.")
   def format_reason(:invalid_instance), do: gettext("Ungültige Objektinstanz.")
+
+  def format_reason({:rpm_only_property, property}) do
+    gettext(
+      "Die Eigenschaft %{property} kann nicht einzeln gelesen werden. all (%{all}), optional (%{optional}) und required (%{required}) gelten nur für ReadPropertyMultiple.",
+      property: rpm_only_property_label(property),
+      all: Constants.by_name!(:property_identifier, :all),
+      optional: Constants.by_name!(:property_identifier, :optional),
+      required: Constants.by_name!(:property_identifier, :required)
+    )
+  end
+
   def format_reason(:invalid_property), do: gettext("Ungültige Eigenschaft.")
   def format_reason(:invalid_index), do: gettext("Ungültiger Array-Index.")
   def format_reason(:invalid_locator), do: gettext("Bitte Geräte-ID oder Adresse wählen.")
@@ -433,6 +444,22 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
       gettext("Unerwarteter Fehler: %{detail}",
         detail: summarize_unknown(reason)
       )
+
+  defp rpm_only_property_label(property) when is_atom(property) do
+    case Constants.by_name(:property_identifier, property) do
+      {:ok, id} -> "#{property} (#{id})"
+      :error -> Atom.to_string(property)
+    end
+  end
+
+  defp rpm_only_property_label(property) when is_integer(property) do
+    case Constants.by_value(:property_identifier, property) do
+      {:ok, name} -> "#{name} (#{property})"
+      :error -> Integer.to_string(property)
+    end
+  end
+
+  defp rpm_only_property_label(property), do: inspect(property)
 
   defp format_codec_exception(:casting, exception),
     do:

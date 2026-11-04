@@ -112,6 +112,38 @@ defmodule BacView.Application do
     defp desktop_window_children(), do: []
   end
 
+  @doc false
+  def get_git_suffix() do
+    on_tag? =
+      try do
+        case System.cmd("git", ["describe", "--exact-match", "--tags"], stderr_to_stdout: true) do
+          {_out, 0} -> true
+          _other -> false
+        end
+      rescue
+        _other -> false
+      end
+
+    if on_tag? do
+      ""
+    else
+      try do
+        case System.cmd("git", ["rev-parse", "--short", "HEAD"], stderr_to_stdout: true) do
+          {out, 0} ->
+            case String.trim(out) do
+              "" -> ""
+              sha -> "+" <> sha
+            end
+
+          _other ->
+            ""
+        end
+      rescue
+        _other -> ""
+      end
+    end
+  end
+
   defp maybe_start_bacnet_runtime() do
     if Application.get_env(:bacview, :start_bacnet, true) do
       case BacView.BACnet.Stack.Boot.start_runtime() do

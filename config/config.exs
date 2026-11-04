@@ -119,13 +119,49 @@ config :bacstack, :additional_property_identifiers,
   loop_enable: 523,
   loop_mode: 524
 
-# WAGO proprietary properties
+value_source_properties =
+  quote do
+    field(:current_command_priority, 1..16 | nil, readonly: true, annotation: [revision: 19])
+
+    field(:last_command_time, BACnet.Protocol.BACnetTimestamp.t(),
+      readonly: true,
+      annotation: [revision: 19]
+    )
+
+    field(
+      :command_time_array,
+      BACnet.Protocol.BACnetArray.t(BACnet.Protocol.BACnetTimestamp.t()),
+      readonly: true,
+      annotation: [revision: 19]
+    )
+
+    field(:value_source, BACnet.Protocol.ValueSource.t(), annotation: [revision: 19])
+
+    field(
+      :value_source_array,
+      BACnet.Protocol.BACnetArray.t(BACnet.Protocol.ValueSource.t()),
+      readonly: true,
+      annotation: [revision: 19]
+    )
+  end
+
+# WAGO proprietary properties and some from newer revisions
 config :bacstack, :objects_additional_properties,
   accumulator:
     (quote do
        field(:input_count_value, non_neg_integer())
        field(:pulse_value_source, BACnet.Protocol.DeviceObjectPropertyRef.t())
      end),
+  analog_output: value_source_properties,
+  analog_value: value_source_properties,
+  binary_output: value_source_properties,
+  binary_value: value_source_properties,
+  bitstring_value: value_source_properties,
+  character_string_value: value_source_properties,
+  date_pattern_value: value_source_properties,
+  datetime_pattern_value: value_source_properties,
+  datetime_value: value_source_properties,
+  date_value: value_source_properties,
   device:
     (quote do
        # Intrinsic Reporting was added in 135-2016
@@ -169,6 +205,8 @@ config :bacstack, :objects_additional_properties,
          ]
        )
      end),
+  integer_value: value_source_properties,
+  large_analog_value: value_source_properties,
   loop:
     (quote do
        field(:loop_enable, boolean(), encode_as: :enumerated)
@@ -182,10 +220,16 @@ config :bacstack, :objects_additional_properties,
          readonly: true
        )
      end),
+  multistate_output: value_source_properties,
+  multistate_value: value_source_properties,
+  octet_string_value: value_source_properties,
+  positive_integer_value: value_source_properties,
   schedule:
     (quote do
        field(:time_before_operation, non_neg_integer(), readonly: true)
-     end)
+     end),
+  time_pattern_value: value_source_properties,
+  time_value: value_source_properties
 
 # Import environment specific config. This must remain at the bottom
 # of this file so it overrides the configuration defined above.

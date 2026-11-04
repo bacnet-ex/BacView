@@ -117,6 +117,19 @@ defmodule BacView.BACnet.Protocol.ErrorMessageTest do
     assert ErrorMessage.format_reason(:einval) =~ "einval"
   end
 
+  test "formats ReadPropertyMultiple-only properties" do
+    message = ErrorMessage.format_reason({:rpm_only_property, :required})
+
+    assert message =~ "required (105)"
+    assert message =~ "all (8)"
+    assert message =~ "optional (80)"
+    assert message =~ "ReadPropertyMultiple"
+
+    action = ErrorMessage.for_action(:read_property, {:rpm_only_property, 105})
+    assert action =~ "Eigenschaft lesen fehlgeschlagen"
+    assert action =~ "required (105)"
+  end
+
   test "formats property read fallback errors" do
     assert ErrorMessage.format_reason(:object_unavailable) =~ "Objekt"
     assert ErrorMessage.format_reason(:property_list_not_readable) =~ "Eigenschaftsliste"
