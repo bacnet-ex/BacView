@@ -48,14 +48,14 @@ defmodule BacViewWeb.ScanPanel do
           <.input
             field={@form[:target_ip]}
             type="text"
-            placeholder="192.168.1.100 oder 192.168.100.[31-35]"
+            placeholder="192.168.1.101:47808 oder 192.168.100.[31-35]"
             class={input_class(@variant)}
             disabled={@scanning}
             autocomplete="off"
           />
           <p class="text-xs bac-text-faint mt-1">
             {t(@locale, @locale_version, 
-              "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
+              "Leer für Broadcast. IP mit optionalem Port (192.168.1.101:47808) oder Bereich (192.168.100.[31-35])."
             )}
           </p>
         </div>

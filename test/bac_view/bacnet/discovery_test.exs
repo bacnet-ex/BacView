@@ -643,6 +643,41 @@ defmodule BacView.BACnet.DiscoveryTest do
       assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, Settings.get().ipv4_port}]
     end
 
+    test "parses target ip:port for unicast Who-Is" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{
+                 "timeout_ms" => "1000",
+                 "target_ip" => "192.168.1.101:47808"
+               })
+
+      assert Keyword.fetch!(opts, :destination) == [{{192, 168, 1, 101}, 47_808}]
+    end
+
+    test "parses a non-default target port" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{"target_ip" => "192.168.100.42:47809"})
+
+      assert Keyword.fetch!(opts, :destination) == [{{192, 168, 100, 42}, 47_809}]
+    end
+
+    test "applies an explicit port to a target IP range" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{"target_ip" => "192.168.100.[31-32]:47809"})
+
+      assert Keyword.fetch!(opts, :destination) == [
+               {{192, 168, 100, 31}, 47_809},
+               {{192, 168, 100, 32}, 47_809}
+             ]
+    end
+
+    test "rejects an invalid target port" do
+      assert Discovery.parse_scan_params(%{"target_ip" => "192.168.1.101:"}) ==
+               {:error, :invalid_port}
+
+      assert Discovery.parse_scan_params(%{"target_ip" => "192.168.100.42:abc"}) ==
+               {:error, :invalid_port}
+    end
+
     test "parses target IP octet range for multiple unicast Who-Is" do
       assert {:ok, opts} =
                Discovery.parse_scan_params(%{

@@ -1242,8 +1242,8 @@ msgstr "Life safety change"
 msgid "Leer = Objektstandard"
 msgstr "Empty = object default"
 
-msgid "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is."
-msgstr "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is."
+msgid "Leer für Broadcast. IP mit optionalem Port (192.168.1.101:47808) oder Bereich (192.168.100.[31-35])."
+msgstr "Empty for broadcast. An IP with an optional port (192.168.1.101:47808) or a range (192.168.100.[31-35])."
 
 msgid "Leer oder „null“ = BACnet NULL (für alle Werttypen, auch mit Objektreferenz)."
 msgstr "Empty or \"null\" = BACnet NULL (for all value types, including with an object reference)."

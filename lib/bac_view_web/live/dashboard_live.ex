@@ -261,6 +261,9 @@ defmodule BacViewWeb.DashboardLive do
       {:error, :invalid_host} ->
         {:noreply, put_flash(socket, :error, gt("Ungültige IP-Adresse."))}
 
+      {:error, :invalid_port} ->
+        {:noreply, put_flash(socket, :error, gt("Ungültiger Port."))}
+
       {:error, {:too_many_targets, max}} ->
         {:noreply,
          put_flash(

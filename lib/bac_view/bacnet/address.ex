@@ -76,6 +76,28 @@ defmodule BacView.BACnet.Address do
 
   def expand_scan_targets(_host), do: {:error, :invalid_host}
 
+  @doc """
+  Expands a Who-Is scan target into `{ip, port}` destinations.
+
+  Plain hosts and octet ranges use `default_port`. A trailing `:port`
+  (`192.168.1.101:47808`, `192.168.100.[31-35]:47809`) overrides that port for
+  every expanded address.
+  """
+  @spec expand_scan_destinations(String.t(), 1..65_535) ::
+          {:ok, [{:inet.ip_address(), 1..65_535}]}
+          | {:error, :invalid_host | :invalid_port | {:too_many_targets, pos_integer()}}
+  def expand_scan_destinations(value, default_port)
+      when is_binary(value) and default_port in 1..65_535 do
+    {host, port_source} = split_optional_port(String.trim(value))
+
+    with {:ok, port} <- resolve_scan_port(port_source, default_port),
+         {:ok, ips} <- expand_scan_targets(host) do
+      {:ok, Enum.map(ips, &{&1, port})}
+    end
+  end
+
+  def expand_scan_destinations(_value, _default_port), do: {:error, :invalid_host}
+
   @spec parse_port(term()) :: {:ok, 1..65_535} | {:error, :invalid_port}
   def parse_port(port) when is_integer(port) and port in 1..65_535, do: {:ok, port}
 
@@ -220,6 +242,17 @@ defmodule BacView.BACnet.Address do
   def valid_ipv4_port?(port) when is_integer(port), do: port in @ipv4_port_range
 
   def valid_ipv4_port?(_port), do: false
+
+  defp split_optional_port(value) do
+    case String.split(value, ":", parts: 2) do
+      [host, port] -> {String.trim(host), {:explicit, String.trim(port)}}
+      [host] -> {String.trim(host), :default}
+    end
+  end
+
+  defp resolve_scan_port(:default, default_port), do: {:ok, default_port}
+
+  defp resolve_scan_port({:explicit, port}, _default_port), do: parse_port(port)
 
   defp parse_ipv4_destination(""), do: {:error, :invalid_host}
 

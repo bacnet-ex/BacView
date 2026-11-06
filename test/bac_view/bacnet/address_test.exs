@@ -157,4 +157,51 @@ defmodule BacView.BACnet.AddressTest do
       assert {:error, :invalid_host} = Address.expand_scan_targets("192.168.100.[abc]")
     end
   end
+
+  describe "expand_scan_destinations/2" do
+    test "uses the default port when none is given" do
+      assert {:ok, [{{192, 168, 1, 101}, 47_808}]} =
+               Address.expand_scan_destinations("192.168.1.101", 47_808)
+
+      assert {:ok, destinations} =
+               Address.expand_scan_destinations("192.168.100.[31-32]", 47_809)
+
+      assert destinations == [
+               {{192, 168, 100, 31}, 47_809},
+               {{192, 168, 100, 32}, 47_809}
+             ]
+    end
+
+    test "accepts an explicit ip:port" do
+      assert {:ok, [{{192, 168, 1, 101}, 47_808}]} =
+               Address.expand_scan_destinations("192.168.1.101:47808", 47_809)
+
+      assert {:ok, [{{192, 168, 100, 42}, 47_809}]} =
+               Address.expand_scan_destinations("  192.168.100.42:47809  ", 47_808)
+    end
+
+    test "applies an explicit port to every address in a range" do
+      assert {:ok, destinations} =
+               Address.expand_scan_destinations("192.168.100.[31-32]:47809", 47_808)
+
+      assert destinations == [
+               {{192, 168, 100, 31}, 47_809},
+               {{192, 168, 100, 32}, 47_809}
+             ]
+    end
+
+    test "rejects an invalid port without using the default" do
+      assert {:error, :invalid_port} =
+               Address.expand_scan_destinations("192.168.1.101:", 47_808)
+
+      assert {:error, :invalid_port} =
+               Address.expand_scan_destinations("192.168.1.101:abc", 47_808)
+
+      assert {:error, :invalid_port} =
+               Address.expand_scan_destinations("192.168.1.101:65536", 47_808)
+
+      assert {:error, :invalid_host} =
+               Address.expand_scan_destinations("not-an-ip:47808", 47_808)
+    end
+  end
 end

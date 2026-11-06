@@ -85,6 +85,47 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     assert has_element?(view, "#scan_vendor_id[value='42']")
   end
 
+  test "targeted who-is accepts ip:port", %{conn: conn} do
+    {:ok, view, html} = live(conn, ~p"/")
+
+    assert html =~ "192.168.1.101:47808 oder 192.168.100.[31-35]"
+    assert html =~ "192.168.1.101:47808"
+
+    view
+    |> form("#scan-network-form", %{
+      "scan" => %{
+        "timeout_ms" => "5000",
+        "target_ip" => "192.168.1.101:47808",
+        "device_id_low" => "",
+        "device_id_high" => "",
+        "vendor_id" => ""
+      }
+    })
+    |> render_submit()
+
+    assert has_element?(view, "#scan_target_ip[value='192.168.1.101:47808']")
+    assert has_element?(view, "#scan-network-form-submit[disabled]")
+  end
+
+  test "targeted who-is rejects an invalid port", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> form("#scan-network-form", %{
+      "scan" => %{
+        "timeout_ms" => "5000",
+        "target_ip" => "192.168.100.42:abc",
+        "device_id_low" => "",
+        "device_id_high" => "",
+        "vendor_id" => ""
+      }
+    })
+    |> render_submit()
+
+    assert has_element?(view, "#flash-error", "Ungültiger Port.")
+    refute has_element?(view, "#scan-network-form-submit[disabled]")
+  end
+
   test "scan submit via form enter still works", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 

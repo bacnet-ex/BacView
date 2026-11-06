@@ -214,6 +214,15 @@ defmodule BacView.SettingsTest do
     assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, 48_123}]
   end
 
+  test "explicit who-is target port overrides the configured ipv4 port" do
+    assert {:ok, _} = Settings.update(ipv4_port: 48_123)
+
+    assert {:ok, opts} =
+             Discovery.parse_scan_params(%{"target_ip" => "192.168.100.42:47809"})
+
+    assert Keyword.fetch!(opts, :destination) == [{{192, 168, 100, 42}, 47_809}]
+  end
+
   defp restore_default_settings do
     if Process.whereis(Settings) do
       defaults = Settings.defaults()

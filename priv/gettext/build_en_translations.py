@@ -483,7 +483,7 @@ TRANSLATIONS: dict[str, str] = {
     "Laden": "Load",
     "Lebensschutz-Alarm": "Life safety alarm",
     "Lebensschutz-Änderung": "Life safety change",
-    "Leer lassen für Netzwerk-Broadcast, oder IP bzw. Bereich (z. B. 192.168.100.[31-35]) für gezieltes Who-Is.": "Leave empty for network broadcast, or enter an IP or range (e.g. 192.168.100.[31-35]) for targeted Who-Is.",
+    "Leer für Broadcast. IP mit optionalem Port (192.168.1.101:47808) oder Bereich (192.168.100.[31-35]).": "Empty for broadcast. An IP with an optional port (192.168.1.101:47808) or a range (192.168.100.[31-35]).",
     "Zugriff auf den seriellen Port verweigert (Berechtigung fehlt).": "Access to the serial port denied (permission missing).",
     "Zu viele Ziel-IP-Adressen (max. %{max}).": "Too many target IP addresses (max. %{max}).",
     "Serieller Port nicht gefunden.": "Serial port not found.",

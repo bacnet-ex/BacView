@@ -99,7 +99,10 @@ defmodule BacView.BACnet.Discovery do
   Parses and validates scan parameters from the UI.
 
   Supported keys: `"timeout_ms"` (minimum #{@min_timeout} ms), optional `"target_ip"`
-  (plain IPv4 or octet ranges like `192.168.100.[31-35]`), optional `"device_id_low"` /
+  (plain IPv4, optional `:port` such as `192.168.1.101:47808` or
+  `192.168.100.42:47809`, or octet ranges like `192.168.100.[31-35]`; an omitted
+  port uses the configured IPv4 port, including on a range such as
+  `192.168.100.[31-35]:47809`), optional `"device_id_low"` /
   `"device_id_high"` (0..#{@max_device_instance}), and optional `"vendor_id"` (0..#{@max_vendor_id}).
   """
   @spec parse_scan_params(map()) :: {:ok, keyword()} | {:error, term()}
@@ -1126,11 +1129,7 @@ defmodule BacView.BACnet.Discovery do
     if trimmed == "" do
       {:ok, nil}
     else
-      port = Settings.get().ipv4_port
-
-      with {:ok, ips} <- Address.expand_scan_targets(trimmed) do
-        {:ok, Enum.map(ips, &{&1, port})}
-      end
+      Address.expand_scan_destinations(trimmed, Settings.get().ipv4_port)
     end
   end
 
@@ -1249,14 +1248,17 @@ defmodule BacView.BACnet.Discovery do
   defp vendor_accepted?(_vendor_id, %{vendor_id: required}) when is_integer(required), do: false
 
   defp format_destination(destinations) when is_list(destinations) do
-    ips = Enum.map(destinations, fn {ip, _port} -> Address.format_ip(ip) end)
+    labels = Enum.map(destinations, &format_single_destination/1)
 
-    case ips do
-      [ip] ->
-        ip
+    case labels do
+      [label] ->
+        label
 
-      _destinations ->
-        "#{length(ips)} targets (#{Enum.join(Enum.take(ips, 3), ", ")}#{if length(ips) > 3, do: ", …", else: ""})"
+      _labels ->
+        shown = Enum.take(labels, 3)
+        preview = Enum.join(shown, ", ")
+        suffix = if length(labels) > 3, do: ", …", else: ""
+        "#{length(labels)} targets (#{preview}#{suffix})"
     end
   end
 
