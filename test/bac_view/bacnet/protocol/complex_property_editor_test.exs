@@ -214,7 +214,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditorTest do
              BACnet.Protocol.ObjectsUtility.cast_value_to_property(
                obj,
                :list_of_object_property_references,
-               decoded
+               dense
              )
 
     # Two refs × (object_identifier + property_identifier) context tags

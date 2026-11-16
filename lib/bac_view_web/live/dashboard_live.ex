@@ -6,6 +6,7 @@ defmodule BacViewWeb.DashboardLive do
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.InterfaceSelection
   alias BacView.BACnet.NetworkNumber
+  alias BacView.BACnet.Protocol.ErrorMessage
   alias BacView.BACnet.Protocol.PropertyFormatter
   alias BacView.BACnet.Stack
   alias BacView.BACnet.StackLifecycle
@@ -26,6 +27,7 @@ defmodule BacViewWeb.DashboardLive do
   alias BacViewWeb.LogViewerLive
   alias BacViewWeb.LogViewerModal
   alias BacViewWeb.ScanPanel
+  alias BacViewWeb.SCCredentialsLive
   alias BacViewWeb.StackSettingsPanel
   alias BacViewWeb.StackStatusPolling
 
@@ -57,6 +59,7 @@ defmodule BacViewWeb.DashboardLive do
      |> assign(:bbmd_status, bbmd_status)
      |> assign(:bbmd_form, bbmd_form(bbmd_status))
      |> assign_stack_settings(stack_settings)
+     |> SCCredentialsLive.init()
      |> assign(:stack_status, Stack.status())
      |> assign(:stack_status_fast_poll_until, nil)
      |> assign(:stack_restart_confirm, false)
@@ -89,6 +92,14 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
+  def handle_event("sc_credentials_change", _params, socket) do
+    {:noreply, assign(socket, :sc_import_result, nil)}
+  end
+
+  def handle_event("sc_credentials_import", _params, socket) do
+    {:noreply, SCCredentialsLive.import_credentials(socket)}
+  end
+
   def handle_event("stack_settings_refresh_interfaces", _params, socket) do
     {:noreply, refresh_stack_interfaces(socket)}
   end
@@ -218,11 +229,17 @@ defmodule BacViewWeb.DashboardLive do
   end
 
   @impl true
-  def handle_event("scan_form_restore", %{"scan" => scan_params}, socket) do
+  def handle_event(
+        "scan_form_restore",
+        %{"scan" => scan_params, "transport" => transport},
+        %{assigns: %{stack_settings: %{transport: transport}}} = socket
+      ) do
     form = scan_form(scan_params)
     sync_discovery_acceptance_filters(form)
     {:noreply, assign(socket, :scan_form, form)}
   end
+
+  def handle_event("scan_form_restore", _params, socket), do: {:noreply, socket}
 
   def handle_event("scan_form_change", %{"scan" => scan_params}, socket) do
     form = scan_form(scan_params)
@@ -238,7 +255,8 @@ defmodule BacViewWeb.DashboardLive do
         _handle_event -> scan_form_params(socket.assigns.scan_form)
       end
 
-    with {:ok, opts} <- Discovery.parse_scan_params(scan_params),
+    with :ok <- ensure_scan_ready(socket),
+         {:ok, opts} <- Discovery.parse_scan_params(scan_params),
          :ok <- Discovery.scan_async(self(), opts) do
       Discovery.set_acceptance_filters(opts)
 
@@ -263,6 +281,16 @@ defmodule BacViewWeb.DashboardLive do
 
       {:error, :invalid_port} ->
         {:noreply, put_flash(socket, :error, gt("Ungültiger Port."))}
+
+      {:error, reason}
+      when reason in [
+             :invalid_sc_vmac,
+             :invalid_mstp_address,
+             :invalid_npci_source,
+             :npci_source_requires_target,
+             :not_connected
+           ] ->
+        {:noreply, LiveFlash.put_error(socket, :network_scan, reason)}
 
       {:error, {:too_many_targets, max}} ->
         {:noreply,
@@ -586,6 +614,8 @@ defmodule BacViewWeb.DashboardLive do
             <ScanPanel.scan_panel
               form={@scan_form}
               scanning={@scanning}
+              transport={@stack_settings.transport}
+              available?={@stack_settings.transport != "bacnet_sc" or @stack_status.sc_link in [:primary, :failover]}
               variant={:sidebar}
               locale={@locale}
               locale_version={@locale_version}
@@ -597,6 +627,10 @@ defmodule BacViewWeb.DashboardLive do
               form={@stack_form}
               settings={@stack_settings}
               stack_status={@stack_status}
+              uploads={@uploads}
+              sc_credentials_form={@sc_credentials_form}
+              sc_credentials={@sc_credentials}
+              sc_import_result={@sc_import_result}
               interface_options={@stack_interface_options}
               confirm_restart?={@stack_restart_confirm and @stack_pending_updates != :manual}
               manual_restart_confirm?={@stack_restart_confirm and @stack_pending_updates == :manual}
@@ -740,12 +774,22 @@ defmodule BacViewWeb.DashboardLive do
     ]
   end
 
+  defp ensure_scan_ready(%{assigns: %{stack_settings: %{transport: "bacnet_sc"}}}) do
+    case Stack.status() do
+      %{sc_link: role} when role in [:primary, :failover] -> :ok
+      _status -> {:error, :not_connected}
+    end
+  end
+
+  defp ensure_scan_ready(_socket), do: :ok
+
   defp scan_form(params \\ %{}) do
     to_form(
       %{
         "timeout_ms" =>
           Map.get(params, "timeout_ms", Integer.to_string(Discovery.default_timeout())),
         "target_ip" => Map.get(params, "target_ip", ""),
+        "npci_source" => Map.get(params, "npci_source", ""),
         "device_id_low" => Map.get(params, "device_id_low", ""),
         "device_id_high" => Map.get(params, "device_id_high", ""),
         "vendor_id" => Map.get(params, "vendor_id", "")
@@ -758,6 +802,7 @@ defmodule BacViewWeb.DashboardLive do
     %{
       "timeout_ms" => form[:timeout_ms].value,
       "target_ip" => form[:target_ip].value,
+      "npci_source" => form[:npci_source].value,
       "device_id_low" => form[:device_id_low].value,
       "device_id_high" => form[:device_id_high].value,
       "vendor_id" => form[:vendor_id].value
@@ -910,6 +955,10 @@ defmodule BacViewWeb.DashboardLive do
       "interface" => settings.interface || "",
       "device_id" => Integer.to_string(settings.device_id),
       "ipv4_port" => Integer.to_string(settings.ipv4_port),
+      "sc_primary_hub_uri" => settings.sc_primary_hub_uri || "",
+      "sc_failover_hub_uri" => settings.sc_failover_hub_uri || "",
+      "sc_verify_hostname" => checkbox_form_value(settings.sc_verify_hostname),
+      "sc_ip_family" => settings.sc_ip_family,
       "network_number" => Integer.to_string(settings.network_number),
       "max_apdu_length" => Integer.to_string(settings.max_apdu_length),
       "apdu_timeout" => Integer.to_string(settings.apdu_timeout),
@@ -953,6 +1002,7 @@ defmodule BacViewWeb.DashboardLive do
     end)
     |> Map.update!("cov_confirmed", &checkbox_form_value/1)
     |> Map.update!("scan_on_online", &checkbox_form_value/1)
+    |> Map.update!("sc_verify_hostname", &checkbox_form_value/1)
   end
 
   defp checkbox_form_value(value) do
@@ -965,6 +1015,10 @@ defmodule BacViewWeb.DashboardLive do
       "interface" => form[:interface].value,
       "device_id" => form[:device_id].value,
       "ipv4_port" => form[:ipv4_port].value,
+      "sc_primary_hub_uri" => form[:sc_primary_hub_uri].value,
+      "sc_failover_hub_uri" => form[:sc_failover_hub_uri].value,
+      "sc_verify_hostname" => form[:sc_verify_hostname].value,
+      "sc_ip_family" => form[:sc_ip_family].value,
       "network_number" => form[:network_number].value,
       "max_apdu_length" => form[:max_apdu_length].value,
       "apdu_timeout" => form[:apdu_timeout].value,
@@ -1037,7 +1091,8 @@ defmodule BacViewWeb.DashboardLive do
          {:ok, mstp_local_address} <-
            parse_required_int(mstp_local_address_param, 0, 127),
          {:ok, mstp_baud_rate} <- parse_mstp_baud_rate(mstp_baud_rate_param),
-         {:ok, interface} <- resolve_interface(transport, params["interface"]) do
+         {:ok, interface} <- resolve_interface(transport, params["interface"], current_settings),
+         {:ok, sc_updates} <- parse_sc_updates(transport, params, current_settings) do
       {:ok,
        [
          transport: transport,
@@ -1056,7 +1111,7 @@ defmodule BacViewWeb.DashboardLive do
          scan_on_online: form_checkbox?(params["scan_on_online"]),
          mstp_local_address: mstp_local_address,
          mstp_baud_rate: mstp_baud_rate
-       ]}
+       ] ++ sc_updates}
     else
       {:error, reason} -> {:error, reason}
     end
@@ -1139,7 +1194,24 @@ defmodule BacViewWeb.DashboardLive do
 
   defp parse_mstp_baud_rate(_value), do: {:error, :invalid_settings}
 
-  defp resolve_interface(transport, interface) do
+  defp parse_sc_updates("bacnet_sc", params, settings) do
+    updates = [
+      sc_primary_hub_uri: blank_to_nil(String.trim(params["sc_primary_hub_uri"] || "")),
+      sc_failover_hub_uri: blank_to_nil(String.trim(params["sc_failover_hub_uri"] || "")),
+      sc_verify_hostname: form_checkbox?(params["sc_verify_hostname"]),
+      sc_ip_family: params["sc_ip_family"] || settings.sc_ip_family
+    ]
+
+    with :ok <- Settings.validate_sc_config(preview_settings(settings, updates)) do
+      {:ok, updates}
+    end
+  end
+
+  defp parse_sc_updates(_transport, _params, _settings), do: {:ok, []}
+
+  defp resolve_interface("bacnet_sc", _interface, settings), do: {:ok, settings.interface}
+
+  defp resolve_interface(transport, interface, _settings) do
     options = Settings.interface_options(transport)
     trimmed = interface |> to_string() |> String.trim()
 
@@ -1174,6 +1246,7 @@ defmodule BacViewWeb.DashboardLive do
 
         socket =
           socket
+          |> clear_scan_target_on_switch(settings.transport)
           |> assign_stack_settings(settings)
           |> assign(:stack_status, Stack.status())
           |> assign(:learned_network_number, learned_network_number())
@@ -1199,6 +1272,15 @@ defmodule BacViewWeb.DashboardLive do
     end
   end
 
+  defp clear_scan_target_on_switch(socket, transport) do
+    if socket.assigns.stack_settings.transport == transport do
+      socket
+    else
+      params = Map.drop(scan_form_params(socket.assigns.scan_form), ["target_ip", "npci_source"])
+      assign(socket, :scan_form, scan_form(params))
+    end
+  end
+
   defp stack_settings_error(:invalid_settings),
     do: gt("Ungültige Stack-Einstellungen.")
 
@@ -1210,6 +1292,9 @@ defmodule BacViewWeb.DashboardLive do
 
   defp stack_settings_error(:no_interface),
     do: gt("Bitte eine Schnittstelle auswählen.")
+
+  defp stack_settings_error(reason) when reason in [:invalid_hub_uri, :missing_sc_primary_hub],
+    do: ErrorMessage.format_reason(reason)
 
   defp stack_settings_error(_invalid_settings),
     do: gt("Stack-Einstellungen konnten nicht gespeichert werden.")

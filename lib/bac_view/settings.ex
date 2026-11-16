@@ -4,14 +4,17 @@ defmodule BacView.Settings do
   """
   use GenServer
 
+  alias BACnet.Protocol.SecureConnect.BVLC
+  alias BACnet.Stack.Transport.ScTransport.Config, as: SCConfig
   alias BacView.BACnet.Address
   alias BacView.BACnet.InterfaceSelection
 
   @settings_file "runtime_settings.json"
 
-  @stack_keys ~w(transport interface ipv4_port mstp_local_address mstp_baud_rate)a
+  @stack_keys ~w(transport interface ipv4_port mstp_local_address mstp_baud_rate
+                 sc_primary_hub_uri sc_failover_hub_uri sc_verify_hostname sc_ip_family)a
   @mstp_enabled Application.compile_env!(:bacview, :mstp_enabled)
-  @supported_transports if @mstp_enabled, do: ~w(ipv4 mstp), else: ~w(ipv4)
+  @supported_transports if @mstp_enabled, do: ~w(ipv4 mstp bacnet_sc), else: ~w(ipv4 bacnet_sc)
 
   @apdu_timeout_min 100
   @apdu_timeout_max 60_000
@@ -38,6 +41,12 @@ defmodule BacView.Settings do
           cov_increment: float() | nil,
           mstp_local_address: 0..127,
           mstp_baud_rate: :auto | pos_integer(),
+          sc_primary_hub_uri: String.t() | nil,
+          sc_failover_hub_uri: String.t() | nil,
+          sc_verify_hostname: boolean(),
+          sc_ip_family: String.t(),
+          sc_device_uuid: String.t() | nil,
+          sc_vmac: String.t() | nil,
           bbmd_host: String.t() | nil,
           bbmd_port: pos_integer(),
           bbmd_ttl: pos_integer(),
@@ -133,6 +142,12 @@ defmodule BacView.Settings do
       cov_increment: nil,
       mstp_local_address: 127,
       mstp_baud_rate: :auto,
+      sc_primary_hub_uri: nil,
+      sc_failover_hub_uri: nil,
+      sc_verify_hostname: false,
+      sc_ip_family: "inet",
+      sc_device_uuid: nil,
+      sc_vmac: nil,
       bbmd_host: nil,
       bbmd_port: 47_808,
       bbmd_ttl: 600,
@@ -161,10 +176,16 @@ defmodule BacView.Settings do
     end
   end
 
+  @spec ensure_sc_identity() :: {:ok, %{uuid: binary(), vmac: binary()}} | {:error, term()}
+  def ensure_sc_identity(), do: GenServer.call(__MODULE__, :ensure_sc_identity)
+
+  @spec persist_sc_vmac(binary()) :: :ok | {:error, term()}
+  def persist_sc_vmac(vmac), do: GenServer.call(__MODULE__, {:persist_sc_vmac, vmac})
+
   @impl true
   def init(_opts) do
-    reconcile_interface(state = load_settings())
-    persist(state)
+    state = reconcile_interface(load_settings())
+    :ok = persist(state)
     {:ok, state}
   end
 
@@ -173,16 +194,90 @@ defmodule BacView.Settings do
 
   @impl true
   def handle_call({:update, opts}, _from, state) do
-    case apply_updates(state, opts) do
+    case validate_updates(state, opts) do
       {:ok, new_state} ->
         new_state = reconcile_interface(new_state)
-        persist(new_state)
-        {:reply, {:ok, new_state}, new_state}
+
+        case persist(new_state) do
+          :ok -> {:reply, {:ok, new_state}, new_state}
+          {:error, _reason} = error -> {:reply, error, state}
+        end
 
       {:error, _get} = err ->
         {:reply, err, state}
     end
   end
+
+  def handle_call(:ensure_sc_identity, _from, state) do
+    uuid = load_sc_uuid(state.sc_device_uuid)
+    vmac = load_sc_vmac(state.sc_vmac)
+    updated = %{state | sc_device_uuid: Base.encode16(uuid), sc_vmac: Base.encode16(vmac)}
+
+    if updated == state or persist(updated) == :ok do
+      {:reply, {:ok, %{uuid: uuid, vmac: vmac}}, updated}
+    else
+      {:reply, {:error, :sc_identity_storage_failed}, state}
+    end
+  end
+
+  def handle_call({:persist_sc_vmac, <<_value::48>> = vmac}, _from, state) do
+    updated = %{state | sc_vmac: Base.encode16(vmac)}
+
+    if BVLC.valid_vmac?(vmac) and persist(updated) == :ok do
+      {:reply, :ok, updated}
+    else
+      {:reply, {:error, :sc_identity_storage_failed}, state}
+    end
+  end
+
+  def handle_call({:persist_sc_vmac, _vmac}, _from, state),
+    do: {:reply, {:error, :invalid_sc_vmac}, state}
+
+  defp load_sc_uuid(value) do
+    case Base.decode16(to_string(value), case: :mixed) do
+      {:ok, <<uuid::128>> = binary} when uuid != 0 ->
+        binary
+
+      _invalid ->
+        <<prefix::48, _version::4, middle::12, _variant::2, suffix::62>> =
+          :crypto.strong_rand_bytes(16)
+
+        <<prefix::48, 4::4, middle::12, 2::2, suffix::62>>
+    end
+  end
+
+  defp load_sc_vmac(value) do
+    with {:ok, vmac} <- Base.decode16(to_string(value), case: :mixed),
+         true <- BVLC.valid_vmac?(vmac) do
+      vmac
+    else
+      _invalid -> BVLC.random_vmac()
+    end
+  end
+
+  @spec validate_sc_config(t()) :: :ok | {:error, :invalid_hub_uri | :missing_sc_primary_hub}
+  def validate_sc_config(settings) do
+    with {:ok, primary} <- SCConfig.uri(settings.sc_primary_hub_uri),
+         :ok <- require_sc_primary(primary),
+         {:ok, _failover} <- SCConfig.uri(settings.sc_failover_hub_uri) do
+      :ok
+    end
+  end
+
+  defp require_sc_primary(nil), do: {:error, :missing_sc_primary_hub}
+  defp require_sc_primary(%URI{}), do: :ok
+
+  defp validate_updates(state, opts) do
+    with {:ok, updated} <- apply_updates(state, opts),
+         :ok <- validate_selected_transport(updated) do
+      {:ok, updated}
+    end
+  end
+
+  defp validate_selected_transport(%{transport: "bacnet_sc"} = settings),
+    do: validate_sc_config(settings)
+
+  defp validate_selected_transport(_settings), do: :ok
 
   defp apply_updates(state, opts) do
     Enum.reduce_while(opts, {:ok, state}, fn
@@ -192,6 +287,9 @@ defmodule BacView.Settings do
         else
           {:halt, {:error, :invalid_transport}}
         end
+
+      {:interface, nil}, {:ok, %{transport: "bacnet_sc"} = acc} ->
+        {:cont, {:ok, acc}}
 
       {:interface, value}, {:ok, acc} when is_binary(value) ->
         trimmed = String.trim(value)
@@ -257,6 +355,24 @@ defmodule BacView.Settings do
       when is_integer(value) and value in [9600, 19_200, 38_400, 57_600, 76_800, 115_200] ->
         {:cont, {:ok, %{acc | mstp_baud_rate: value}}}
 
+      {key, value}, {:ok, acc}
+      when key in [:sc_primary_hub_uri, :sc_failover_hub_uri] and is_binary(value) ->
+        trimmed = empty_to_nil(String.trim(value))
+
+        case SCConfig.uri(trimmed) do
+          {:ok, _uri} -> {:cont, {:ok, Map.put(acc, key, trimmed)}}
+          {:error, _reason} = error -> {:halt, error}
+        end
+
+      {key, nil}, {:ok, acc} when key in [:sc_primary_hub_uri, :sc_failover_hub_uri] ->
+        {:cont, {:ok, Map.put(acc, key, nil)}}
+
+      {:sc_verify_hostname, value}, {:ok, acc} when is_boolean(value) ->
+        {:cont, {:ok, %{acc | sc_verify_hostname: value}}}
+
+      {:sc_ip_family, value}, {:ok, acc} when value in ["inet", "inet6"] ->
+        {:cont, {:ok, %{acc | sc_ip_family: value}}}
+
       {:bbmd_host, value}, {:ok, acc} when is_binary(value) ->
         {:cont, {:ok, %{acc | bbmd_host: String.trim(value)}}}
 
@@ -277,7 +393,9 @@ defmodule BacView.Settings do
     end)
   end
 
-  defp supported_transports(), do: @supported_transports
+  @doc false
+  @spec supported_transports() :: [String.t()]
+  def supported_transports(), do: @supported_transports
 
   defp load_settings() do
     path = settings_path()
@@ -347,6 +465,10 @@ defmodule BacView.Settings do
     |> update_in([:scan_on_online], &to_bool/1)
     |> update_in([:cov_increment], &parse_cov_increment/1)
     |> update_in([:mstp_baud_rate], &normalize_mstp_baud_rate/1)
+    |> update_in([:sc_verify_hostname], &to_bool/1)
+    |> update_in([:sc_ip_family], &normalize_sc_ip_family/1)
+    |> update_in([:sc_device_uuid], &optional_binary/1)
+    |> update_in([:sc_vmac], &optional_binary/1)
     |> update_in([:bbmd_host], &empty_to_nil/1)
     |> update_in([:network_number], &normalize_network_number/1)
     |> update_in([:max_apdu_length], &normalize_max_apdu_length/1)
@@ -356,6 +478,12 @@ defmodule BacView.Settings do
     |> update_in([:max_segments], &normalize_max_segments/1)
     |> maybe_coerce_mstp_transport()
   end
+
+  defp normalize_sc_ip_family("inet6"), do: "inet6"
+  defp normalize_sc_ip_family(_family), do: "inet"
+
+  defp optional_binary(value) when is_binary(value), do: value
+  defp optional_binary(_value), do: nil
 
   defp normalize_network_number(value) when is_integer(value) and value in 0..65_534, do: value
 
@@ -467,12 +595,18 @@ defmodule BacView.Settings do
 
   defp persist(state) do
     path = settings_path()
-    File.mkdir_p!(Path.dirname(path))
+    temporary = path <> "." <> Base.url_encode64(:crypto.strong_rand_bytes(12), padding: false)
+    data = Jason.encode!(Map.drop(state, [:interface_error]), pretty: true)
 
-    state
-    |> Map.drop([:interface_error])
-    |> Jason.encode!(pretty: true)
-    |> then(&File.write!(path, &1))
+    with :ok <- File.mkdir_p(Path.dirname(path)),
+         :ok <- File.write(temporary, data, [:exclusive, :sync]),
+         :ok <- File.rename(temporary, path) do
+      :ok
+    else
+      {:error, _reason} = error ->
+        File.rm(temporary)
+        error
+    end
   end
 
   defp settings_path() do

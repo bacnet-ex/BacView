@@ -17,12 +17,11 @@ defmodule BacView.BACnet.NotificationClassRecipient do
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.Recipient
   alias BACnet.Protocol.RecipientAddress
-  alias BACnet.Stack.Transport.IPv4Transport
+  alias BACnet.Stack.Client, as: StackClient
   alias BacView.BACnet.Client
   alias BacView.BACnet.DeviceSession
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.NetworkNumber
-  alias BacView.BACnet.Stack
 
   @table :bacview_nc_recipients
   @notification_process_id 0
@@ -458,12 +457,15 @@ defmodule BacView.BACnet.NotificationClassRecipient do
         mac
 
       _local_mac_address ->
-        {ip, port} = IPv4Transport.get_local_address(Stack.transport())
-        ip_port_to_mac(ip, port)
+        {module, transport, _portal} = StackClient.get_transport(Client.stack_client())
+        address_to_mac(module.get_local_address(transport))
     end
   end
 
-  defp ip_port_to_mac({a, b, c, d}, port) when is_integer(port) do
+  defp address_to_mac(<<_vmac::48>> = vmac), do: vmac
+  defp address_to_mac(mac) when mac in 0..255, do: <<mac>>
+
+  defp address_to_mac({{a, b, c, d}, port}) when is_integer(port) do
     <<a, b, c, d, Bitwise.bsr(port, 8), Bitwise.band(port, 0xFF)>>
   end
 

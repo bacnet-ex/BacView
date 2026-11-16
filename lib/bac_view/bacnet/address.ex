@@ -5,12 +5,19 @@ defmodule BacView.BACnet.Address do
   """
 
   alias BACnet.Protocol.NpciTarget
+  alias BACnet.Protocol.SecureConnect.BVLC
 
   @bacnet_port 47_808
   @ipv4_port_range 47_808..65_535
   @mstp_unicast_range 0..254
   @max_scan_targets 256
   @octet_range_re ~r/^\[(\d+)-(\d+)\]$/
+  @npci_hex_re ~r/\A[0-9a-f]{2}(?::[0-9a-f]{2}){1,6}\z/i
+
+  @doc "Checks whether a target is an encodable remote station address."
+  defguard is_npci_station(target)
+           when is_struct(target, NpciTarget) and target.net in 1..65_534 and
+                  is_integer(target.address) and target.address in 0..0xFFFFFFFFFFFFFF
 
   @spec parse_host(String.t()) :: {:ok, :inet.ip_address()} | {:error, :invalid_host}
   def parse_host(host) when is_binary(host) do
@@ -29,11 +36,16 @@ defmodule BacView.BACnet.Address do
 
   * `"ipv4"` - IPv4 host, optional `:port` (default #{@bacnet_port})
   * `"mstp"` - unicast MS/TP MAC in `0..254` (255 is broadcast)
+  * `"bacnet_sc"` - six-octet unicast VMAC in colon-separated hex
   """
   @spec parse_transport_destination(String.t(), String.t()) ::
-          {:ok, {:inet.ip_address(), pos_integer()} | 0..254}
+          {:ok, {:inet.ip_address(), pos_integer()} | 0..254 | BVLC.vmac()}
           | {:error,
-             :invalid_host | :invalid_port | :invalid_mstp_address | :unsupported_transport}
+             :invalid_host
+             | :invalid_port
+             | :invalid_mstp_address
+             | :invalid_sc_vmac
+             | :unsupported_transport}
   def parse_transport_destination(value, transport)
 
   def parse_transport_destination(value, "ipv4") when is_binary(value) do
@@ -44,7 +56,70 @@ defmodule BacView.BACnet.Address do
     parse_mstp_destination(String.trim(value))
   end
 
+  def parse_transport_destination(value, "bacnet_sc") when is_binary(value) do
+    value = String.trim(value)
+
+    with true <- Regex.match?(~r/\A[0-9a-f]{2}(?::[0-9a-f]{2}){5}\z/i, value),
+         {:ok, vmac} <- Base.decode16(String.replace(value, ":", ""), case: :mixed),
+         true <- BVLC.valid_vmac?(vmac) do
+      {:ok, vmac}
+    else
+      _reason -> {:error, :invalid_sc_vmac}
+    end
+  end
+
   def parse_transport_destination(_value, _transport), do: {:error, :unsupported_transport}
+
+  @doc """
+  Parses an optional remote station as `network/address`.
+
+  The address accepts a decimal MS/TP MAC, an IPv4 address with optional port,
+  or two to seven colon-separated hex octets. The remote address format is
+  independent of the active transport used to reach the router.
+  """
+  @spec parse_npci_station(term()) :: {:ok, NpciTarget.t() | nil} | {:error, :invalid_npci_source}
+  def parse_npci_station(nil), do: {:ok, nil}
+
+  def parse_npci_station(value) when is_binary(value) do
+    case String.split(String.trim(value), "/", parts: 2) do
+      [""] -> {:ok, nil}
+      [network, address] -> parse_npci_station_parts(String.trim(network), String.trim(address))
+      _parts -> {:error, :invalid_npci_source}
+    end
+  end
+
+  def parse_npci_station(_value), do: {:error, :invalid_npci_source}
+
+  defp parse_npci_station_parts(network, address) do
+    with {net, ""} when net in 1..65_534 <- Integer.parse(network),
+         {:ok, mac} <- parse_npci_station_address(address) do
+      {:ok, %NpciTarget{net: net, address: mac}}
+    else
+      _reason -> {:error, :invalid_npci_source}
+    end
+  end
+
+  defp parse_npci_station_address(address) do
+    cond do
+      String.contains?(address, ".") ->
+        with {:ok, {{a, b, c, d}, port}} when a > 0 <- parse_ipv4_destination(address) do
+          {:ok, :binary.decode_unsigned(<<a, b, c, d, port::16>>)}
+        end
+
+      Regex.match?(@npci_hex_re, address) ->
+        # Bacstack encodes integer addresses with the minimum number of bytes.
+        case Base.decode16(String.replace(address, ":", ""), case: :mixed) do
+          {:ok, <<first, _rest::binary>> = bytes} when first > 0 ->
+            {:ok, :binary.decode_unsigned(bytes)}
+
+          _bytes ->
+            :error
+        end
+
+      true ->
+        parse_mstp_destination(address)
+    end
+  end
 
   @doc """
   Expands a scan target into one or more IPv4 addresses.
@@ -139,6 +214,7 @@ defmodule BacView.BACnet.Address do
     do: "#{format_ip(ip)}:#{port}"
 
   def format_destination(mac) when is_integer(mac) and mac in 0..255, do: Integer.to_string(mac)
+  def format_destination(<<_mac::48>> = vmac), do: format_npci_hex(vmac)
   def format_destination(other), do: inspect(other)
 
   @doc "Formats an NPCI source or destination target for display."
@@ -213,7 +289,8 @@ defmodule BacView.BACnet.Address do
     case normalize_destination(address) do
       {ip, port} when is_tuple(ip) and is_integer(port) -> {0, ip, port}
       mac when is_integer(mac) -> {1, mac}
-      other -> {2, inspect(other)}
+      <<_mac::48>> = vmac -> {2, vmac}
+      other -> {3, inspect(other)}
     end
   end
 

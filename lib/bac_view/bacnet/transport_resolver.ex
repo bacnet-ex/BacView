@@ -12,61 +12,60 @@ defmodule BacView.BACnet.TransportResolver do
     "bacnet_sc" => BacView.BACnet.Transport.BACnetSC
   }
 
-  @ui_transports (if Application.compile_env(:bacview, :mstp_enabled, true) do
-                    ~w(ipv4 mstp)
-                  else
-                    ~w(ipv4)
-                  end)
-
-  @spec resolve() :: {:ok, module(), keyword()} | {:error, term()}
-  def resolve() do
-    settings = Settings.get()
-
-    case InterfaceSelection.resolve(settings.transport, settings.interface) do
-      {:ok, %{interface: interface, options: _options}} ->
-        with {:ok, module} <- fetch_module(settings.transport),
-             opts <- transport_opts(%{settings | interface: interface}) do
-          if module.available?() do
-            {:ok, module, opts}
-          else
-            {:error, {:transport_not_available, settings.transport}}
-          end
-        end
-
-      {:error, reason, _resolve} ->
-        {:error, reason}
+  @spec resolve(Settings.t()) :: {:ok, module(), keyword()} | {:error, term()}
+  def resolve(settings \\ Settings.get()) do
+    with {:ok, module} <- fetch_module(settings.transport),
+         :ok <- ensure_available(module, settings.transport),
+         {:ok, opts} <- transport_opts(settings) do
+      {:ok, module, opts}
     end
   end
 
   @spec supported_transports() :: [String.t()]
-  def supported_transports(), do: @ui_transports
+  def supported_transports(), do: Settings.supported_transports()
+
+  defp ensure_available(module, name) do
+    if module.available?(), do: :ok, else: {:error, {:transport_not_available, name}}
+  end
 
   defp fetch_module(name) when is_binary(name) do
-    case Map.fetch(@transports, String.downcase(name)) do
+    case Map.fetch(@transports, name) do
       {:ok, module} -> {:ok, module}
       :error -> {:error, {:unknown_transport, name}}
     end
   end
 
-  defp transport_opts(settings) do
-    base = [name: BacView.BACnet.TransportLayer]
-
-    case settings.transport do
-      "mstp" ->
-        Keyword.merge(base,
-          port_name: settings.interface,
-          local_address: settings.mstp_local_address,
-          baudrate: settings.mstp_baud_rate
-        )
-
-      "ipv4" ->
-        Keyword.merge(base,
-          local_ip: settings.interface,
-          bacnet_port: settings.ipv4_port
-        )
-
-      _settings ->
-        Keyword.put(base, :local_ip, settings.interface)
+  defp transport_opts(%{transport: "bacnet_sc"} = settings) do
+    with :ok <- Settings.validate_sc_config(settings) do
+      {:ok,
+       [
+         name: BacView.BACnet.TransportLayer,
+         primary_hub_uri: settings.sc_primary_hub_uri,
+         failover_hub_uri: settings.sc_failover_hub_uri,
+         verify_hostname: settings.sc_verify_hostname,
+         ip_family: if(settings.sc_ip_family == "inet6", do: :inet6, else: :inet)
+       ]}
     end
   end
+
+  defp transport_opts(settings) do
+    case InterfaceSelection.resolve(settings.transport, settings.interface) do
+      {:ok, %{interface: interface}} ->
+        {:ok, [name: BacView.BACnet.TransportLayer] ++ interface_opts(settings, interface)}
+
+      {:error, reason, _selection} ->
+        {:error, reason}
+    end
+  end
+
+  defp interface_opts(%{transport: "mstp"} = settings, interface) do
+    [
+      port_name: interface,
+      local_address: settings.mstp_local_address,
+      baudrate: settings.mstp_baud_rate
+    ]
+  end
+
+  defp interface_opts(%{transport: "ipv4"} = settings, interface),
+    do: [local_ip: interface, bacnet_port: settings.ipv4_port]
 end

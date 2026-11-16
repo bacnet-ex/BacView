@@ -12,6 +12,41 @@ defmodule BacView.BACnet.AddressTest do
     assert {:error, :invalid_host} = Address.parse_host("not-an-ip")
   end
 
+  describe "parse_npci_station/1" do
+    test "parses an optional routed station independently of the transport" do
+      assert {:ok, nil} = Address.parse_npci_station(nil)
+      assert {:ok, nil} = Address.parse_npci_station("  ")
+      assert {:ok, %NpciTarget{net: 77, address: 42}} = Address.parse_npci_station(" 77 / 42 ")
+      assert {:ok, %NpciTarget{net: 1, address: 0}} = Address.parse_npci_station("1/0")
+
+      assert {:ok, %NpciTarget{net: 65_534, address: 0xC0A8010ABA_C1}} =
+               Address.parse_npci_station("65534/192.168.1.10:47809")
+
+      assert {:ok, %NpciTarget{net: 100, address: 0xC0A8010ABA_C0}} =
+               Address.parse_npci_station("100/192.168.1.10")
+
+      assert {:ok, %NpciTarget{net: 100, address: 0x0200AA000042}} =
+               Address.parse_npci_station("100/02:00:aa:00:00:42")
+    end
+
+    test "rejects invalid networks, broadcasts, and malformed station addresses" do
+      for value <- [
+            "42",
+            "0/42",
+            "65535/42",
+            "1/",
+            "1/broadcast",
+            "1/255",
+            "1/192.168.1.10:65536",
+            "1/192.168.1.10/42",
+            "1/00:01",
+            "1/02:00:00:00:00:00:00:00"
+          ] do
+        assert {:error, :invalid_npci_source} = Address.parse_npci_station(value)
+      end
+    end
+  end
+
   describe "parse_transport_destination/2" do
     test "parses IPv4 host with default port" do
       assert {:ok, {{192, 168, 1, 10}, 47_808}} =
@@ -45,9 +80,21 @@ defmodule BacView.BACnet.AddressTest do
                Address.parse_transport_destination("192.168.1.10", "mstp")
     end
 
+    test "parses and formats an SC VMAC and rejects reserved addresses" do
+      assert {:ok, <<2, 0, 170, 0, 0, 66>> = vmac} =
+               Address.parse_transport_destination(" 02:00:aa:00:00:42 ", "bacnet_sc")
+
+      assert Address.destination_meta(vmac) == %{ip: nil, port: nil, label: "02:00:AA:00:00:42"}
+
+      for invalid <- ["00:00:00:00:00:00", "FF:FF:FF:FF:FF:FF", "02:00:AA:00:00", "10.0.0.1"] do
+        assert {:error, :invalid_sc_vmac} =
+                 Address.parse_transport_destination(invalid, "bacnet_sc")
+      end
+    end
+
     test "rejects unknown transports" do
       assert {:error, :unsupported_transport} =
-               Address.parse_transport_destination("10.0.0.1", "bacnet_sc")
+               Address.parse_transport_destination("10.0.0.1", "unknown")
     end
   end
 

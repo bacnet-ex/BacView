@@ -3,6 +3,7 @@ defmodule BacView.BACnet.DiscoveryTest do
   use ExUnit.Case, async: false
 
   alias BACnet.Protocol.APDU.UnconfirmedServiceRequest
+  alias BACnet.Protocol.NpciTarget
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.IAmCollector
@@ -641,6 +642,22 @@ defmodule BacView.BACnet.DiscoveryTest do
 
       assert Keyword.fetch!(opts, :timeout) == 1000
       assert Keyword.fetch!(opts, :destination) == [{{10, 0, 0, 42}, Settings.get().ipv4_port}]
+    end
+
+    test "keeps the router address and remote station separate for routed Who-Is" do
+      assert {:ok, opts} =
+               Discovery.parse_scan_params(%{
+                 "target_ip" => "10.0.0.42:47809",
+                 "npci_source" => "77/42"
+               })
+
+      assert opts[:destination] == [{{10, 0, 0, 42}, 47_809}]
+      assert opts[:npci_destination] == %NpciTarget{net: 77, address: 42}
+    end
+
+    test "requires a transport target when specifying an NPCI source" do
+      assert {:error, :npci_source_requires_target} =
+               Discovery.parse_scan_params(%{"npci_source" => "77/42"})
     end
 
     test "parses target ip:port for unicast Who-Is" do

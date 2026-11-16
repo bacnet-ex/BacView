@@ -1713,8 +1713,7 @@ defmodule BacView.BACnet.Protocol.ComplexPropertyEditor do
   # `:array.sparse_to_list/1` (used by `BACnetArray.to_list/1` and thus write
   # casting via `reduce_while`) omits entries equal to the default. If the
   # default is the first existing item (or a blank template struct), any JSON
-  # entry that matches it is dropped - typically leaving only later items on
-  # the wire (e.g. schedule list_of_object_property_references).
+  # entry that matches it is dropped, leaving only later items on the wire.
   defp rebuild_bacnet_array(items, %BACnetArray{fixed_size: nil}, _item_template) do
     {:ok, BACnetArray.from_list(items, false, :undefined)}
   end

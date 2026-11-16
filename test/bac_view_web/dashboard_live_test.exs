@@ -5,6 +5,9 @@ defmodule BacViewWeb.DashboardLiveScanTest do
   import Phoenix.ConnTest
   import Phoenix.LiveViewTest
 
+  alias BacView.BACnet.SCCredentials
+  alias BacView.Test.SCTestCertificates
+
   setup do
     {:ok, _} =
       BacView.Settings.update(
@@ -46,6 +49,45 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     :ok
   end
 
+  @tag :tmp_dir
+  test "SC settings import PEMs from the dashboard", %{conn: conn, tmp_dir: directory} do
+    previous = Application.fetch_env(:bacview, :sc_credentials_directory)
+    Application.put_env(:bacview, :sc_credentials_directory, directory)
+
+    on_exit(fn ->
+      case previous do
+        {:ok, value} -> Application.put_env(:bacview, :sc_credentials_directory, value)
+        :error -> Application.delete_env(:bacview, :sc_credentials_directory)
+      end
+    end)
+
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> form("#stack-settings-form", stack: %{transport: "bacnet_sc"})
+    |> render_change()
+
+    assert has_element?(view, "#sc-connection-settings")
+    assert has_element?(view, "#sc-credentials-form")
+    refute has_element?(view, "#stack_interface")
+
+    ca = SCTestCertificates.issuer()
+    {certificate, key, [issuer]} = SCTestCertificates.pem(ca, "UI node")
+
+    upload_pem(view, :sc_certificate, "node.pem", certificate)
+    upload_pem(view, :sc_key, "node-key.pem", key)
+    upload_pem(view, :sc_issuers, "issuer.pem", issuer)
+
+    view
+    |> form("#sc-credentials-form")
+    |> render_submit()
+
+    assert has_element?(view, "#sc-credentials-imported")
+    assert has_element?(view, "#sc-certificate-expiry")
+    assert {:ok, _summary} = SCCredentials.summary()
+    refute render(view) =~ "BEGIN EC PRIVATE KEY"
+  end
+
   test "scan form uses LiveView submit", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
 
@@ -69,9 +111,11 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     view
     |> element("#scan-network-form")
     |> render_hook("scan_form_restore", %{
+      "transport" => "ipv4",
       "scan" => %{
         "timeout_ms" => "8000",
         "target_ip" => "10.0.0.1",
+        "npci_source" => "77/42",
         "device_id_low" => "100",
         "device_id_high" => "200",
         "vendor_id" => "42"
@@ -80,12 +124,13 @@ defmodule BacViewWeb.DashboardLiveScanTest do
 
     assert has_element?(view, "#scan_timeout_ms[value='8000']")
     assert has_element?(view, "#scan_target_ip[value='10.0.0.1']")
+    assert has_element?(view, "#scan_npci_source[value='77/42']")
     assert has_element?(view, "#scan_device_id_low[value='100']")
     assert has_element?(view, "#scan_device_id_high[value='200']")
     assert has_element?(view, "#scan_vendor_id[value='42']")
   end
 
-  test "targeted who-is accepts ip:port", %{conn: conn} do
+  test "targeted who-is accepts a router ip:port and remote NPCI source", %{conn: conn} do
     {:ok, view, html} = live(conn, ~p"/")
 
     assert html =~ "192.168.1.101:47808 oder 192.168.100.[31-35]"
@@ -96,6 +141,7 @@ defmodule BacViewWeb.DashboardLiveScanTest do
       "scan" => %{
         "timeout_ms" => "5000",
         "target_ip" => "192.168.1.101:47808",
+        "npci_source" => "77/42",
         "device_id_low" => "",
         "device_id_high" => "",
         "vendor_id" => ""
@@ -104,7 +150,24 @@ defmodule BacViewWeb.DashboardLiveScanTest do
     |> render_submit()
 
     assert has_element?(view, "#scan_target_ip[value='192.168.1.101:47808']")
+    assert has_element?(view, "#scan_npci_source[value='77/42']")
     assert has_element?(view, "#scan-network-form-submit[disabled]")
+  end
+
+  test "targeted who-is requires a target address for an NPCI source", %{conn: conn} do
+    {:ok, view, _html} = live(conn, ~p"/")
+
+    view
+    |> form("#scan-network-form", %{"scan" => %{"npci_source" => "77/42"}})
+    |> render_submit()
+
+    assert has_element?(
+             view,
+             "#flash-error",
+             "Für die NPCI-Quelle ist eine Zieladresse erforderlich."
+           )
+
+    refute has_element?(view, "#scan-network-form-submit[disabled]")
   end
 
   test "targeted who-is rejects an invalid port", %{conn: conn} do
@@ -656,6 +719,14 @@ defmodule BacViewWeb.DashboardLiveScanTest do
 
     assert has_element?(view, "#scan-network-form-submit[disabled]")
     assert has_element?(view, "#scan_timeout_ms[disabled]")
+  end
+
+  defp upload_pem(view, field, name, content) do
+    view
+    |> file_input("#sc-credentials-form", field, [
+      %{name: name, content: content, type: "application/x-pem-file"}
+    ])
+    |> render_upload(name)
   end
 
   defp first_ipv4_interface do

@@ -6,6 +6,8 @@ defmodule BacViewWeb.ScanPanel do
   alias BacView.BACnet.Discovery
 
   attr(:form, :map, required: true)
+  attr(:transport, :string, default: "ipv4")
+  attr(:available?, :boolean, default: true)
   attr(:scanning, :boolean, default: false)
   attr(:variant, :atom, default: :sidebar, values: [:sidebar, :hero])
   attr(:id, :string, default: "scan-network-form")
@@ -16,6 +18,7 @@ defmodule BacViewWeb.ScanPanel do
       for={@form}
       id={@id}
       phx-hook="ScanFormPersist"
+      data-transport={@transport}
       phx-change="scan_form_change"
       phx-submit="scan_network"
       class={[
@@ -43,20 +46,35 @@ defmodule BacViewWeb.ScanPanel do
 
         <div>
           <label class="bac-label" for={@form[:target_ip].id}>
-            {t(@locale, @locale_version, "Ziel-IP (optional)")}
+            {target_label(@transport, @locale, @locale_version)}
           </label>
           <.input
             field={@form[:target_ip]}
             type="text"
-            placeholder="192.168.1.101:47808 oder 192.168.100.[31-35]"
+            placeholder={target_placeholder(@transport)}
             class={input_class(@variant)}
             disabled={@scanning}
             autocomplete="off"
           />
           <p class="text-xs bac-text-faint mt-1">
-            {t(@locale, @locale_version, 
-              "Leer für Broadcast. IP mit optionalem Port (192.168.1.101:47808) oder Bereich (192.168.100.[31-35])."
-            )}
+            {target_help(@transport, @locale, @locale_version)}
+          </p>
+        </div>
+
+        <div>
+          <label class="bac-label" for={@form[:npci_source].id}>
+            {t(@locale, @locale_version, "NPCI-Quelle des Geräts (optional)")}
+          </label>
+          <.input
+            field={@form[:npci_source]}
+            type="text"
+            placeholder="77/42"
+            class={input_class(@variant)}
+            disabled={@scanning}
+            autocomplete="off"
+          />
+          <p class="text-xs bac-text-faint mt-1">
+            {t(@locale, @locale_version, "Netzwerk/MAC des entfernten Geräts.")}
           </p>
         </div>
 
@@ -118,7 +136,7 @@ defmodule BacViewWeb.ScanPanel do
 
       <button
         type="submit"
-        disabled={@scanning}
+        disabled={@scanning or not @available?}
         class={[
           "bac-btn bac-btn-primary",
           @variant == :sidebar && "bac-btn-sm w-full",
@@ -132,6 +150,28 @@ defmodule BacViewWeb.ScanPanel do
       </button>
     </.form>
     """
+  end
+
+  defp target_label("bacnet_sc", locale, lv), do: t(locale, lv, "Ziel-VMAC (optional)")
+  defp target_label("mstp", locale, lv), do: t(locale, lv, "Ziel-MAC (optional)")
+  defp target_label(_transport, locale, lv), do: t(locale, lv, "Ziel-IP (optional)")
+
+  defp target_placeholder("bacnet_sc"), do: "02:00:00:00:00:42"
+  defp target_placeholder("mstp"), do: "0–254"
+  defp target_placeholder(_transport), do: "192.168.1.101:47808 oder 192.168.100.[31-35]"
+
+  defp target_help("bacnet_sc", locale, lv),
+    do: t(locale, lv, "Leer für Broadcast über den Hub. Für Unicast sechs Hex-Bytes eingeben.")
+
+  defp target_help("mstp", locale, lv),
+    do: t(locale, lv, "Leer für Broadcast. Für Unicast eine MS/TP-MAC (0–254) eingeben.")
+
+  defp target_help(_transport, locale, lv) do
+    t(
+      locale,
+      lv,
+      "Leer für Broadcast. IP mit optionalem Port (192.168.1.101:47808) oder Bereich (192.168.100.[31-35])."
+    )
   end
 
   defp input_class(:sidebar), do: "bac-input bac-input-sm bac-mono w-full"

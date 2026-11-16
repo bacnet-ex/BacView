@@ -36,6 +36,20 @@ defmodule BacView.BACnet.RequestOpts do
   end
 
   @doc """
+  Adds an explicit remote station to a request sent to a transport address.
+
+  Uses the same invoke-ID pool policy as a discovered device at that address.
+  """
+  @spec for_routed_address(term(), NpciTarget.t(), keyword()) :: keyword()
+  def for_routed_address(address, target, opts) do
+    route = %{address: address, npci_source: target}
+
+    opts
+    |> maybe_put_npci_destination(route)
+    |> maybe_put_npci_id(route)
+  end
+
+  @doc """
   Merges routing opts when `base` carries `:device_id` or `:remote_device_id`.
   Always injects effective APDU size opts unless already present.
   Injects `:max_segments` when the local setting is a BACnet integer count.

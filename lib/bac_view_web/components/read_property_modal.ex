@@ -150,6 +150,23 @@ defmodule BacViewWeb.ReadPropertyModal do
               </p>
             </div>
 
+            <div :if={locator(@state) == "address"} class="space-y-1.5">
+              <label class="bac-label" for={@state.form[:npci_source].id}>
+                {t(@locale, @locale_version, "NPCI-Quelle des Geräts (optional)")}
+              </label>
+              <.input
+                field={@state.form[:npci_source]}
+                type="text"
+                placeholder="77/42"
+                class="bac-input bac-input-sm bac-mono"
+                autocomplete="off"
+                disabled={@state.busy}
+              />
+              <p class="text-xs bac-text-faint">
+                {t(@locale, @locale_version, "Netzwerk/MAC des entfernten Geräts.")}
+              </p>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div class="space-y-1.5">
                 <label class="bac-label" for={@state.form[:object_type].id}>
@@ -290,8 +307,13 @@ defmodule BacViewWeb.ReadPropertyModal do
     if value in ["address", "device_id"], do: value, else: "device_id"
   end
 
+  defp address_placeholder("bacnet_sc"), do: "02:00:00:00:00:42"
   defp address_placeholder("mstp"), do: "0–254"
   defp address_placeholder(_transport), do: "192.168.1.10 oder 192.168.1.10:47808"
+
+  defp address_help("bacnet_sc", locale, locale_version) do
+    t(locale, locale_version, "BACnet/SC-VMAC (sechs Hex-Bytes).")
+  end
 
   defp address_help("mstp", locale, locale_version) do
     t(locale, locale_version, "MS/TP-MAC (0–254)")

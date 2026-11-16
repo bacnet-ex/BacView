@@ -3,6 +3,7 @@ defmodule BacView.BACnet.EventRecordTest do
 
   alias BACnet.Protocol.BACnetTimestamp
   alias BACnet.Protocol.{AlarmSummary, EventInformation}
+  alias BACnet.Protocol.EventPriorities
   alias BACnet.Protocol.EventTimestamps
   alias BACnet.Protocol.EventTransitionBits
   alias BACnet.Protocol.ObjectIdentifier
@@ -96,7 +97,7 @@ defmodule BacView.BACnet.EventRecordTest do
         to_fault: true,
         to_normal: true
       },
-      event_priorities: {90, 70, 50}
+      event_priorities: %EventPriorities{to_offnormal: 90, to_fault: 70, to_normal: 50}
     }
 
     record = EventRecord.from_event_information(42, info)

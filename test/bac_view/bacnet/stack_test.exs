@@ -33,7 +33,7 @@ defmodule BacView.BACnet.StackTest do
 
     refute Stack.running?()
     assert Stack.last_error() == nil
-    assert Stack.status() == %{running?: false, last_error: nil}
+    assert %{running?: false, ready?: false, last_error: nil} = Stack.status()
   end
 
   defp first_ipv4_interface do

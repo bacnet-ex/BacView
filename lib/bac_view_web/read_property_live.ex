@@ -133,6 +133,7 @@ defmodule BacViewWeb.ReadPropertyLive do
       "locator" => "device_id",
       "device_id" => "",
       "address" => "",
+      "npci_source" => "",
       "object_type" => "",
       "instance" => "",
       "property" => "",

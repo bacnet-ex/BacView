@@ -4,6 +4,7 @@ defmodule BacView.BACnet.EventRecord do
   """
   alias BACnet.Protocol.AlarmSummary
   alias BACnet.Protocol.EventInformation
+  alias BACnet.Protocol.EventPriorities
   alias BACnet.Protocol.EventTransitionBits
   alias BACnet.Protocol.ObjectIdentifier
   alias BACnet.Protocol.Services.ConfirmedEventNotification
@@ -60,11 +61,16 @@ defmodule BacView.BACnet.EventRecord do
 
   @spec from_event_information(non_neg_integer(), EventInformation.t()) :: t()
   def from_event_information(device_id, %EventInformation{} = info) do
+    %EventPriorities{to_offnormal: off, to_fault: fault, to_normal: normal} =
+      info.event_priorities
+
+    priorities = {off, fault, normal}
+
     %{
       device_id: device_id,
       object_id: info.object_identifier,
       event_state: info.event_state,
-      priority: priority_for_state(info.event_state, info.event_priorities),
+      priority: priority_for_state(info.event_state, priorities),
       notify_type: info.notify_type,
       notification_class: nil,
       message_text: nil,
@@ -73,7 +79,7 @@ defmodule BacView.BACnet.EventRecord do
       to_state: nil,
       acknowledged_transitions: info.acknowledged_transitions,
       event_timestamps: info.event_timestamps,
-      event_priorities: info.event_priorities,
+      event_priorities: priorities,
       ack_required: nil,
       source: :poll,
       updated_at: DateTime.utc_now()

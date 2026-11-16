@@ -1,6 +1,7 @@
 defmodule BacView.BACnet.SinglePropertyReadTest do
   use ExUnit.Case, async: false
 
+  alias BACnet.Protocol.NpciTarget
   alias BACnet.Protocol.ObjectIdentifier
   alias BacView.BACnet.SinglePropertyRead
   alias BacView.Test.BacnetEtsLock
@@ -39,17 +40,20 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
   test "reads via discovered device id and forwards array index" do
     address = {{192, 168, 1, 10}, 47_808}
     object = %ObjectIdentifier{type: :analog_value, instance: 1}
+    route = %NpciTarget{net: 77, address: 42}
 
     BacnetEtsLock.with_tables(@tables, fn ->
-      :ets.insert(:bacview_devices, {42, %{id: 42, instance: 42, address: address}})
+      device = %{id: 42, instance: 42, address: address, npci_source: route}
+      :ets.insert(:bacview_devices, {42, device})
 
       assert {:ok, result} =
-               SinglePropertyRead.run(
+               SinglePropertyRead.from_form(
                  %{
-                   destination: {:device_id, 42},
-                   object: object,
-                   property: :present_value,
-                   array_index: 3
+                   "device_id" => "42",
+                   "object_type" => "analog-value",
+                   "instance" => "1",
+                   "array_index" => "3",
+                   "npci_source" => "88/13"
                  },
                  client: FakeClient
                )
@@ -57,7 +61,8 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
       assert result.value == 21.5
       assert result.destination == address
       assert_received {:read_property, ^address, ^object, :present_value, opts}
-      assert Keyword.get(opts, :array_index) == 3
+      assert opts[:array_index] == 3
+      assert opts[:destination] == route
     end)
   end
 
@@ -77,7 +82,25 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
              )
 
     assert result.destination == dest
-    assert_received {:read_property, ^dest, ^object, :object_name, _opts}
+    assert_received {:read_property, ^dest, ^object, :object_name, opts}
+    refute Keyword.has_key?(opts, :destination)
+  end
+
+  test "rejects an invalid NPCI source before sending a direct property read" do
+    assert {:error, :invalid_npci_source} =
+             SinglePropertyRead.from_form(
+               %{
+                 "locator" => "address",
+                 "address" => "10.0.0.1",
+                 "npci_source" => "65535/42",
+                 "object_type" => "analog-value",
+                 "instance" => "1"
+               },
+               client: FakeClient,
+               transport: "ipv4"
+             )
+
+    refute_received {:read_property, _destination, _object, _property, _opts}
   end
 
   test "reads via MS/TP MAC address" do

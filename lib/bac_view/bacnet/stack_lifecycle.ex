@@ -4,12 +4,10 @@ defmodule BacView.BACnet.StackLifecycle do
   """
   require Logger
 
-  alias BacView.BACnet.AlarmEvent
   alias BacView.BACnet.Discovery
   alias BacView.BACnet.ForeignRegistration
   alias BacView.BACnet.NetworkNumber
   alias BacView.BACnet.Stack
-  alias BacView.BACnet.SubscriptionManager
 
   alias BacView.Settings
 
@@ -18,11 +16,10 @@ defmodule BacView.BACnet.StackLifecycle do
     settings = Settings.get()
     bbmd = bbmd_registration(settings)
 
-    with :ok <- cancel_active_discovery(),
-         :ok <- restart_stack(),
-         :ok <- forget_learned_network_number(),
-         :ok <- resubscribe_clients(),
-         :ok <- resubscribe_cov() do
+    with :ok <- Discovery.cancel_scan(),
+         :ok <- ForeignRegistration.suspend(),
+         :ok <- NetworkNumber.clear_learned(),
+         :ok <- restart_stack() do
       reregister_bbmd(bbmd)
     end
   end
@@ -38,41 +35,16 @@ defmodule BacView.BACnet.StackLifecycle do
       {:error, error}
   end
 
-  defp cancel_active_discovery() do
-    Discovery.cancel_scan()
-    :ok
-  end
-
-  # NetworkNumber is an application-level GenServer and survives stack restart.
-  # Learned numbers from the previous interface/network must not be reused.
-  defp forget_learned_network_number() do
-    NetworkNumber.clear_learned()
-    :ok
-  end
-
-  defp resubscribe_clients() do
-    SubscriptionManager.resubscribe_client()
-    AlarmEvent.resubscribe_client()
-    :ok
-  end
-
-  defp resubscribe_cov() do
-    SubscriptionManager.resubscribe_all_active()
-    :ok
-  end
-
   defp reregister_bbmd(nil), do: :ok
 
   defp reregister_bbmd({host, port, ttl}) do
-    _nil = ForeignRegistration.unregister()
-
     case ForeignRegistration.register(host, port, ttl: ttl) do
       :ok -> :ok
       {:error, reason} -> {:error, {:bbmd_reregister_failed, reason}}
     end
   end
 
-  defp bbmd_registration(%{bbmd_host: host, bbmd_port: port, bbmd_ttl: ttl})
+  defp bbmd_registration(%{transport: "ipv4", bbmd_host: host, bbmd_port: port, bbmd_ttl: ttl})
        when is_binary(host) and host != "" do
     {host, port, ttl}
   end

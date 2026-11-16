@@ -151,7 +151,49 @@ defmodule BacView.SettingsTest do
   end
 
   test "rejects invalid transport" do
-    assert {:error, :invalid_transport} = Settings.update(transport: "bacnet_sc")
+    assert {:error, :invalid_transport} = Settings.update(transport: "unknown")
+  end
+
+  test "SC requires a secure primary URI and preserves settings on validation failure" do
+    assert {:error, :missing_sc_primary_hub} = Settings.update(transport: "bacnet_sc")
+
+    assert {:error, :invalid_hub_uri} =
+             Settings.update(transport: "bacnet_sc", sc_primary_hub_uri: "ws://hub.example")
+
+    assert {:ok, settings} =
+             Settings.update(
+               transport: "bacnet_sc",
+               sc_primary_hub_uri: "  wss://hub.example/sc ",
+               sc_failover_hub_uri: "wss://spare.example/sc",
+               sc_verify_hostname: true,
+               sc_ip_family: "inet6"
+             )
+
+    assert settings.sc_primary_hub_uri == "wss://hub.example/sc"
+    assert settings.sc_verify_hostname
+    assert Settings.stack_restart_required?(settings, %{settings | sc_failover_hub_uri: nil})
+
+    assert {:ok, [destination: [<<2, 0, 0, 0, 0, 42>>], timeout: 1000]} =
+             Discovery.parse_scan_params(%{
+               "timeout_ms" => "1000",
+               "target_ip" => "02:00:00:00:00:2A"
+             })
+
+    assert {:error, :invalid_sc_vmac} =
+             Discovery.parse_scan_params(%{"target_ip" => "10.0.0.1"})
+  end
+
+  test "SC identity survives settings reload and records replacement VMACs" do
+    assert {:ok, %{uuid: <<_uuid::128>>, vmac: <<_mac::48>>} = identity} =
+             Settings.ensure_sc_identity()
+
+    assert Settings.ensure_sc_identity() == {:ok, identity}
+
+    new_vmac = <<2, 0, 0, 0, 0, 7>>
+    assert :ok = Settings.persist_sc_vmac(new_vmac)
+    assert {:ok, saved} = Settings.init([])
+    assert saved.sc_device_uuid == Base.encode16(identity.uuid)
+    assert saved.sc_vmac == Base.encode16(new_vmac)
   end
 
   test "accepts mstp baud rate auto" do
@@ -242,7 +284,11 @@ defmodule BacView.SettingsTest do
         scan_on_online: defaults.scan_on_online,
         cov_increment: defaults.cov_increment,
         mstp_local_address: defaults.mstp_local_address,
-        mstp_baud_rate: defaults.mstp_baud_rate
+        mstp_baud_rate: defaults.mstp_baud_rate,
+        sc_primary_hub_uri: nil,
+        sc_failover_hub_uri: nil,
+        sc_verify_hostname: false,
+        sc_ip_family: "inet"
       )
     else
       {:ok, Settings.defaults()}

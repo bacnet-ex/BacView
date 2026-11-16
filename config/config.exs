@@ -101,11 +101,6 @@ config :bacstack, :app_tags_convert_latin1_utf8, true
 # I have no idea what message_text is used for - I can't find it in the UI
 # It should be on (almost) every object
 config :bacstack, :additional_property_identifiers,
-  # BACnet properties
-  device_uuid: 507,
-  certificate_signing_request_file: 509,
-  command_validation_result: 510,
-  issuer_certificate_files: 511,
   # Proprietary properties
   message_text: 512,
   subscription_type: 513,

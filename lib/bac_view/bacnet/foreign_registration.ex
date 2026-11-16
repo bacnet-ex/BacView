@@ -58,6 +58,16 @@ defmodule BacView.BACnet.ForeignRegistration do
     end
   end
 
+  @doc false
+  @spec suspend() :: :ok
+  def suspend() do
+    if Process.whereis(__MODULE__) do
+      GenServer.call(__MODULE__, :suspend, 30_000)
+    else
+      :ok
+    end
+  end
+
   @spec scan_route() :: :local | :bbmd
   def scan_route() do
     if Process.whereis(__MODULE__) == nil do
@@ -93,6 +103,8 @@ defmodule BacView.BACnet.ForeignRegistration do
 
   @doc false
   @spec route(map(), map()) :: :local | :bbmd | :bbmd_required
+  def route(_state, %{transport: transport}) when transport != "ipv4", do: :local
+
   def route(state, settings) do
     cond do
       bbmd_active?(state) -> :bbmd
@@ -114,7 +126,7 @@ defmodule BacView.BACnet.ForeignRegistration do
       last_error: nil
     }
 
-    if settings.bbmd_host not in [nil, ""] and stack_ready?() do
+    if bbmd_configured?(settings) and stack_ready?() do
       case do_register(state, settings.bbmd_host, settings.bbmd_port, settings.bbmd_ttl) do
         {:ok, new_state} ->
           {:ok, new_state}
@@ -165,9 +177,10 @@ defmodule BacView.BACnet.ForeignRegistration do
 
   @impl true
   def handle_call({:register, host, port, opts}, _from, state) do
-    ttl = Keyword.get(opts, :ttl, BacView.Settings.get().bbmd_ttl)
+    settings = BacView.Settings.get()
+    ttl = Keyword.get(opts, :ttl, settings.bbmd_ttl)
 
-    case do_register(state, host, port, ttl) do
+    case register_ipv4(settings.transport, state, host, port, ttl) do
       {:ok, new_state} ->
         {:ok, _status} = BacView.Settings.update(bbmd_host: host, bbmd_port: port, bbmd_ttl: ttl)
         {:reply, :ok, new_state}
@@ -179,7 +192,11 @@ defmodule BacView.BACnet.ForeignRegistration do
     end
   end
 
-  @impl true
+  def handle_call(:suspend, _from, state) do
+    state = stop_foreign_device(%{state | bbmd: nil, last_error: nil})
+    {:reply, :ok, state}
+  end
+
   def handle_call(:unregister, _from, state) do
     {:ok, _status} =
       BacView.Settings.update(bbmd_host: nil, bbmd_port: Address.default_bbmd_port())
@@ -218,6 +235,9 @@ defmodule BacView.BACnet.ForeignRegistration do
 
   @impl true
   def handle_info(_msg, state), do: {:noreply, state}
+
+  defp register_ipv4("ipv4", state, host, port, ttl), do: do_register(state, host, port, ttl)
+  defp register_ipv4(_transport, _state, _host, _port, _ttl), do: {:error, :bbmd_ipv4_only}
 
   defp do_register(state, host, port, ttl) do
     with {:ok, ip} <- Address.parse_host(host),
@@ -383,13 +403,7 @@ defmodule BacView.BACnet.ForeignRegistration do
           "Who-Is via BBMD (Distribute-Broadcast-To-Network) → #{format_bbmd(new_state.bbmd)}"
         )
 
-        result =
-          case ForeignDevice.send_whois(fd_pid, timeout, opts) do
-            {:ok, responses} -> {:ok, responses}
-            {:error, _state} = err -> err
-          end
-
-        {result, new_state}
+        {ForeignDevice.send_whois(fd_pid, timeout, opts), new_state}
 
       :use_local ->
         Logger.debug("Who-Is via local broadcast")
@@ -402,6 +416,9 @@ defmodule BacView.BACnet.ForeignRegistration do
         {{:error, reason}, new_state}
     end
   end
+
+  defp ensure_foreign_device(_state, %{transport: transport}) when transport != "ipv4",
+    do: :use_local
 
   defp ensure_foreign_device(state, settings) do
     cond do
@@ -424,6 +441,8 @@ defmodule BacView.BACnet.ForeignRegistration do
   end
 
   defp bbmd_active?(_bbmd), do: false
+
+  defp bbmd_configured?(%{transport: transport}) when transport != "ipv4", do: false
 
   defp bbmd_configured?(settings) do
     settings.bbmd_host not in [nil, ""]

@@ -89,6 +89,28 @@ defmodule BacViewWeb.StackSettingsPanelTest do
     refute html =~ ~s/id="stack-settings-restart-btn"/
   end
 
+  test "reports SC hub connection states" do
+    for {state, label} <- [
+          {:connecting, "Verbindungsaufbau"},
+          {:primary, "Primärer Hub verbunden"},
+          {:failover, "Ersatz-Hub verbunden"},
+          {:retrying, "Erneuter Verbindungsversuch"}
+        ] do
+      html =
+        render_component(&StackSettingsPanel.stack_settings_panel/1,
+          form: stack_form("bacnet_sc"),
+          settings: %{transport: "bacnet_sc", interface_error: nil},
+          stack_status: %{running?: true, sc_link: state, last_error: nil},
+          interface_options: [],
+          locale: "de",
+          locale_version: 0
+        )
+
+      badge = html |> LazyHTML.from_fragment() |> LazyHTML.query("#stack-status-badge")
+      assert String.trim(LazyHTML.text(badge)) == label
+    end
+  end
+
   defp stack_form(transport) do
     params = %{
       "transport" => transport,

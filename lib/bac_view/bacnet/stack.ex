@@ -21,11 +21,32 @@ defmodule BacView.BACnet.Stack do
   @spec transport() :: GenServer.server()
   def transport(), do: @transport
 
-  @spec status() :: %{running?: boolean(), last_error: term() | nil}
+  @spec status() :: %{
+          running?: boolean(),
+          ready?: boolean(),
+          last_error: term(),
+          sc_link: :connecting | :primary | :failover | :retrying | nil,
+          sc_credential_id: String.t() | nil
+        }
   def status() do
+    running? = running?()
+
+    case Process.whereis(Boot) do
+      pid when is_pid(pid) ->
+        boot_call(pid, :status) || default_status(running?)
+
+      nil ->
+        default_status(running?)
+    end
+  end
+
+  defp default_status(running?) do
     %{
-      running?: running?(),
-      last_error: last_error()
+      running?: running?,
+      ready?: running?,
+      last_error: nil,
+      sc_link: nil,
+      sc_credential_id: nil
     }
   end
 
@@ -61,6 +82,7 @@ defmodule BacView.BACnet.Stack do
   defp boot_call(pid, request) do
     GenServer.call(pid, request, @boot_call_timeout)
   catch
+    :exit, {:noproc, _call} -> nil
     :exit, :timeout -> nil
     :exit, {:timeout, _boot_call} -> nil
   end

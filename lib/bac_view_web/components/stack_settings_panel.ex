@@ -5,6 +5,7 @@ defmodule BacViewWeb.StackSettingsPanel do
 
   alias BacView.BACnet.TransportResolver
   alias BacView.Settings
+  alias BacViewWeb.SCCredentialsPanel
 
   attr(:form, :map, required: true)
   attr(:settings, :map, required: true)
@@ -13,6 +14,10 @@ defmodule BacViewWeb.StackSettingsPanel do
   attr(:confirm_restart?, :boolean, default: false)
   attr(:manual_restart_confirm?, :boolean, default: false)
   attr(:apply_disabled?, :boolean, default: false)
+  attr(:uploads, :map, default: nil)
+  attr(:sc_credentials_form, :map, default: nil)
+  attr(:sc_credentials, :map, default: nil)
+  attr(:sc_import_result, :atom, default: nil)
   attr(:learned_network_number, :integer, default: nil)
 
   def stack_settings_panel(assigns) do
@@ -25,14 +30,21 @@ defmodule BacViewWeb.StackSettingsPanel do
 
     ~H"""
     <section id="stack-settings-panel" class="bac-panel">
-      <div class="bac-panel-header">
-        <div class="min-w-0 flex-1">
-          <h2 class="text-sm font-semibold">{t(@locale, @locale_version, "Stack-Einstellungen")}</h2>
+      <div class="bac-panel-header flex-col">
+        <div class="w-full">
+          <div class="flex items-start justify-between gap-2">
+            <h2 class="min-w-0 wrap-anywhere text-sm font-semibold">
+              {t(@locale, @locale_version, "Stack-Einstellungen")}
+            </h2>
+            <span id="stack-transport-badge" class="bac-badge bac-badge-sm bac-badge-ghost shrink-0">
+              {transport_label(@settings.transport, @locale, @locale_version)}
+            </span>
+          </div>
           <p class="text-xs bac-text-faint mt-0.5">
             {t(@locale, @locale_version, "Transport & lokales Gerät")}
           </p>
         </div>
-        <div class="flex flex-col items-end gap-1 shrink-0">
+        <div class="w-full">
           <span
             id="stack-status-badge"
             class={[
@@ -41,9 +53,6 @@ defmodule BacViewWeb.StackSettingsPanel do
             ]}
           >
             {stack_status_label(@stack_status, @locale, @locale_version)}
-          </span>
-          <span class="bac-badge bac-badge-sm bac-badge-ghost">
-            {transport_label(@settings.transport, @locale, @locale_version)}
           </span>
         </div>
       </div>
@@ -80,7 +89,7 @@ defmodule BacViewWeb.StackSettingsPanel do
             />
           </div>
 
-          <div>
+          <div :if={@form[:transport].value != "bacnet_sc"}>
             <div class="flex items-center justify-between gap-2">
               <label class="bac-label mb-0" for={@form[:interface].id}>
                 {interface_label(@form[:transport].value, @locale, @locale_version)}
@@ -102,6 +111,36 @@ defmodule BacViewWeb.StackSettingsPanel do
               options={interface_select_options(@interface_options)}
               class="bac-input bac-input-sm mt-1"
               disabled={@interface_options == []}
+            />
+          </div>
+
+          <div :if={@form[:transport].value == "bacnet_sc"} id="sc-connection-settings" class="space-y-2">
+            <.input
+              field={@form[:sc_primary_hub_uri]}
+              type="url"
+              label={t(@locale, @locale_version, "Primärer Hub")}
+              placeholder="wss://hub.example/"
+              required
+              class="bac-input bac-input-sm"
+            />
+            <.input
+              field={@form[:sc_failover_hub_uri]}
+              type="url"
+              label={t(@locale, @locale_version, "Ersatz-Hub (optional)")}
+              placeholder="wss://backup.example/"
+              class="bac-input bac-input-sm"
+            />
+            <.input
+              field={@form[:sc_ip_family]}
+              type="select"
+              label={t(@locale, @locale_version, "IP-Familie für Hub-Hostnamen")}
+              options={[{"IPv4", "inet"}, {"IPv6", "inet6"}]}
+              class="bac-input bac-input-sm"
+            />
+            <.input
+              field={@form[:sc_verify_hostname]}
+              type="checkbox"
+              label={t(@locale, @locale_version, "Hub-Hostnamen im Zertifikat prüfen")}
             />
           </div>
 
@@ -420,6 +459,16 @@ defmodule BacViewWeb.StackSettingsPanel do
             </button>
           </div>
         </.form>
+        <SCCredentialsPanel.sc_credentials_panel
+          :if={@form[:transport].value == "bacnet_sc" && @uploads}
+          form={@sc_credentials_form}
+          uploads={@uploads}
+          summary={@sc_credentials}
+          result={@sc_import_result}
+          stack_status={@stack_status}
+          locale={@locale}
+          locale_version={@locale_version}
+        />
       </div>
     </section>
     """
@@ -432,6 +481,7 @@ defmodule BacViewWeb.StackSettingsPanel do
   end
 
   defp transport_label("ipv4", locale, lv), do: t(locale, lv, "BACnet/IP")
+  defp transport_label("bacnet_sc", locale, lv), do: t(locale, lv, "BACnet/SC")
   defp transport_label("mstp", locale, lv), do: t(locale, lv, "BACnet MS/TP")
   defp transport_label(other, _locale, _lv), do: other
 
@@ -480,6 +530,18 @@ defmodule BacViewWeb.StackSettingsPanel do
   defp interface_error_label(_no_network_interfaces, locale, lv),
     do: t(locale, lv, "Schnittstelle nicht verfügbar.")
 
+  defp stack_status_label(%{sc_link: :connecting}, locale, lv),
+    do: t(locale, lv, "Verbindungsaufbau")
+
+  defp stack_status_label(%{sc_link: :primary}, locale, lv),
+    do: t(locale, lv, "Primärer Hub verbunden")
+
+  defp stack_status_label(%{sc_link: :failover}, locale, lv),
+    do: t(locale, lv, "Ersatz-Hub verbunden")
+
+  defp stack_status_label(%{sc_link: :retrying}, locale, lv),
+    do: t(locale, lv, "Erneuter Verbindungsversuch")
+
   defp stack_status_label(%{running?: true}, locale, lv), do: t(locale, lv, "Aktiv")
 
   defp stack_status_label(%{last_error: nil}, locale, lv),
@@ -487,11 +549,12 @@ defmodule BacViewWeb.StackSettingsPanel do
 
   defp stack_status_label(_status, locale, lv), do: t(locale, lv, "Offline")
 
+  defp stack_status_badge_class(%{sc_link: :connecting}), do: "bac-badge-ghost"
+  defp stack_status_badge_class(%{sc_link: :retrying}), do: "bac-badge-warning"
   defp stack_status_badge_class(%{running?: true}), do: "bac-badge-success"
   defp stack_status_badge_class(%{last_error: nil}), do: "bac-badge-ghost"
   defp stack_status_badge_class(_status), do: "bac-badge-warning"
 
-  defp stack_error_message(%{running?: true}, _locale, _locale_version), do: nil
   defp stack_error_message(%{last_error: nil}, _locale, _locale_version), do: nil
 
   defp stack_error_message(%{last_error: reason}, locale, locale_version) do

@@ -312,6 +312,9 @@ msgstr "Out of service"
 msgid "Ausserhalb Bereich"
 msgstr "Out of range"
 
+msgid "Ausstellerzertifikate (1–2 PEM-Dateien)"
+msgstr "Issuer certificates (1–2 PEM files)"
+
 msgid "Auswahl aufheben"
 msgstr "Clear selection"
 
@@ -363,6 +366,27 @@ msgstr "Copy BACnet URI"
 msgid "BACnet/IP"
 msgstr "BACnet/IP"
 
+msgid "BACnet/SC"
+msgstr "BACnet/SC"
+
+msgid "BACnet/SC-Hub nicht erreichbar oder Verbindung abgelehnt. Neuer Versuch folgt."
+msgstr "The BACnet/SC hub is unreachable or rejected the connection. Retrying."
+
+msgid "BACnet/SC-Knotenidentität konnte nicht gespeichert werden."
+msgstr "Could not save the BACnet/SC node identity."
+
+msgid "BACnet/SC-VMAC (sechs Hex-Bytes)."
+msgstr "BACnet/SC VMAC (six hex bytes)."
+
+msgid "BACnet/SC-Zertifikate"
+msgstr "BACnet/SC certificates"
+
+msgid "BACnet/SC-Zertifikate importiert."
+msgstr "BACnet/SC certificates imported."
+
+msgid "BACnet/SC-Zertifikate konnten nicht gespeichert werden."
+msgstr "Could not save the BACnet/SC certificates."
+
 msgid "BBMD / Foreign Device"
 msgstr "BBMD / Foreign Device"
 
@@ -374,6 +398,9 @@ msgstr "BBMD address is required."
 
 msgid "BBMD-Registrierung fehlgeschlagen: %{detail}"
 msgstr "BBMD registration failed: %{detail}"
+
+msgid "BBMD-Registrierung ist nur für BACnet/IP verfügbar."
+msgstr "BBMD registration is available only for BACnet/IP."
 
 msgid "BacView"
 msgstr "BacView"
@@ -401,6 +428,12 @@ msgstr "Description"
 
 msgid "Bestätigt"
 msgstr "Confirmed"
+
+msgid "Betriebszertifikat (PEM)"
+msgstr "Operational certificate (PEM)"
+
+msgid "Betriebszertifikat, privater Schlüssel und Ausstellerzertifikat importieren."
+msgstr "Import the operational certificate, private key, and issuer certificate."
 
 msgid "Bindestrich (-)"
 msgstr "Hyphen (-)"
@@ -599,6 +632,9 @@ msgstr "The value is outside the allowed range."
 
 msgid "Diagramm"
 msgstr "Chart"
+
+msgid "Die Adresse des primären BACnet/SC-Hubs fehlt."
+msgstr "Enter the primary BACnet/SC hub address."
 
 msgid "Die Anfrage enthält ungültige BACnet-Daten."
 msgstr "The request contains invalid BACnet data."
@@ -846,6 +882,15 @@ msgstr "Resubscribe"
 msgid "Erneute Versuche für bestätigte Anfragen und ausgehende Segmente. Eingehende Segmente bleiben unverändert."
 msgstr "Retries for confirmed requests and outgoing segments. Incoming segments are unchanged."
 
+msgid "Erneuter Verbindungsversuch"
+msgstr "Retrying connection"
+
+msgid "Ersatz-Hub (optional)"
+msgstr "Failover hub (optional)"
+
+msgid "Ersatz-Hub verbunden"
+msgstr "Failover hub connected"
+
 msgid "Erweitert"
 msgstr "Advanced"
 
@@ -887,6 +932,9 @@ msgstr "Friday"
 
 msgid "Für Present Value setzt null den Prioritäts-Slot zurück."
 msgstr "For present value, null relinquishes the priority slot."
+
+msgid "Für die NPCI-Quelle ist eine Zieladresse erforderlich."
+msgstr "An NPCI source requires a target address."
 
 msgid "Ganzzahl ≥ 0"
 msgstr "Integer ≥ 0"
@@ -1062,6 +1110,12 @@ msgstr "Help"
 msgid "Hilfe schliessen"
 msgstr "Close help"
 
+msgid "Hub-Hostnamen im Zertifikat prüfen"
+msgstr "Verify the hub hostname against the certificate"
+
+msgid "IP-Familie für Hub-Hostnamen"
+msgstr "IP family for hub hostnames"
+
 msgid "IPv4-Adresse, Port optional (Standard 47808)."
 msgstr "IPv4 address, port optional (default 47808)."
 
@@ -1170,6 +1224,9 @@ msgstr "No connection to the BACnet stack."
 msgid "Keine Zeitfenster für diesen Tag"
 msgstr "No time windows for this day"
 
+msgid "Keine aktive Verbindung zu einem BACnet/SC-Hub."
+msgstr "No active BACnet/SC hub connection."
+
 msgid "Keine aktiven Alarme."
 msgstr "No active alarms."
 
@@ -1241,6 +1298,12 @@ msgstr "Life safety change"
 
 msgid "Leer = Objektstandard"
 msgstr "Empty = object default"
+
+msgid "Leer für Broadcast über den Hub. Für Unicast sechs Hex-Bytes eingeben."
+msgstr "Leave blank to broadcast through the hub. Enter six hex bytes for unicast."
+
+msgid "Leer für Broadcast. Für Unicast eine MS/TP-MAC (0–254) eingeben."
+msgstr "Leave blank to broadcast. Enter an MS/TP MAC (0–254) for unicast."
 
 msgid "Leer für Broadcast. IP mit optionalem Port (192.168.1.101:47808) oder Bereich (192.168.100.[31-35])."
 msgstr "Empty for broadcast. An IP with an optional port (192.168.1.101:47808) or a range (192.168.100.[31-35])."
@@ -1341,6 +1404,9 @@ msgstr "Wednesday"
 msgid "Montag"
 msgstr "Monday"
 
+msgid "NPCI-Quelle des Geräts (optional)"
+msgstr "Device NPCI source (optional)"
+
 msgid "NPCI-Quelle: %{target}"
 msgstr "NPCI source: %{target}"
 
@@ -1364,6 +1430,9 @@ msgstr "Network"
 
 msgid "Netzwerk scannen"
 msgstr "Scan network"
+
+msgid "Netzwerk/MAC des entfernten Geräts."
+msgstr "Remote device network/MAC."
 
 msgid "Netzwerkadresse ist nicht verfügbar (eaddrnotavail)."
 msgstr "Network address is not available (eaddrnotavail)."
@@ -1536,6 +1605,15 @@ msgstr "Optional instance range for Who-Is (0–4194303)."
 msgid "Ordner und Unterobjekte auswählen"
 msgstr "Select folder and sub-objects"
 
+msgid "PEM-Datei ist grösser als 64 KiB."
+msgstr "PEM file exceeds 64 KiB."
+
+msgid "PEM-Datei konnte nicht geladen werden."
+msgstr "Could not load the PEM file."
+
+msgid "PEM-Dateien importieren"
+msgstr "Import PEM files"
+
 msgid "Passen Sie den Suchbegriff an, um Geräte einzugrenzen."
 msgstr "Adjust the search term to narrow down devices."
 
@@ -1566,6 +1644,12 @@ msgstr "Present value is read-only."
 msgid "Present Value schreiben"
 msgstr "Write present value"
 
+msgid "Primärer Hub"
+msgstr "Primary hub"
+
+msgid "Primärer Hub verbunden"
+msgstr "Primary hub connected"
+
 msgid "Priorität"
 msgstr "Priority"
 
@@ -1592,6 +1676,9 @@ msgstr "Failed to reset priority."
 
 msgid "Priorität zurücksetzen: %{done} / %{total}"
 msgstr "Resetting priority: %{done} / %{total}"
+
+msgid "Privater Schlüssel (PEM, unverschlüsselt)"
+msgstr "Private key (PEM, unencrypted)"
 
 msgid "Projektname"
 msgstr "Project name"
@@ -1725,6 +1812,9 @@ msgstr "Stack restarted, but BBMD registration failed: %{detail}"
 msgid "Stack neu starten"
 msgstr "Restart stack"
 
+msgid "Stack neu starten, um die importierten Zertifikate zu verwenden."
+msgstr "Restart the stack to use the imported certificates."
+
 msgid "Stack-Einstellungen"
 msgstr "Stack settings"
 
@@ -1778,6 +1868,9 @@ msgstr "System"
 
 msgid "Systemfehler: %{reason}"
 msgstr "System error: %{reason}"
+
+msgid "TLS-Verbindung zum BACnet/SC-Hub fehlgeschlagen. Zertifikate und Hub-Adresse prüfen."
+msgstr "TLS connection to the BACnet/SC hub failed. Check the certificates and hub address."
 
 msgid "TTL (Sek.)"
 msgstr "TTL (sec.)"
@@ -1887,6 +1980,12 @@ msgstr "Invalid BACnet encoding."
 msgid "Ungültige BACnet-URI."
 msgstr "Invalid BACnet URI."
 
+msgid "Ungültige BACnet/SC-VMAC. Sechs Hex-Bytes mit Doppelpunkten eingeben."
+msgstr "Invalid BACnet/SC VMAC. Enter six colon-separated hex bytes."
+
+msgid "Ungültige BACnet/SC-Zertifikate. PEM-Format, Schlüssel, Aussteller und Gültigkeit prüfen."
+msgstr "Invalid BACnet/SC certificates. Check the PEM format, key, issuer, and validity dates."
+
 msgid "Ungültige Eigenschaft."
 msgstr "Invalid property."
 
@@ -1911,11 +2010,17 @@ msgstr "Invalid vendor ID (0–65535)."
 msgid "Ungültige Hex-Zeichenkette"
 msgstr "Invalid hex string"
 
+msgid "Ungültige Hub-Adresse. Eine wss://-URI eingeben."
+msgstr "Invalid hub address. Enter a wss:// URI."
+
 msgid "Ungültige IP-Adresse."
 msgstr "Invalid IP address."
 
 msgid "Ungültige MS/TP-Adresse (0–254)."
 msgstr "Invalid MS/TP address (0–254)."
+
+msgid "Ungültige NPCI-Quelle. Netzwerk (1–65534) und Stationsadresse im Format Netzwerk/MAC eingeben."
+msgstr "Invalid NPCI source. Enter the network (1–65534) and station address as network/MAC."
 
 msgid "Ungültige Objekt-ID."
 msgstr "Invalid object ID."
@@ -2009,6 +2114,9 @@ msgstr "Connecting to device…"
 
 msgid "Verbindung zum Server nicht möglich"
 msgstr "Unable to connect to server"
+
+msgid "Verbindungsaufbau"
+msgstr "Connecting"
 
 msgid "Verbleibend"
 msgstr "Remaining"
@@ -2118,6 +2226,9 @@ msgstr "Time synchronization sent."
 msgid "Zeitüberschreitung bei der Gerätekommunikation."
 msgstr "Device communication timed out."
 
+msgid "Zertifikat gültig bis %{date}"
+msgstr "Certificate expires %{date}"
+
 msgid "Ziel"
 msgstr "Destination"
 
@@ -2126,6 +2237,15 @@ msgstr "The destination is the address. The URI only describes the object and pr
 
 msgid "Ziel-IP (optional)"
 msgstr "Target IP (optional)"
+
+msgid "Ziel-MAC (optional)"
+msgstr "Target MAC (optional)"
+
+msgid "Ziel-VMAC (optional)"
+msgstr "Target VMAC (optional)"
+
+msgid "Zu viele PEM-Dateien."
+msgstr "Too many PEM files."
 
 msgid "Zu viele Ziel-IP-Adressen (max. %{max})."
 msgstr "Too many target IP addresses (max. %{max})."

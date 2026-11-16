@@ -170,6 +170,7 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
     |> render_change()
 
     refute has_element?(view, "#read-property-address-uri-hint")
+    refute has_element?(view, "#read_property_npci_source")
 
     view
     |> form("#read-property-form", %{
@@ -179,6 +180,7 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
 
     assert has_element?(view, "#read-property-locator-address:checked")
     assert has_element?(view, "#read-property-address-uri-hint")
+    assert has_element?(view, "#read_property_npci_source")
 
     assert has_element?(
              view,
@@ -191,7 +193,7 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
            )
   end
 
-  test "submit after a URI paste uses the address locator and edited fields", %{conn: conn} do
+  test "submit after a URI paste uses the routed address locator and edited fields", %{conn: conn} do
     {:ok, view, _html} = live(conn, ~p"/")
 
     view
@@ -205,10 +207,15 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
     |> render_change()
 
     view
+    |> form("#read-property-form", %{"read_property" => %{"locator" => "address"}})
+    |> render_change()
+
+    view
     |> form("#read-property-form", %{
       "read_property" => %{
         "locator" => "address",
         "address" => "10.0.0.1",
+        "npci_source" => "77/42",
         "property" => "object-name"
       }
     })
@@ -216,6 +223,7 @@ defmodule BacViewWeb.ReadPropertyModalLiveTest do
 
     render_async(view)
     assert has_element?(view, "#read-property-result")
+    assert has_element?(view, "#read_property_npci_source[value='77/42']")
     result = render(element(view, "#read-property-result"))
     assert result =~ "10.0.0.1:47808"
     assert result =~ "object-name"

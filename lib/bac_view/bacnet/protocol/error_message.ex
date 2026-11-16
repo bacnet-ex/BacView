@@ -312,6 +312,54 @@ defmodule BacView.BACnet.Protocol.ErrorMessage do
   def format_reason(:invalid_mstp_address),
     do: gettext("Ungültige MS/TP-Adresse (0–254).")
 
+  def format_reason(:invalid_sc_vmac),
+    do: gettext("Ungültige BACnet/SC-VMAC. Sechs Hex-Bytes mit Doppelpunkten eingeben.")
+
+  def format_reason(:invalid_npci_source),
+    do:
+      gettext(
+        "Ungültige NPCI-Quelle. Netzwerk (1–65534) und Stationsadresse im Format Netzwerk/MAC eingeben."
+      )
+
+  def format_reason(:npci_source_requires_target),
+    do: gettext("Für die NPCI-Quelle ist eine Zieladresse erforderlich.")
+
+  def format_reason(:invalid_hub_uri),
+    do: gettext("Ungültige Hub-Adresse. Eine wss://-URI eingeben.")
+
+  def format_reason(:missing_sc_primary_hub),
+    do: gettext("Die Adresse des primären BACnet/SC-Hubs fehlt.")
+
+  def format_reason(:missing_sc_credentials),
+    do: gettext("Betriebszertifikat, privater Schlüssel und Ausstellerzertifikat importieren.")
+
+  def format_reason(:invalid_sc_credentials),
+    do:
+      gettext(
+        "Ungültige BACnet/SC-Zertifikate. PEM-Format, Schlüssel, Aussteller und Gültigkeit prüfen."
+      )
+
+  def format_reason(:sc_credential_storage_failed),
+    do: gettext("BACnet/SC-Zertifikate konnten nicht gespeichert werden.")
+
+  def format_reason(:sc_identity_storage_failed),
+    do: gettext("BACnet/SC-Knotenidentität konnte nicht gespeichert werden.")
+
+  def format_reason(:sc_connection_failed),
+    do: gettext("BACnet/SC-Hub nicht erreichbar oder Verbindung abgelehnt. Neuer Versuch folgt.")
+
+  def format_reason(:sc_tls_failed),
+    do:
+      gettext(
+        "TLS-Verbindung zum BACnet/SC-Hub fehlgeschlagen. Zertifikate und Hub-Adresse prüfen."
+      )
+
+  def format_reason(:not_connected),
+    do: gettext("Keine aktive Verbindung zu einem BACnet/SC-Hub.")
+
+  def format_reason(:bbmd_ipv4_only),
+    do: gettext("BBMD-Registrierung ist nur für BACnet/IP verfügbar.")
+
   def format_reason(:unsupported_transport),
     do: gettext("Adressmodus wird für diesen Transport nicht unterstützt.")
 

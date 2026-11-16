@@ -3,11 +3,16 @@ defmodule BacView.BACnet.SinglePropertyRead do
   One-shot ReadProperty by device instance or transport address.
 
   Call `from_form/2` with locator fields. `from_params/2` is an alias of
-  `from_form/2` (a BACnet URI in params is ignored). Use `from_uri/2` for a
-  programmatic read from a URI string.
+  `from_form/2` (a BACnet URI in params is ignored). The address locator
+  accepts an optional `"npci_source"` field (remote station as `network/address`).
+  Use `from_uri/2` for a programmatic read from a URI string.
   """
 
+  require BacView.BACnet.Address
+
+  alias BACnet.Protocol.NpciTarget
   alias BACnet.Protocol.ObjectIdentifier
+  alias BACnet.Protocol.SecureConnect.BVLC
 
   alias BacView.BACnet.Address
   alias BacView.BACnet.Client
@@ -19,9 +24,11 @@ defmodule BacView.BACnet.SinglePropertyRead do
 
   @max_instance 4_194_303
 
+  @type transport_address :: {:inet.ip_address(), pos_integer()} | 0..254 | BVLC.vmac()
   @type destination ::
           {:device_id, integer()}
-          | {:address, {:inet.ip_address(), pos_integer()} | 0..254}
+          | {:address, transport_address()}
+          | {:address, transport_address(), NpciTarget.t()}
 
   @type request :: %{
           destination: destination(),
@@ -134,6 +141,12 @@ defmodule BacView.BACnet.SinglePropertyRead do
     {:ok, dest, read_opts}
   end
 
+  defp resolve({:address, dest, route}, object, property, array_index)
+       when Address.is_npci_station(route) do
+    base = read_opts(nil, object, property, array_index)
+    {:ok, dest, RequestOpts.for_routed_address(dest, route, base)}
+  end
+
   defp resolve({:device_id, device_id}, object, property, array_index)
        when is_integer(device_id) and device_id >= 0 and device_id <= @max_instance do
     case Discovery.resolve_destination(device_id) do
@@ -205,9 +218,9 @@ defmodule BacView.BACnet.SinglePropertyRead do
     if raw == "" do
       {:error, :missing_address}
     else
-      case Address.parse_transport_destination(raw, transport) do
-        {:ok, dest} -> {:ok, {:address, dest}}
-        {:error, _reason} = err -> err
+      with {:ok, dest} <- Address.parse_transport_destination(raw, transport),
+           {:ok, route} <- Address.parse_npci_station(Map.get(params, "npci_source")) do
+        {:ok, if(route, do: {:address, dest, route}, else: {:address, dest})}
       end
     end
   end

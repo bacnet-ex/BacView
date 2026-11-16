@@ -244,6 +244,21 @@ defmodule BacView.BACnet.DeviceSession do
   end
 
   @doc """
+  Returns the cached summary for an object without waiting for an active device scan.
+  """
+  @spec cached_object(integer(), ObjectIdentifier.t()) :: map() | nil
+  def cached_object(device_id, %ObjectIdentifier{} = object_id) do
+    case :ets.whereis(@objects_table) do
+      :undefined ->
+        nil
+
+      table ->
+        objects = :ets.lookup_element(table, device_id, 2, [])
+        find_cached_object(objects, object_id)
+    end
+  end
+
+  @doc """
   Returns the raw scanned object list for a device session.
 
   Each entry is `{ObjectIdentifier.t(), map() | struct()}` from the last successful

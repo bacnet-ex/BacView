@@ -14,6 +14,15 @@ defmodule BacView.BACnet.ForeignRegistrationTest do
     assert ForeignRegistration.route(state, settings) == :bbmd
   end
 
+  test "SC and MS/TP use the local path even with a saved or active BBMD" do
+    state = %{fd_pid: self(), bbmd: {{192, 168, 1, 1}, 47_808}}
+
+    for transport <- ["bacnet_sc", "mstp"] do
+      assert ForeignRegistration.route(state, %{transport: transport, bbmd_host: "192.168.1.1"}) ==
+               :local
+    end
+  end
+
   test "route returns :bbmd_required when host configured but not registered" do
     state = %{fd_pid: nil, bbmd: nil}
     settings = %{bbmd_host: "192.168.1.1", bbmd_port: 47_808, bbmd_ttl: 600}

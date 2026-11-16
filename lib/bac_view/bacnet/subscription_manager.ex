@@ -956,11 +956,7 @@ defmodule BacView.BACnet.SubscriptionManager do
   defp unwrap_cov_value(value), do: value
 
   defp format_cov_value(device_id, object_id, property, value) do
-    obj =
-      Enum.find(DeviceSession.objects(device_id), fn o ->
-        o.type == object_id.type and o.instance == object_id.instance
-      end)
-
-    PropertyFormatter.format_property_value(property, value, obj)
+    object = DeviceSession.cached_object(device_id, object_id)
+    PropertyFormatter.format_property_value(property, value, object)
   end
 end

@@ -1,6 +1,6 @@
 // In-memory only: survives LiveView navigation within the same tab, but resets on
 // full page reload or a new tab (fresh JS context).
-let sessionScanForm = null
+const sessionScanForms = new Map()
 
 function scanParamsFromForm(form) {
   const params = {}
@@ -20,7 +20,7 @@ function scanParamsFromForm(form) {
 function rememberScanForm(form) {
   const params = scanParamsFromForm(form)
   if (Object.keys(params).length > 0) {
-    sessionScanForm = params
+    sessionScanForms.set(form.dataset.transport, params)
   }
 }
 
@@ -33,8 +33,20 @@ const ScanFormPersist = {
     this.el.addEventListener("input", this.persistFromDom)
     this.el.addEventListener("change", this.persistFromDom)
 
-    if (sessionScanForm) {
-      this.pushEvent("scan_form_restore", {scan: sessionScanForm})
+    this.restoreForTransport()
+  },
+
+  updated() {
+    if (this.transport !== this.el.dataset.transport) {
+      this.restoreForTransport()
+    }
+  },
+
+  restoreForTransport() {
+    this.transport = this.el.dataset.transport
+    const scan = sessionScanForms.get(this.transport)
+    if (scan) {
+      this.pushEvent("scan_form_restore", {scan, transport: this.transport})
     }
   },
 

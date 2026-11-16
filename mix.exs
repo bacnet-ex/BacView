@@ -2,6 +2,10 @@ defmodule BacView.MixProject do
   use Mix.Project
 
   def project() do
+    if String.to_integer(System.otp_release()) < 27 do
+      raise "BacView requires Erlang/OTP 27 or newer"
+    end
+
     [
       app: :bacview,
       version: "0.1.0",
@@ -55,10 +59,13 @@ defmodule BacView.MixProject do
       {:bacstack, github: "bacnet-ex/bacstack", env: Mix.env()},
       {:bacnet_ede, "~> 0.1.1"},
       {:bandit, "~> 1.5"},
+      # BACstack's SC compile guard requires Cowboy even for an outbound node.
+      {:cowboy, "~> 2.21.0"},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:esbuild, "~> 0.10", runtime: Mix.env() == :dev},
       {:gettext, "~> 0.26"},
+      {:gun, "~> 2.8.0"},
       {:heroicons,
        github: "tailwindlabs/heroicons",
        tag: "v2.2.0",
@@ -76,6 +83,7 @@ defmodule BacView.MixProject do
       {:phoenix_live_view, "~> 1.1"},
       {:req, "~> 0.5"},
       {:tailwind, "~> 0.3", runtime: Mix.env() == :dev},
+      {:x509, "~> 0.9.2"},
       {:tzdata, "~> 1.1"},
       {:telemetry_metrics, "~> 1.0"},
       {:telemetry_poller, "~> 1.0"}

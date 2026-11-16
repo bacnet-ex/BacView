@@ -5,7 +5,7 @@ defmodule BacView.BACnet.InterfaceSelection do
   alias BacView.BACnet.SerialPorts
 
   @type option :: map()
-  @type ok :: %{interface: String.t(), options: [option()]}
+  @type ok :: %{interface: String.t() | nil, options: [option()]}
   @type error_meta :: %{options: [option()], interface: nil}
 
   @spec resolve_ipv4(String.t() | nil) :: {:ok, ok()}
@@ -16,6 +16,9 @@ defmodule BacView.BACnet.InterfaceSelection do
   @spec resolve(String.t(), String.t() | nil) ::
           {:ok, ok()} | {:error, atom(), error_meta()}
   def resolve("ipv4", saved_interface), do: resolve_ipv4(saved_interface)
+
+  def resolve("bacnet_sc", saved_interface),
+    do: {:ok, %{interface: saved_interface, options: []}}
 
   def resolve(transport, saved_interface) do
     options = options_for(transport)
@@ -30,6 +33,7 @@ defmodule BacView.BACnet.InterfaceSelection do
   end
 
   @spec options_for(String.t()) :: [option()]
+  def options_for("bacnet_sc"), do: []
   def options_for("mstp"), do: SerialPorts.list()
   def options_for(_options_for), do: NetworkInterfaces.list()
 

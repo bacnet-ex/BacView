@@ -33,7 +33,7 @@ This project has been built with Grok Build (formerly with the Composer 2.5 Fast
 ## Requirements
 
 - Elixir ~> 1.18
-- Erlang/OTP 26+
+- Erlang/OTP 27+
 - Node.js (asset bundling in dev)
 - UDP port **47808** available for BACnet/IP (others choosable)
 
@@ -49,6 +49,8 @@ I recommend running `mix deps.update --all` before to get the newest versions an
 Open [http://localhost:4000](http://localhost:4000), click **Scan network**, then select a device.
 
 To discover devices on a **remote BACnet/IP network**, register BacView as a Foreign Device with your BBMD (dashboard sidebar). Who-Is scans are then distributed through the BBMD.
+
+To **specify an NPCI source for a unicast scan**, enter the receiving device's transport address as the scan target and the remote station's network and MAC address in **Device NPCI source**, for example `77/42`. The same field is available when reading a property by address. See [address formats](docs/property_operations.md#one-shot-readproperty).
 
 **Stack settings** (transport, network interface, device instance, COV options, BBMD) are configured in the dashboard sidebar and persisted to `priv/runtime_settings.json`.
 
@@ -314,7 +316,7 @@ BacView.Application                          # strategy: :one_for_one
 Stack
 ├── Stack.Boot                               # GenServer: start/restart/monitor runtime
 └── Stack.Runtime                            # started later via Boot.start_runtime/0
-    ├── Transport.*                          # IPv4 or MS/TP (named TransportLayer)
+    ├── Transport.*                          # IPv4, MS/TP, or SC (named TransportLayer)
     ├── Segmentator                          # bacstack segmentation
     ├── SegmentsStore
     └── Client                               # bacstack client (named ClientStack)
@@ -339,7 +341,7 @@ Notes:
 | Layer | Modules | Role |
 |-------|---------|------|
 | Settings / platform | `Settings`, `LogStore`, `Platform`, `Timezone` | Persisted stack config, log buffer, desktop vs web |
-| Stack / transport | `Stack`, `Stack.Boot` / `Runtime`, `Transport.*`, `Client`, `TransportResolver` | bacstack client, IPv4/MS/TP, APDU segmentation |
+| Stack / transport | `Stack`, `Stack.Boot` / `Runtime`, `Transport.*`, `Client`, `TransportResolver` | bacstack client, IPv4/MS/TP/SC, APDU segmentation |
 | BBMD / foreign device | `ForeignRegistration` | Register with remote BBMD; TTL re-registration |
 | Network layer | `NetworkNumber` | Local network number, What-Is-Network-Number / Network-Number-Is |
 | Discovery | `Discovery`, `IAmCollector` | Who-Is / I-Am, device list + share ETS |
@@ -427,9 +429,37 @@ repopulating cleared caches.
 |--------|--------|
 | `BacView.BACnet.Transport.IPv4` | Production-ready (BACnet/IP UDP) |
 | `BacView.BACnet.Transport.MSTP` | Available when `circuits_uart` / MS/TP stack is present; experimental |
-| `BacView.BACnet.Transport.BACnetSC` | Stub for future BACnet/SC (WebSocket) |
+| `BacView.BACnet.Transport.BACnetSC` | Experimental BACnet/SC node using an existing hub |
 
 Transport selection and network interface are configured in the dashboard sidebar (persisted settings).
+
+#### Connect to a BACnet/SC hub
+
+1. Obtain the hub's `wss://` URL, the node's operational certificate and matching
+   unencrypted private key, and one or two site issuer certificates. Supply each as
+   a separate PEM file.
+2. Select **BACnet/SC** in the dashboard's Stack Settings. Import the PEM files,
+   enter the primary hub and optional failover hub, then save and confirm the
+   stack restart. The status shows the active hub once the BACnet/SC handshake
+   completes.
+3. Leave the scan target empty to broadcast through the hub, or enter a VMAC
+   such as `02:00:00:00:00:42`. The ReadProperty dialog also accepts VMACs.
+
+To rotate credentials, import the complete replacement set and restart the BACnet
+stack. BacView keeps its node UUID and VMAC across imports and restarts. The
+credential bundle lives under `bacview/secure-connect` in the running user's OS
+configuration directory, separate from the runtime settings and release. Use the
+local dashboard or an HTTPS connection on a trusted deployment when uploading
+the private key. BacView's dashboard has no application login.
+
+The session uses mutual TLS 1.3 and verifies the hub's operational certificate
+against the imported site issuers. Enable **Verify the hub hostname against the
+certificate** when the site's hub certificates support hostname verification.
+This integration uses bacstack's default revocation settings. BacView does not
+manage certificate revocation lists or issue certificates. See the
+[bacstack BACnet/SC guide](https://bacnet-ex.github.io/bacstack/bacnet_sc.html)
+for the trust model.
+
 
 ## Tests
 

@@ -4,6 +4,7 @@ defmodule BacView.BACnet.Discovery do
   """
   use GenServer
 
+  require BacView.BACnet.Address
   require Logger
 
   alias BACnet.Protocol.ApplicationTags.Encoding
@@ -99,22 +100,28 @@ defmodule BacView.BACnet.Discovery do
   Parses and validates scan parameters from the UI.
 
   Supported keys: `"timeout_ms"` (minimum #{@min_timeout} ms), optional `"target_ip"`
-  (plain IPv4, optional `:port` such as `192.168.1.101:47808` or
+  (SC VMAC, MS/TP MAC, or IPv4 with optional `:port` such as `192.168.1.101:47808` or
   `192.168.100.42:47809`, or octet ranges like `192.168.100.[31-35]`; an omitted
   port uses the configured IPv4 port, including on a range such as
-  `192.168.100.[31-35]:47809`), optional `"device_id_low"` /
+  `192.168.100.[31-35]:47809`), optional `"npci_source"` (remote station
+  as `network/address`, requires a transport target), optional `"device_id_low"` /
   `"device_id_high"` (0..#{@max_device_instance}), and optional `"vendor_id"` (0..#{@max_vendor_id}).
   """
   @spec parse_scan_params(map()) :: {:ok, keyword()} | {:error, term()}
   def parse_scan_params(params) when is_map(params) do
+    settings = Settings.get()
+
     with {:ok, timeout} <- parse_timeout(Map.get(params, "timeout_ms")),
-         {:ok, destination} <- parse_destination(Map.get(params, "target_ip")),
+         {:ok, destination} <- parse_destination(Map.get(params, "target_ip"), settings),
+         {:ok, route} <- Address.parse_npci_station(Map.get(params, "npci_source")),
+         :ok <- validate_scan_route(destination, route),
          {:ok, low_limit} <- parse_device_id_limit(Map.get(params, "device_id_low")),
          {:ok, high_limit} <- parse_device_id_limit(Map.get(params, "device_id_high")),
          :ok <- validate_device_id_range(low_limit, high_limit),
          {:ok, vendor_id} <- parse_vendor_id(Map.get(params, "vendor_id")) do
       [timeout: timeout]
       |> maybe_put(:destination, destination)
+      |> maybe_put(:npci_destination, route)
       |> maybe_put(:low_limit, low_limit)
       |> maybe_put(:high_limit, high_limit)
       |> maybe_put(:vendor_id, vendor_id)
@@ -148,7 +155,7 @@ defmodule BacView.BACnet.Discovery do
   def cancel_scan() do
     case Process.whereis(__MODULE__) do
       nil -> do_clear_devices()
-      pid -> GenServer.cast(pid, :cancel_scan)
+      pid -> GenServer.call(pid, :cancel_scan, :infinity)
     end
 
     :ok
@@ -481,6 +488,25 @@ defmodule BacView.BACnet.Discovery do
   end
 
   @impl true
+  def handle_call(:cancel_scan, _from, state) do
+    if state.scanning and is_pid(state.scan_caller) do
+      send(state.scan_caller, {:scan_complete, {:error, :cancelled}})
+    end
+
+    do_clear_devices()
+
+    {:reply, :ok,
+     %{
+       state
+       | scanning: false,
+         scan_caller: nil,
+         active_scan_gen: nil,
+         scan_generation: state.scan_generation + 1,
+         pending_name_fetches: MapSet.new()
+     }}
+  end
+
+  @impl true
   def handle_call({:scan_active?, scan_gen}, _from, %{active_scan_gen: scan_gen} = state) do
     {:reply, true, state}
   end
@@ -539,25 +565,6 @@ defmodule BacView.BACnet.Discovery do
     else
       {:noreply, state}
     end
-  end
-
-  @impl true
-  def handle_cast(:cancel_scan, state) do
-    if state.scanning and is_pid(state.scan_caller) do
-      send(state.scan_caller, {:scan_complete, {:error, :cancelled}})
-    end
-
-    do_clear_devices()
-
-    {:noreply,
-     %{
-       state
-       | scanning: false,
-         scan_caller: nil,
-         active_scan_gen: nil,
-         scan_generation: state.scan_generation + 1,
-         pending_name_fetches: MapSet.new()
-     }}
   end
 
   @impl true
@@ -630,7 +637,8 @@ defmodule BacView.BACnet.Discovery do
   end
 
   defp execute_scan(opts, scan_gen \\ nil) do
-    with {:ok, timeout} <- validate_timeout(Keyword.get(opts, :timeout, @default_timeout)) do
+    with {:ok, timeout} <- validate_timeout(Keyword.get(opts, :timeout, @default_timeout)),
+         :ok <- validate_scan_route(opts[:destination], opts[:npci_destination]) do
       do_execute_scan(opts, timeout, scan_gen)
     end
   catch
@@ -656,6 +664,7 @@ defmodule BacView.BACnet.Discovery do
       |> maybe_put(:low_limit, low_limit)
       |> maybe_put(:high_limit, high_limit)
       |> maybe_put(:destination, destination)
+      |> maybe_put(:npci_destination, opts[:npci_destination])
 
     route = ForeignRegistration.scan_route()
     collect_timeout = collect_timeout(route, timeout)
@@ -755,9 +764,10 @@ defmodule BacView.BACnet.Discovery do
 
   defp send_unicast_who_is(destination, opts) do
     client = Client.stack_client()
+    send_opts = maybe_put([], :destination, opts[:npci_destination])
 
     with {:ok, apdu} <- build_who_is_apdu(opts),
-         :ok <- StackClient.send(client, destination, apdu, []) do
+         :ok <- StackClient.send(client, destination, apdu, send_opts) do
       Logger.info("Who-Is unicast → #{format_single_destination(destination)}")
       :ok
     end
@@ -1120,20 +1130,36 @@ defmodule BacView.BACnet.Discovery do
 
   defp validate_timeout(_timeout), do: {:error, :invalid_timeout}
 
-  defp parse_destination(nil), do: {:ok, nil}
-  defp parse_destination(""), do: {:ok, nil}
+  defp parse_destination(nil, _settings), do: {:ok, nil}
 
-  defp parse_destination(value) when is_binary(value) do
-    trimmed = String.trim(value)
-
-    if trimmed == "" do
-      {:ok, nil}
-    else
-      Address.expand_scan_destinations(trimmed, Settings.get().ipv4_port)
+  defp parse_destination(value, settings) when is_binary(value) do
+    case String.trim(value) do
+      "" -> {:ok, nil}
+      target -> parse_scan_target(target, settings)
     end
   end
 
-  defp parse_destination(_nil), do: {:error, :invalid_host}
+  defp parse_destination(_destination, _settings), do: {:error, :invalid_host}
+
+  defp validate_scan_route(_destination, nil), do: :ok
+
+  defp validate_scan_route(destination, route)
+       when destination in [nil, []] and Address.is_npci_station(route),
+       do: {:error, :npci_source_requires_target}
+
+  defp validate_scan_route([_first | _rest], route) when Address.is_npci_station(route),
+    do: :ok
+
+  defp validate_scan_route(_destination, _route), do: {:error, :invalid_npci_source}
+
+  defp parse_scan_target(target, %{transport: "ipv4", ipv4_port: port}),
+    do: Address.expand_scan_destinations(target, port)
+
+  defp parse_scan_target(target, %{transport: transport}) do
+    with {:ok, destination} <- Address.parse_transport_destination(target, transport) do
+      {:ok, [destination]}
+    end
+  end
 
   defp parse_device_id_limit(nil), do: {:ok, nil}
   defp parse_device_id_limit(""), do: {:ok, nil}
