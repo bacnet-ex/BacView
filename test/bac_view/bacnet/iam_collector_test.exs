@@ -48,12 +48,16 @@ defmodule BacView.BACnet.IAmCollectorTest do
       priority: :normal,
       expects_reply: false,
       destination: nil,
-      source: %BACnet.Protocol.NpciTarget{net: 2, address: 42},
+      source: %BACnet.Protocol.NpciTarget{net: 2, address: <<0, 42>>},
       hopcount: nil,
       is_network_message: false
     }
 
-    assert IAmCollector.npci_source_from(npci) == %BACnet.Protocol.NpciTarget{net: 2, address: 42}
+    assert IAmCollector.npci_source_from(npci) == %BACnet.Protocol.NpciTarget{
+             net: 2,
+             address: <<0, 42>>
+           }
+
     assert IAmCollector.npci_source_from(nil) == nil
   end
 
@@ -62,7 +66,7 @@ defmodule BacView.BACnet.IAmCollectorTest do
       priority: :normal,
       expects_reply: false,
       destination: nil,
-      source: %BACnet.Protocol.NpciTarget{net: 3, address: 200},
+      source: %BACnet.Protocol.NpciTarget{net: 3, address: <<0, 200>>},
       hopcount: nil,
       is_network_message: false
     }
@@ -81,7 +85,7 @@ defmodule BacView.BACnet.IAmCollectorTest do
       end)
 
     assert log =~
-             "IAmCollector: device 42 at 10.130.0.221:47808 (source 10.130.0.221:47808, npci source 3/200)"
+             "IAmCollector: device 42 at 10.130.0.221:47808 (source 10.130.0.221:47808, npci source 3/00:C8)"
   end
 
   test "collect gathers I-Am notifications from the mailbox" do

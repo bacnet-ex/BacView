@@ -93,7 +93,7 @@ defmodule BacView.BACnet.RequestOptsTest do
   end
 
   test "for_device adds npci destination and npci_id for a routed unique address" do
-    npci_source = %NpciTarget{net: 3, address: 200}
+    npci_source = %NpciTarget{net: 3, address: <<200>>}
 
     store(200, npci_source)
 
@@ -112,6 +112,30 @@ defmodule BacView.BACnet.RequestOptsTest do
     merged = RequestOpts.for_device(200, [])
     assert merged[:destination] == npci_source
     refute Keyword.has_key?(merged, :npci_id)
+  end
+
+  test "routed address opts preserve leading zeros in destinations and invoke ID keys" do
+    short = %NpciTarget{net: 3, address: <<42>>}
+    padded = %NpciTarget{net: 3, address: <<0, 42>>}
+
+    short_opts = RequestOpts.for_routed_address(@address, short, timeout: 1234)
+    padded_opts = RequestOpts.for_routed_address(@address, padded, timeout: 1234)
+
+    assert short_opts[:destination] == short
+    assert short_opts[:npci_id] == short
+    assert padded_opts[:destination] == padded
+    assert padded_opts[:npci_id] == padded
+    assert padded_opts[:timeout] == 1234
+    refute short_opts[:npci_id] == padded_opts[:npci_id]
+  end
+
+  test "discovered device opts preserve the complete binary route" do
+    route = %NpciTarget{net: 3, address: <<0, 128, 255>>}
+    store(200, route)
+
+    opts = RequestOpts.for_device(200)
+    assert opts[:destination] == route
+    assert opts[:npci_id] == route
   end
 
   describe "with shared reduction disabled (default)" do
@@ -136,7 +160,7 @@ defmodule BacView.BACnet.RequestOptsTest do
     end
 
     test "for_device adds npci_id for routed device on shared gateway" do
-      npci_source = %NpciTarget{net: 3, address: 200}
+      npci_source = %NpciTarget{net: 3, address: <<200>>}
 
       store(100)
       store(200, npci_source)
@@ -171,7 +195,7 @@ defmodule BacView.BACnet.RequestOptsTest do
     end
 
     test "for_device adds npci destination but not npci_id on shared addresses" do
-      npci_source = %NpciTarget{net: 3, address: 200}
+      npci_source = %NpciTarget{net: 3, address: <<200>>}
 
       store(100)
       store(200, npci_source)

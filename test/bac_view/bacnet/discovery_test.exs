@@ -648,11 +648,11 @@ defmodule BacView.BACnet.DiscoveryTest do
       assert {:ok, opts} =
                Discovery.parse_scan_params(%{
                  "target_ip" => "10.0.0.42:47809",
-                 "npci_source" => "77/42"
+                 "npci_source" => "77/00:2A"
                })
 
       assert opts[:destination] == [{{10, 0, 0, 42}, 47_809}]
-      assert opts[:npci_destination] == %NpciTarget{net: 77, address: 42}
+      assert opts[:npci_destination] == %NpciTarget{net: 77, address: <<0, 42>>}
     end
 
     test "requires a transport target when specifying an NPCI source" do

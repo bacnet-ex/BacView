@@ -17,7 +17,7 @@ defmodule BacView.BACnet.Address do
   @doc "Checks whether a target is an encodable remote station address."
   defguard is_npci_station(target)
            when is_struct(target, NpciTarget) and target.net in 1..65_534 and
-                  is_integer(target.address) and target.address in 0..0xFFFFFFFFFFFFFF
+                  is_binary(target.address) and byte_size(target.address) in 1..7
 
   @spec parse_host(String.t()) :: {:ok, :inet.ip_address()} | {:error, :invalid_host}
   def parse_host(host) when is_binary(host) do
@@ -75,7 +75,8 @@ defmodule BacView.BACnet.Address do
 
   The address accepts a decimal MS/TP MAC, an IPv4 address with optional port,
   or two to seven colon-separated hex octets. The remote address format is
-  independent of the active transport used to reach the router.
+  independent of the active transport used to reach the router. Address octets
+  are preserved exactly, including leading zeros.
   """
   @spec parse_npci_station(term()) :: {:ok, NpciTarget.t() | nil} | {:error, :invalid_npci_source}
   def parse_npci_station(nil), do: {:ok, nil}
@@ -102,22 +103,17 @@ defmodule BacView.BACnet.Address do
   defp parse_npci_station_address(address) do
     cond do
       String.contains?(address, ".") ->
-        with {:ok, {{a, b, c, d}, port}} when a > 0 <- parse_ipv4_destination(address) do
-          {:ok, :binary.decode_unsigned(<<a, b, c, d, port::16>>)}
+        with {:ok, {{a, b, c, d}, port}} <- parse_ipv4_destination(address) do
+          {:ok, <<a, b, c, d, port::16>>}
         end
 
       Regex.match?(@npci_hex_re, address) ->
-        # Bacstack encodes integer addresses with the minimum number of bytes.
-        case Base.decode16(String.replace(address, ":", ""), case: :mixed) do
-          {:ok, <<first, _rest::binary>> = bytes} when first > 0 ->
-            {:ok, :binary.decode_unsigned(bytes)}
-
-          _bytes ->
-            :error
-        end
+        Base.decode16(String.replace(address, ":", ""), case: :mixed)
 
       true ->
-        parse_mstp_destination(address)
+        with {:ok, mac} <- parse_mstp_destination(address) do
+          {:ok, <<mac>>}
+        end
     end
   end
 
@@ -223,38 +219,21 @@ defmodule BacView.BACnet.Address do
 
   def format_npci_target(%NpciTarget{net: net, address: nil}), do: "#{net}/broadcast"
 
-  def format_npci_target(%NpciTarget{net: net, address: address}) when is_integer(address) do
+  def format_npci_target(%NpciTarget{net: net, address: address}) when is_binary(address) do
     "#{net}/#{format_npci_address(address)}"
   end
 
-  defp format_npci_address(address) when address in 0..255, do: Integer.to_string(address)
+  defp format_npci_address(<<mac>>), do: Integer.to_string(mac)
 
-  defp format_npci_address(address) when is_integer(address) and address >= 0 do
-    binary = npci_address_to_binary(address)
-
-    case byte_size(binary) do
-      6 ->
-        <<a, b, c, d, port_hi, port_lo>> = binary
-        port = port_hi * 256 + port_lo
-
-        if port in 1..65_535 do
-          "#{a}.#{b}.#{c}.#{d}:#{port}"
-        else
-          format_npci_hex(binary)
-        end
-
-      1 ->
-        Integer.to_string(address)
-
-      _other ->
-        format_npci_hex(binary)
+  defp format_npci_address(<<a, b, c, d, port::16>> = address) do
+    if port in 1..65_535 do
+      "#{a}.#{b}.#{c}.#{d}:#{port}"
+    else
+      format_npci_hex(address)
     end
   end
 
-  defp npci_address_to_binary(address) do
-    int_length = max(1, div(byte_size(Integer.to_string(address, 2)) + 7, 8))
-    <<address::integer-size(int_length)-unit(8)>>
-  end
+  defp format_npci_address(address), do: format_npci_hex(address)
 
   defp format_npci_hex(binary) do
     binary

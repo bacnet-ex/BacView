@@ -40,7 +40,7 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
   test "reads via discovered device id and forwards array index" do
     address = {{192, 168, 1, 10}, 47_808}
     object = %ObjectIdentifier{type: :analog_value, instance: 1}
-    route = %NpciTarget{net: 77, address: 42}
+    route = %NpciTarget{net: 77, address: <<42>>}
 
     BacnetEtsLock.with_tables(@tables, fn ->
       device = %{id: 42, instance: 42, address: address, npci_source: route}
@@ -101,6 +101,27 @@ defmodule BacView.BACnet.SinglePropertyReadTest do
              )
 
     refute_received {:read_property, _destination, _object, _property, _opts}
+  end
+
+  test "direct property reads preserve leading zeros in the remote station" do
+    route = %NpciTarget{net: 77, address: <<0, 128, 255>>}
+
+    assert {:ok, _result} =
+             SinglePropertyRead.from_form(
+               %{
+                 "locator" => "address",
+                 "address" => "10.0.0.1",
+                 "npci_source" => "77/00:80:ff",
+                 "object_type" => "analog-value",
+                 "instance" => "1"
+               },
+               client: FakeClient,
+               transport: "ipv4"
+             )
+
+    assert_received {:read_property, {{10, 0, 0, 1}, 47_808}, _object, :present_value, opts}
+    assert opts[:destination] == route
+    assert opts[:npci_id] == route
   end
 
   test "reads via MS/TP MAC address" do

@@ -135,7 +135,7 @@ defmodule BacView.BACnet.NotificationClassRecipientTest do
 
   test "self destination uses effective network for routed (remote) devices" do
     previous = Settings.get().network_number
-    remote = %{npci_source: %NpciTarget{net: 5, address: 10}}
+    remote = %{npci_source: %NpciTarget{net: 5, address: <<10>>}}
 
     try do
       assert {:ok, _} = Settings.update(network_number: 42)

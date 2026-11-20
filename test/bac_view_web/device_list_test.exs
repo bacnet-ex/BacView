@@ -108,7 +108,7 @@ defmodule BacViewWeb.DeviceListTest do
     devices = [
       Map.put(Enum.at(@devices, 0), :npci_source, %BACnet.Protocol.NpciTarget{
         net: 3,
-        address: 200
+        address: <<200>>
       }),
       Enum.at(@devices, 1)
     ]
@@ -133,7 +133,7 @@ defmodule BacViewWeb.DeviceListTest do
     devices = [
       Map.put(Enum.at(@devices, 0), :npci_source, %BACnet.Protocol.NpciTarget{
         net: 2,
-        address: 42
+        address: <<42>>
       })
     ]
 
@@ -156,12 +156,38 @@ defmodule BacViewWeb.DeviceListTest do
     devices = [
       Map.put(Enum.at(@devices, 0), :npci_source, %BACnet.Protocol.NpciTarget{
         net: 3,
-        address: 200
+        address: <<200>>
       }),
       Enum.at(@devices, 1)
     ]
 
     assert length(DeviceList.filtered_devices(devices, "3/200", @vendor_names)) == 1
+  end
+
+  test "NPCI indicators and filtering preserve leading zero octets" do
+    device =
+      Map.put(Enum.at(@devices, 0), :npci_source, %BACnet.Protocol.NpciTarget{
+        net: 3,
+        address: <<0, 200>>
+      })
+
+    html =
+      render_component(&DeviceList.device_list/1,
+        devices: [device],
+        vendor_names: @vendor_names,
+        view: :grid,
+        locale: "de",
+        locale_version: 0
+      )
+
+    document = LazyHTML.from_fragment(html)
+
+    assert Enum.count(
+             LazyHTML.query(document, "#device-npci-source-1[title='NPCI-Quelle: 3/00:C8']")
+           ) == 1
+
+    assert DeviceList.filtered_devices([device], "3/00:C8", @vendor_names) == [device]
+    assert DeviceList.filtered_devices([device], "3/200", @vendor_names) == []
   end
 
   test "device cards show alarm and cov badges only when count is positive" do

@@ -22,7 +22,7 @@ defmodule BacViewWeb.DeviceIdBadgeLiveTest do
 
   @device_with_npci Map.put(@device, :npci_source, %BACnet.Protocol.NpciTarget{
                       net: 3,
-                      address: 200
+                      address: <<200>>
                     })
 
   setup do

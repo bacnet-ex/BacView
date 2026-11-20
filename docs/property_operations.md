@@ -19,8 +19,8 @@ The application header opens a ReadProperty modal on all three primary routes.
   the remote station in **Device NPCI source**. Use `network/address` with
   a network number from 1 to 65534. Examples include MS/TP `77/42`, BACnet/IP
   `100/192.168.1.10:47808` (port 47808 by default), and a hexadecimal MAC
-  such as `100/02:00:00:00:00:42`. Bacstack's integer address format requires a
-  nonzero first byte for multi-byte station addresses. BacView sends the remote
+  such as `100/00:00:00:00:00:42` (two to seven hex octets). Routed addresses
+  retain their exact binary length and leading zero octets. BacView sends the remote
   station as the outgoing NPCI destination, just as it uses the source learned
   from an I-Am for a device ID.
   The dashboard's unicast scan accepts the same format.

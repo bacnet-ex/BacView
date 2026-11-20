@@ -34,7 +34,7 @@ defmodule BacView.BACnet.SCRuntimeTest do
   @peer_vmac <<2, 0, 0, 0, 0, 42>>
   @device %ObjectIdentifier{type: :device, instance: 48_001}
   @object %ObjectIdentifier{type: :analog_value, instance: 3}
-  @route %NpciTarget{net: 77, address: 42}
+  @route %NpciTarget{net: 77, address: <<0, 42>>}
 
   setup %{tmp_dir: tmp_dir} do
     previous_directory = Application.fetch_env(:bacview, :sc_credentials_directory)
@@ -236,7 +236,7 @@ defmodule BacView.BACnet.SCRuntimeTest do
     assert {:ok, opts} =
              Discovery.parse_scan_params(%{
                "target_ip" => Address.format_destination(@peer_vmac),
-               "npci_source" => "77/42",
+               "npci_source" => "77/00:2A",
                "timeout_ms" => "600"
              })
 
